@@ -1,0 +1,119 @@
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radix</title>
+</head>
+
+<body>
+    <table id="table" class="sortable">
+    </table>
+
+    <script>
+        function sortTable(n) {
+            console.log('sort' + n);
+            var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+            table = document.getElementById("table");
+            switching = true;
+            //Set the sorting direction to ascending:
+            dir = "asc";
+            /*Make a loop that will continue until
+            no switching has been done:*/
+            while (switching) {
+                //start by saying: no switching is done:
+                switching = false;
+                rows = table.rows;
+                /*Loop through all table rows (except the
+                first, which contains table headers):*/
+                for (i = 1; i < (rows.length - 1); i++) {
+                    //start by saying there should be no switching:
+                    shouldSwitch = false;
+                    /*Get the two elements you want to compare,
+                    one from current row and one from the next:*/
+                    x = rows[i].getElementsByTagName("TD")[n];
+                    y = rows[i + 1].getElementsByTagName("TD")[n];
+                    /*check if the two rows should switch place,
+                    based on the direction, asc or desc:*/
+                    if (dir == "asc") {
+                        if (Number(x.innerHTML) > Number(y.innerHTML)) {
+                            //if so, mark as a switch and break the loop:
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (dir == "desc") {
+                        if (Number(x.innerHTML) < Number(y.innerHTML)) {
+                            //if so, mark as a switch and break the loop:
+                            shouldSwitch = true;
+                            break;
+                        }
+                    }
+                }
+                if (shouldSwitch) {
+                    /*If a switch has been marked, make the switch
+                    and mark that a switch has been done:*/
+                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                    switching = true;
+                    //Each time a switch is done, increase this count by 1:
+                    switchcount++;
+                } else {
+                    /*If no switching has been done AND the direction is "asc",
+                    set the direction to "desc" and run the while loop again.*/
+                    // if (switchcount == 0 && dir == "asc") {
+                    //     dir = "desc";
+                    //     switching = true;
+                    // }
+                }
+            }
+        }
+
+        function getURLParameter(name) {
+            return decodeURIComponent((new RegExp('[?|&]' + name + '=' + '([^&;]+?)(&|#|;|$)').exec(location.search) || [null, ''])[1].replace(/\+/g, '%20')) || null;
+        }
+        let text = getURLParameter('input');
+        let nums = decodeURI(text).split('\n').map(Number);
+        let len = nums.map(Math.log10).reduce((a, b) => Math.max(a, b));
+        len = Math.ceil(len);
+        let numStrs = nums.map((a) => String(a).padStart(len, '0'));
+        let stbl = document.getElementById("table");
+        let headRow = document.createElement('tr');
+        for (let i = 0; i < len; i++) {
+            let a = document.createElement('th');
+            a.id = 'col' + i;
+            a.innerText = ('10^' + String(len - 1 - i));
+            a.onclick = () => sortTable(i);
+            a.attributes.direction = 'asc';
+            headRow.appendChild(a);
+        }
+        stbl.appendChild(headRow);
+        for (let i = 0; i < numStrs.length; i++) {
+            let ns = numStrs[i];
+            let a = document.createElement('tr');
+            for (let j = 0; j < len; j++) {
+                let b = document.createElement('td');
+                b.innerText = ns[j];
+                a.appendChild(b);
+            }
+            stbl.appendChild(a);
+        }
+    </script>
+
+    <form onsubmit="console.log(number);" id="numForm">
+        <textarea rows="5" cols="60" name="input" placeholder="Enter Text" id="numText"></textarea>
+        <br />
+        <input type="submit" value="Submit">
+    </form>
+
+    <button onclick="javascript:(async ()=>{for (let i=len-1; i>=0; i--) {
+        document.getElementById('col'+i).style.background = 'green'
+        document.getElementById('col'+i).onclick();
+        await new Promise(r=>setTimeout(r,3000));
+        document.getElementById('col'+i).style.background = ''
+    }})()">go</button>
+
+    <script>
+        document.getElementById('numText').value = ('' + numStrs).replace(/,/g, '\n');
+    </script>
+</body>
+
+</html>
