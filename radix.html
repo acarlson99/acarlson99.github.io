@@ -11,7 +11,14 @@
     </table>
 
     <script>
+        let globalvar = 0;
         function sortTable(n) {
+            // reset color
+            document.getElementById('col' + globalvar).style.background = '';
+            globalvar = n;
+            document.getElementById('col' + n).style.background = 'green';
+
+            // go
             console.log('sort' + n);
             var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
             table = document.getElementById("table");
@@ -72,6 +79,7 @@
         }
         let text = getURLParameter('input');
         let nums = decodeURI(text).split('\n').map(Number);
+        // TODO: add radix param other than 10
         let len = nums.map(Math.log10).reduce((a, b) => Math.max(a, b));
         len = Math.ceil(len);
         let numStrs = nums.map((a) => String(a).padStart(len, '0'));
@@ -112,7 +120,9 @@
     }})()">go</button>
 
     <script>
-        document.getElementById('numText').value = ('' + numStrs).replace(/,/g, '\n');
+        if (text) {
+            document.getElementById('numText').value = ('' + numStrs).replace(/,/g, '\n');
+        }
     </script>
 </body>
 
