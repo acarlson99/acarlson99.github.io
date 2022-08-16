@@ -37,12 +37,14 @@
             <input type="submit" value="Submit">
         </form>
         <br />
-        <button onclick="javascript:(async ()=>{for (let i=len-1; i>=0; i--) {
-        document.getElementById('col'+i).style.background = 'green'
-        await document.getElementById('col'+i).onclick();
-        await sleep(1000);
-        document.getElementById('col'+i).style.background = ''
-    }})()">Sort</button>
+        <button onclick='javascript:(async () => {
+            for (let i = len - 1; i >= 0; i--) {
+              document.getElementById("col" + i).style.background = "green";
+              await document.getElementById("col" + i).onclick();
+              await sleep(1000);
+              document.getElementById("col" + i).style.background = "";
+            }
+          })();'>Sort</button>
     </div>
 
     <script>
@@ -53,17 +55,17 @@
         }
 
         async function sleep(ms) {
-            return new Promise(r => setTimeout(r, ms));
+            return new Promise((r) => setTimeout(r, ms));
         }
 
         async function sortTable(n) {
             // reset color
-            document.getElementById('col' + globalvar).style.background = '';
+            document.getElementById("col" + globalvar).style.background = "";
             globalvar = n;
-            document.getElementById('col' + n).style.background = 'green';
+            document.getElementById("col" + n).style.background = "green";
 
             // go
-            console.log('sort col ' + n);
+            console.log("sort col " + n);
             let tab = document.getElementById("sortTable");
             let rows = tab.rows;
             let buckets = [...Array(radix)].map(() => []);
@@ -72,7 +74,7 @@
                 let v = parseInt(td.innerText, radix) % radix;
                 buckets[v].push(rows[i]);
             }
-            console.log('buckets:', buckets);
+            console.log("buckets:", buckets);
             buckets = [].concat(...buckets);
             for (let row of buckets) {
                 stbl.removeChild(row);
@@ -83,34 +85,44 @@
         }
 
         function getURLParameter(name) {
-            return decodeURIComponent((new RegExp('[?|&]' + name + '=' + '([^&;]+?)(&|#|;|$)').exec(location.search) || [null, ''])[1].replace(/\+/g, '%20')) || null;
+            return (
+                decodeURIComponent(
+                    (new RegExp("[?|&]" + name + "=" + "([^&;]+?)(&|#|;|$)").exec(
+                        location.search
+                    ) || [null, ""])[1].replace(/\+/g, "%20")
+                ) || null
+            );
         }
 
-        const radix = clamp(2, Number(getURLParameter('radix')) || 10, 32);
+        const radix = clamp(2, Number(getURLParameter("radix")) || 10, 32);
         console.log(radix);
-        let text = getURLParameter('input');
+        let text = getURLParameter("input");
         let nums = [];
-        if (text) nums = decodeURI(text).split(/[\n,]/g).map((n) => parseInt(n, 10));
+        if (text)
+            nums = decodeURI(text)
+                .split(/[\n,]/g)
+                .map((n) => parseInt(n, 10));
         let numStrs = nums.map((a) => a.toString(radix));
-        let len = numStrs.map(a => a.length).reduce((a, b) => Math.max(a, b), 0);
+        let len = numStrs.map((a) => a.length).reduce((a, b) => Math.max(a, b), 0);
         let stbl = document.getElementById("sortTable");
-        let headRow = document.createElement('tr');
+        let headRow = document.createElement("tr");
         for (let i = 0; i < len; i++) {
-            let a = document.createElement('th');
-            a.id = 'col' + i;
-            a.class = 'col' + i;
-            a.innerText = (radix + '^' + String(len - 1 - i));
+            let a = document.createElement("th");
+            a.id = "col" + i;
+            a.class = "col" + i;
+            a.innerText = radix + "^" + String(len - 1 - i);
             a.onclick = () => sortTable(i);
             headRow.appendChild(a);
         }
         stbl.appendChild(headRow);
         for (let i = 0; i < numStrs.length; i++) {
-            let ns = numStrs[i].padStart(len, '0');
-            let a = document.createElement('tr');
+            let ns = numStrs[i].padStart(len, "0");
+            let a = document.createElement("tr");
             for (let j = 0; j < len; j++) {
-                let b = document.createElement('td');
-                b.class = 'col' + j;
-                b.style.background = 'rgba(0,128,0,' + parseInt(ns[j], radix) / (radix - 1) + ')';
+                let b = document.createElement("td");
+                b.class = "col" + j;
+                b.style.background =
+                    "rgba(0,128,0," + parseInt(ns[j], radix) / (radix - 1) + ")";
                 b.innerText = ns[j];
                 a.appendChild(b);
             }
@@ -119,14 +131,19 @@
 
         // preload args
         if (text) {
-            document.getElementById('numText').value = ('' + numStrs.map((s) => parseInt(s, radix).toString(10))).replace(/,/g, '\n');
-            document.getElementById('numText').rows = clamp(5, numStrs.length, 50);
-            let x = nums.map((a) => a.toString(10).length).reduce((a, b) => Math.max(a, b));
-            document.getElementById('numText').cols = clamp(15, x, 50);
+            document.getElementById("numText").value = (
+                "" + numStrs.map((s) => parseInt(s, radix).toString(10))
+            ).replace(/,/g, "\n");
+            document.getElementById("numText").rows = clamp(5, numStrs.length, 50);
+            let x = nums
+                .map((a) => a.toString(10).length)
+                .reduce((a, b) => Math.max(a, b));
+            document.getElementById("numText").cols = clamp(15, x, 50);
         }
         if (radix) {
-            document.getElementById('rdxText').value = radix;
+            document.getElementById("rdxText").value = radix;
         }
+
     </script>
 </body>
 
