@@ -86,12 +86,13 @@
             return decodeURIComponent((new RegExp('[?|&]' + name + '=' + '([^&;]+?)(&|#|;|$)').exec(location.search) || [null, ''])[1].replace(/\+/g, '%20')) || null;
         }
 
-        const radix = clamp(2, Number(getURLParameter('radix')), 32);
+        const radix = clamp(2, Number(getURLParameter('radix')) || 10, 32);
         console.log(radix);
         let text = getURLParameter('input');
-        let nums = decodeURI(text).split('\n').map((n) => parseInt(n, 10));
+        let nums = [];
+        if (text) nums = decodeURI(text).split(/[\n,]/g).map((n) => parseInt(n, 10));
         let numStrs = nums.map((a) => a.toString(radix));
-        let len = numStrs.map(a => a.length).reduce((a, b) => Math.max(a, b));
+        let len = numStrs.map(a => a.length).reduce((a, b) => Math.max(a, b), 0);
         let stbl = document.getElementById("sortTable");
         let headRow = document.createElement('tr');
         for (let i = 0; i < len; i++) {
