@@ -1,127 +1,130 @@
+<!DOCTYPE html>
 <html>
 
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Radix</title>
+    <style>
+        td,
+        th {
+            text-align: center;
+        }
+
+        body {
+            background-color: beige;
+        }
+
+        #main {
+            text-align: center;
+        }
+
+        .center {
+            margin-left: auto;
+            margin-right: auto;
+        }
+    </style>
 </head>
 
 <body>
-    <table id="table" class="sortable">
-    </table>
+    <div id="main">
+        <table id="sortTable" class="center"></table>
+        <form id="numForm">
+            <textarea rows="5" cols="30" name="input" placeholder="Enter Text" id="numText"></textarea>
+            <br />
+            <textarea name="radix" placeholder="Radix" id="rdxText"></textarea>
+            <br />
+            <input type="submit" value="Submit">
+        </form>
+        <br />
+        <button onclick="javascript:(async ()=>{for (let i=len-1; i>=0; i--) {
+        document.getElementById('col'+i).style.background = 'green'
+        await document.getElementById('col'+i).onclick();
+        await sleep(1000);
+        document.getElementById('col'+i).style.background = ''
+    }})()">Sort</button>
+    </div>
 
     <script>
         let globalvar = 0;
-        function sortTable(n) {
+
+        function clamp(a, b, c) {
+            return Math.min(Math.max(a, b), c);
+        }
+
+        async function sleep(ms) {
+            return new Promise(r => setTimeout(r, ms));
+        }
+
+        async function sortTable(n) {
             // reset color
             document.getElementById('col' + globalvar).style.background = '';
             globalvar = n;
             document.getElementById('col' + n).style.background = 'green';
 
             // go
-            console.log('sort' + n);
-            var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
-            table = document.getElementById("table");
-            switching = true;
-            //Set the sorting direction to ascending:
-            dir = "asc";
-            /*Make a loop that will continue until
-            no switching has been done:*/
-            while (switching) {
-                //start by saying: no switching is done:
-                switching = false;
-                rows = table.rows;
-                /*Loop through all table rows (except the
-                first, which contains table headers):*/
-                for (i = 1; i < (rows.length - 1); i++) {
-                    //start by saying there should be no switching:
-                    shouldSwitch = false;
-                    /*Get the two elements you want to compare,
-                    one from current row and one from the next:*/
-                    x = rows[i].getElementsByTagName("TD")[n];
-                    y = rows[i + 1].getElementsByTagName("TD")[n];
-                    /*check if the two rows should switch place,
-                    based on the direction, asc or desc:*/
-                    if (dir == "asc") {
-                        if (Number(x.innerHTML) > Number(y.innerHTML)) {
-                            //if so, mark as a switch and break the loop:
-                            shouldSwitch = true;
-                            break;
-                        }
-                    } else if (dir == "desc") {
-                        if (Number(x.innerHTML) < Number(y.innerHTML)) {
-                            //if so, mark as a switch and break the loop:
-                            shouldSwitch = true;
-                            break;
-                        }
-                    }
-                }
-                if (shouldSwitch) {
-                    /*If a switch has been marked, make the switch
-                    and mark that a switch has been done:*/
-                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-                    switching = true;
-                    //Each time a switch is done, increase this count by 1:
-                    switchcount++;
-                } else {
-                    /*If no switching has been done AND the direction is "asc",
-                    set the direction to "desc" and run the while loop again.*/
-                    // if (switchcount == 0 && dir == "asc") {
-                    //     dir = "desc";
-                    //     switching = true;
-                    // }
-                }
+            console.log('sort col ' + n);
+            let tab = document.getElementById("sortTable");
+            let rows = tab.rows;
+            let buckets = [...Array(radix)].map(() => []);
+            for (let i = 1; i <= rows.length - 1; i++) {
+                let td = rows[i].getElementsByTagName("TD")[n];
+                let v = parseInt(td.innerText, radix) % radix;
+                buckets[v].push(rows[i]);
+            }
+            console.log('buckets:', buckets);
+            buckets = [].concat(...buckets);
+            for (let row of buckets) {
+                stbl.removeChild(row);
+            }
+            for (let row of buckets) {
+                stbl.appendChild(row);
             }
         }
 
         function getURLParameter(name) {
             return decodeURIComponent((new RegExp('[?|&]' + name + '=' + '([^&;]+?)(&|#|;|$)').exec(location.search) || [null, ''])[1].replace(/\+/g, '%20')) || null;
         }
+
+        const radix = clamp(2, Number(getURLParameter('radix')), 32);
+        console.log(radix);
         let text = getURLParameter('input');
-        let nums = decodeURI(text).split('\n').map(Number);
-        // TODO: add radix param other than 10
-        let len = nums.map(Math.log10).reduce((a, b) => Math.max(a, b));
-        len = Math.ceil(len);
-        let numStrs = nums.map((a) => String(a).padStart(len, '0'));
-        let stbl = document.getElementById("table");
+        let nums = decodeURI(text).split('\n').map((n) => parseInt(n, 10));
+        let numStrs = nums.map((a) => a.toString(radix));
+        let len = numStrs.map(a => a.length).reduce((a, b) => Math.max(a, b));
+        let stbl = document.getElementById("sortTable");
         let headRow = document.createElement('tr');
         for (let i = 0; i < len; i++) {
             let a = document.createElement('th');
             a.id = 'col' + i;
-            a.innerText = ('10^' + String(len - 1 - i));
+            a.class = 'col' + i;
+            a.innerText = (radix + '^' + String(len - 1 - i));
             a.onclick = () => sortTable(i);
-            a.attributes.direction = 'asc';
             headRow.appendChild(a);
         }
         stbl.appendChild(headRow);
         for (let i = 0; i < numStrs.length; i++) {
-            let ns = numStrs[i];
+            let ns = numStrs[i].padStart(len, '0');
             let a = document.createElement('tr');
             for (let j = 0; j < len; j++) {
                 let b = document.createElement('td');
+                b.class = 'col' + j;
+                b.style.background = 'rgba(0,128,0,' + parseInt(ns[j], radix) / (radix - 1) + ')';
                 b.innerText = ns[j];
                 a.appendChild(b);
             }
             stbl.appendChild(a);
         }
-    </script>
 
-    <form onsubmit="console.log(number);" id="numForm">
-        <textarea rows="5" cols="60" name="input" placeholder="Enter Text" id="numText"></textarea>
-        <br />
-        <input type="submit" value="Submit">
-    </form>
-
-    <button onclick="javascript:(async ()=>{for (let i=len-1; i>=0; i--) {
-        document.getElementById('col'+i).style.background = 'green'
-        document.getElementById('col'+i).onclick();
-        await new Promise(r=>setTimeout(r,3000));
-        document.getElementById('col'+i).style.background = ''
-    }})()">go</button>
-
-    <script>
+        // preload args
         if (text) {
-            document.getElementById('numText').value = ('' + numStrs).replace(/,/g, '\n');
+            document.getElementById('numText').value = ('' + numStrs.map((s) => parseInt(s, radix).toString(10))).replace(/,/g, '\n');
+            document.getElementById('numText').rows = clamp(5, numStrs.length, 50);
+            let x = nums.map((a) => a.toString(10).length).reduce((a, b) => Math.max(a, b));
+            document.getElementById('numText').cols = clamp(15, x, 50);
+        }
+        if (radix) {
+            document.getElementById('rdxText').value = radix;
         }
     </script>
 </body>
