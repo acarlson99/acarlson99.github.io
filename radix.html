@@ -11,6 +11,10 @@
             text-align: center;
         }
 
+        .clickable {
+            cursor: pointer;
+        }
+
         body {
             background-color: beige;
         }
@@ -109,7 +113,7 @@
         for (let i = 0; i < len; i++) {
             let a = document.createElement("th");
             a.id = "col" + i;
-            a.class = "col" + i;
+            a.className = "clickable" + " col" + i;
             a.innerText = radix + "^" + String(len - 1 - i);
             a.onclick = () => sortTable(i);
             headRow.appendChild(a);
@@ -120,7 +124,7 @@
             let a = document.createElement("tr");
             for (let j = 0; j < len; j++) {
                 let b = document.createElement("td");
-                b.class = "col" + j;
+                b.className = "col" + j;
                 b.style.background =
                     "rgba(0,128,0," + parseInt(ns[j], radix) / (radix - 1) + ")";
                 b.innerText = ns[j];
