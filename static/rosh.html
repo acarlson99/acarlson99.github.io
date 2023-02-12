@@ -1,17 +1,23 @@
+<!DOCTYPE html>
 <html>
 
 <head>
+    <title>rs</title>
     <script>
         function f() {
-            t = Number(document.getElementById('roshtime').value);
-            s = 'aegis ' + String(t + 500) + ' rs ' + String(t + 800) + ' ' + String(t + 800 + 300);
+            t = Number(document.getElementById('roshtime').value.replace(':', '').replace(' ', ''));
+            if (isNaN(t)) {
+                s = 'invalid; does your input look like "2420"?'
+            } else {
+                s = 'aegis ' + String(t + 500) + ' rs ' + String(t + 800) + ' ' + String(t + 800 + 300);
+            }
             document.getElementById('roshkillout').innerText = s;
         }
 
         function f2() {
-            agt = Number(document.getElementById('aegistime').value);
+            agt = Number(document.getElementById('aegistime').value.replace(':', '').replace(' ', ''));
             if (agt <= 5) agt *= 100;
-            ct = Number(document.getElementById('clocktime').value);
+            ct = Number(document.getElementById('clocktime').value.replace(':', '').replace(' ', ''));
             document.getElementById('roshtime').value = ct - (500 - agt);
             f();
         }
@@ -23,17 +29,15 @@
         rosh kill
         <input type="text" id="roshtime" placeholder="clock">
         <input type="submit" onsubmit="f()" onclick="f()">
-        <br>
-        <div id="roshkillout"></div>
     </form>
     <form onsubmit="return false;" method="post">
         aegis time
         <input type="text" id="clocktime" placeholder="clock">
         <input type="text" id="aegistime" placeholder="aegis">
         <input type="submit" onsubmit="f2()" onclick="f2()">
-        <br>
-        <div id="roshkillout"></div>
     </form>
+    <br>
+    <div id="roshkillout"></div>
 </body>
 
 </html>
