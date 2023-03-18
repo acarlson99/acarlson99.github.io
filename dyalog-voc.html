@@ -1,0 +1,1211 @@
+<html>
+<head>
+  <style>
+    @charset "UTF-8";
+
+    * {
+      box-sizing: border-box;
+      text-decoration: none;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      padding: 0px;
+      margin: 0px;
+    }
+
+    @font-face {
+      font-family: "APL385";
+      src: local("APL385 Unicode"), format("truetype");
+      font-style: normal;
+      font-display: swap;
+    }
+
+    @font-face {
+      font-family: "APL333";
+      src: local("APL333"), format("truetype");
+      font-style: normal;
+      font-display: swap;
+    }
+
+    body {
+      font-family: "APL333", monospace;
+    }
+
+    main {
+      padding: 0.8em;
+    }
+
+    section {
+      justify-content: space-evenly;
+      display: flex;
+    }
+
+    td:nth-child(4n + 1) {
+      text-align: right;
+    }
+
+    .function,
+    .moperator,
+    .doperator,
+    .control,
+    .noun,
+    .copula {
+      font-size: 1.2em;
+      padding: 0.3em 0.5em;
+      font-family: "APL385", monospace;
+      text-align: center;
+    }
+
+    .function {
+      background-color: #ddccff;
+    }
+
+    .moperator {
+      background-color: #cceeff;
+    }
+
+    .doperator {
+      background-color: #eeffcc;
+    }
+
+    .control {
+      background-color: #eeaaaa;
+    }
+
+    .noun {
+      background-color: #ffccee;
+    }
+
+    .copula {
+      background-color: #cccccc;
+    }
+
+    h1,
+    h2 {
+      color: #000;
+      background: none;
+      font-weight: normal;
+    }
+
+    h1 {
+      margin-bottom: 0.5em;
+      border-bottom: 1px solid #a2a9b1;
+    }
+
+    sub,
+    sup,
+    p {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin: 1ex 0;
+    }
+
+    a {
+      color: #000;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    table {
+      border-spacing: 2px;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    table td {
+      padding: 0.25em;
+    }
+
+    .color-code tr {
+      font-size: 0.8em;
+    }
+
+    .color-code {
+      display: flex;
+    }
+
+    h1 {
+      font-size: 1.8em;
+    }
+
+    @media screen and (max-width: 1648px) {
+      h1 {
+        font-size: 1.6em;
+      }
+
+      .function,
+      .moperator,
+      .doperator,
+      .control,
+      .noun,
+      .copula {
+        font-size: 1em;
+        font-size: 1.2em;
+        padding: 0.2em 0.4em;
+      }
+
+      table td {
+        font-size: 0.85em;
+      }
+    }
+
+    @media screen and (max-width: 1436px) {
+      .color-code tr {
+        font-size: 0.6em;
+      }
+
+      .color-code {
+        display: block;
+      }
+
+      .color-code>* {
+        margin: auto;
+      }
+
+      .separator {
+        display: none !important;
+      }
+
+      .color-code span {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+      }
+
+      .color-code table {
+        margin-bottom: 0.8em;
+        margin-top: 0.8em;
+      }
+
+      section {
+        flex-direction: column;
+        width: 100%;
+      }
+
+      section div {
+        width: 100%;
+      }
+
+      section div table {
+        margin: auto;
+      }
+    }
+  </style>
+
+<body>
+  <main>
+    <h1>
+      <div class="color-code">
+        <span>Dyalog APL - Vocabulary</span>
+        <span class="separator"> · </span>
+        <table>
+          <tbody>
+            <tr>
+              <td class="function">Function</td>
+              <td class="moperator">Monadic Operator</td>
+              <td class="doperator">Dyadic Operator</td>
+              <td class="noun">Array</td>
+              <td class="copula">Multi-Role</td>
+              <td class="control">Control</td>
+            </tr>
+          </tbody>
+        </table>
+        <span class="separator"> · </span>
+        <p style="font-family: APL385; color: 222; font-size: 0.6em">
+          X, Y: Arrays  f, g, h: Functions
+        </p>
+      </div>
+      <span style="font-size: 0.4em"> </span>
+    </h1>
+    <br>
+
+    <section>
+      <div>
+        <table>
+          <tbody>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Add.htm">Plus</a>
+              </td>
+              <td class="function">+</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Conjugate.htm">Conjugate</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Symbols/Minus%20Sign.htm">Minus</a>
+              </td>
+              <td class="function">-</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Negative.htm">Negate</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Multiply.htm">Times</a>
+              </td>
+              <td class="function">×</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Direction.htm">Direction</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Divide.htm">Divide</a>
+              </td>
+              <td class="function">÷</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Reciprocal.htm">Reciprocal</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Maximum.htm">Maximum</a>
+              </td>
+              <td class="function">⌈</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Ceiling.htm">Ceiling</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Minimum.htm">Minimum</a>
+              </td>
+              <td class="function">⌊</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Floor.htm">Floor</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Power.htm">Power</a>
+              </td>
+              <td class="function">*</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Exponential.htm">Exponential</a>
+              </td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Logarithm.htm">Logarithm</a>
+              </td>
+              <td class="function">⍟</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Natural%20Logarithm.htm">Natural
+                  Log</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Circular.htm">
+                  Circular</a>
+              </td>
+              <td class="function">○</td>
+              <td>
+                <a href=" https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Pi%20Times.htm">Pi
+                  Times</a>
+              </td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Binomial.htm">Binomial</a>
+              </td>
+              <td class="function">!</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Factorial.htm">Factorial</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Deal.htm">Deal</a>
+              </td>
+              <td class="function">?</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Roll.htm">Roll</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Residue.htm">Residue</a>
+              </td>
+              <td class="function">|</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Magnitude.htm">Magnitude</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/And%20Lowest%20Common%20Multiple.htm">And/LCM</a>
+              </td>
+              <td class="function">∧</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Or%20Greatest%20Common%20Divisor.htm">Or/GCD</a>
+              </td>
+              <td class="function">∨</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Nand.htm">Nand</a>
+              </td>
+              <td class="function">⍲</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Nor.htm">Nor</a>
+              </td>
+              <td class="function">⍱</td>
+              <td></td>
+              <td></td>
+            </tr>
+            <tr style="text-align: right; border-left: none; border-right: none">
+              <td style="color: white">0</td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Equal.htm">Equal</a>
+              </td>
+              <td class="function">=</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Not%20Equal.htm">Not
+                  Equal</a>
+              </td>
+              <td class="function">≠</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Unique%20Mask.htm">Unique
+                  <br>
+                  mask</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Match.htm">Match</a>
+              </td>
+              <td class="function">≡</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Depth.htm">Depth</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Not%20Match.htm">Not
+                  Match</a>
+              </td>
+              <td class="function">≢</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Tally.htm">Tally</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Less.htm">Less
+                  Than</a>
+              </td>
+              <td class="function">&lt;</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Less%20Or%20Equal.htm">Less
+                  Or <br>
+                  Equal</a>
+              </td>
+              <td class="function">≤</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Symbols/Greater%20Than%20Or%20Equal%20To%20Sign.htm">
+                  Greater Or <br>
+                  Equal</a>
+              </td>
+              <td class="function">≥</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Greater.htm">Greater
+                  Than</a>
+              </td>
+              <td class="function">&gt;</td>
+              <td></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Index%20with%20Axes.htm">Index</a>
+              </td>
+              <td class="function">⌷</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Materialise.htm">Materialise</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Take.htm">Take</a>
+              </td>
+              <td class="function">↑</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Mix.htm">Mix</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Drop.htm">Drop</a>
+              </td>
+              <td class="function">↓</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Split.htm">Split</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Reshape.htm">Reshape</a>
+              </td>
+              <td class="function">⍴</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Shape.htm">Shape</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Partitioned%20Enclose.htm">
+                  Partitioned <br>
+                  Enclose
+                </a>
+              </td>
+              <td class="function">⊂</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Enclose.htm">Enclose</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Pick.htm">Pick</a>
+              </td>
+              <td class="function">⊃</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Disclose.htm">First</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Left.htm">Left</a>
+              </td>
+              <td class="function">⊣</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Same.htm">Same</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Right.htm">Right</a>
+              </td>
+              <td class="function">⊢</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Same.htm">Same</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr style="text-align: right; border-left: none; border-right: none">
+              <td style="color: white">0</td>
+            </tr>
+            <tr>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Partition.htm">Partition</a>
+              </td>
+              <td class="function">⊆</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Nest.htm">Nest</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Union.htm">Union</a>
+              </td>
+              <td class="function">∪</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Unique.htm">Unique</a>
+              </td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Intersection.htm">Intersection</a>
+              </td>
+              <td class="function">∩</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Excluding.htm">Without</a>
+              </td>
+              <td class="function">~</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Not.htm">Not</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Index%20Of.htm">Indices
+                  Of</a>
+              </td>
+              <td class="function">⍳</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Index%20Generator.htm">Indices</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Interval%20Index.htm">
+                  Interval <br>
+                  Index
+                </a>
+              </td>
+              <td class="function">⍸</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Where.htm">Where</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Membership.htm">Member
+                  Of</a>
+              </td>
+              <td class="function">∊</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Enlist.htm">Enlist</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Find.htm">Find</a>
+              </td>
+              <td class="function">⍷</td>
+              <td></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Replicate.htm">Replicate</a>
+              </td>
+              <td class="function">/</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Expand.htm">Expand</a>
+              </td>
+              <td class="function">\</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Replicate.htm">
+                  Replicate <br>
+                  First
+                </a>
+              </td>
+              <td class="function">⌿</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Expand.htm">
+                  Expand <br>
+                  First</a>
+              </td>
+              <td class="function">⍀</td>
+              <td></td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Rotate.htm">Rotate</a>
+              </td>
+              <td class="function">⌽</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Reverse.htm">Reverse</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Rotate%20First.htm">
+                  Rotate <br>
+                  First</a>
+              </td>
+              <td class="function">⊖</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Reverse%20First.htm">
+                  Reverse <br>
+                  First</a>
+              </td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Catenate%20Laminate.htm">Catenate</a>
+              </td>
+              <td class="function">,</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Ravel.htm">Ravel</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Catenate%20First.htm">
+                  Catenate <br>
+                  First</a>
+              </td>
+              <td class="function">⍪</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Table.htm">Table</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr style="text-align: right; border-left: none; border-right: none">
+              <td style="color: white">0</td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Transpose%20Dyadic.htm">
+                  Reorder <br>
+                  Axes</a>
+              </td>
+              <td class="function">⍉</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Transpose%20Monadic.htm">Transpose</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Decode.htm">Decode</a>
+              </td>
+              <td class="function">⊥</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Encode.htm">Encode</a>
+              </td>
+              <td class="function">⊤</td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Matrix%20Divide.htm">
+                  Matrix <br>
+                  Divide</a>
+              </td>
+              <td class="function">⌹</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Matrix%20Inverse.htm">
+                  Matrix <br>
+                  Inverse</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Execute.htm">
+                  Namespace <br>
+                  Execute</a>
+              </td>
+              <td class="function">⍎</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Execute.htm">Execute</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Format%20Dyadic.htm">
+                  Specified <br>
+                  Format</a>
+              </td>
+              <td class="function">⍕</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Format%20Monadic.htm">Format</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Grade%20Up%20Dyadic.htm">
+                  Collated <br>
+                  Grade By</a>
+              </td>
+              <td class="function">⍋</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Grade%20Up%20Monadic.htm">Grade
+                  up</a>
+              </td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Grade%20Down%20Dyadic.htm">
+                  Collated <br>
+                  Grade By</a>
+              </td>
+              <td class="function">⍒</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Grade%20Down%20Monadic.htm">Grade
+                  down</a>
+              </td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+        <br>
+      </div>
+      <div>
+        <table>
+          <tbody>
+            <tr>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Each%20with%20Dyadic%20Operand.htm">Each</a>
+              </td>
+              <td class="moperator">f¨</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Each%20with%20Monadic%20Operand.htm">Each</a>
+              </td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Constant.htm">Constant</a>
+              </td>
+              <td class="moperator">X⍨</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Constant.htm">Constant</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Commute.htm">Swap</a>
+              </td>
+              <td class="moperator">f⍨</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Commute.htm">Self</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/I%20Beam.htm">System</a>
+              </td>
+              <td class="moperator">X⌶</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/I%20Beam.htm">System</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Reduce%20N%20Wise.htm">
+                  N-Wise <br>
+                  Reduce</a>
+              </td>
+              <td class="moperator">f/</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Reduce.htm">Reduce</a>
+              </td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Reduce%20First%20N%20Wise.htm">
+                  N-Wise <br>
+                  Reduce First</a>
+              </td>
+              <td class="moperator">f⌿</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Reduce%20First.htm">
+                  Reduce <br>
+                  First</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="moperator">f\</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Scan.htm">Scan</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="moperator">f⍀</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Scan%20First.htm">
+                  Scan <br>
+                  First</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Key.htm">Key</a>
+              </td>
+              <td class="moperator">f⌸</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Key.htm">
+                  Index <br>
+                  Key</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Spawn.htm">Spawn</a>
+              </td>
+              <td class="moperator">f&amp;</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Spawn.htm">Spawn</a>
+              </td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/#Language/Primitive%20Operators/Axis%20with%20Dyadic%20Operand.htm">Axis</a>
+              </td>
+              <td class="moperator">f[X]</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/#Language/Primitive%20Operators/Axis%20with%20Monadic%20Operand.htm">Axis</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/#Language/Primitive%20Operators/Outer%20Product.htm">
+                  Outer <br>
+                  Product</a>
+              </td>
+              <td class="moperator">∘.g</td>
+              <td></td>
+              <td></td>
+            </tr>
+            <tr style="text-align: right; border-left: none; border-right: none">
+              <td style="color: white">0</td>
+            </tr>
+            <tr>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Power%20Operator.htm">Until</a>
+              </td>
+              <td class="doperator">f⍣g</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Power%20Operator.htm">Until</a>
+              </td>
+              <td></td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Power%20Operator.htm">Repeat</a>
+              </td>
+              <td class="doperator">f⍣Y</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Power%20Operator.htm">Repeat</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Variant.htm">Variant</a>
+              </td>
+              <td class="doperator">f⍠Y</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Variant.htm">Variant</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Beside.htm">Beside</a>
+              </td>
+              <td class="doperator">f∘g</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Beside.htm">Beside</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="doperator">f∘Y</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Bind.htm">Bind</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="doperator">X∘g</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Bind.htm">Bind</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="doperator">f⌺Y</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Stencil.htm">Stencil</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Atop.htm">Atop</a>
+              </td>
+              <td class="doperator">f⍤g</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Atop.htm">Atop</a>
+              </td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Rank.htm">Rank</a>
+              </td>
+              <td class="doperator">f⍤Y</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Rank.htm">Rank</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/At.htm">Amends</a>
+              </td>
+              <td class="doperator">@</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/At.htm">Amend</a>
+              </td>
+              <td></td>
+            </tr>
+            <tr>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Over.htm">Over</a>
+              </td>
+              <td class="doperator">f⍥g</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Over.htm">Over</a>
+              </td>
+              <td></td>
+              <td colspan="3"></td>
+              <td></td>
+              <td colspan="3"></td>
+              <td></td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Operators/Inner%20Product.htm">
+                  Inner <br>
+                  Product</a>
+              </td>
+              <td class="doperator">f.g</td>
+              <td></td>
+              <td></td>
+            </tr>
+            <tr style="text-align: right; border-left: none; border-right: none">
+              <td style="color: white">0</td>
+            </tr>
+            <tr>
+              <td></td>
+              <td class="control">→</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Abort.htm">Abort</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="control">⋄</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/TradFns/Statements.htm">
+                  Statement <br>
+                  Separator</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="control">:</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/DynamicFunctions/Guards.htm">Guard</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="control">::</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/DynamicFunctions/Error%20Guards.htm">
+                  Error <br>
+                  Guard</a>
+              </td>
+            </tr>
+            <tr>
+              <td></td>
+              <td class="function">{…}</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/DynamicFunctions/Dynamic%20Functions%20and%20Operators.htm">Dfn</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="moperator">{⍺⍺}</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/DynamicFunctions/Dynamic%20Operators.htm">
+                  Monadic <br>
+                  Dop</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="doperator">{⍵⍵}</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/DynamicFunctions/Dynamic%20Operators.htm">
+                  Dyadic <br>
+                  Dop</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="noun">⍬</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Primitive%20Functions/Zilde.htm">
+                  Empty <br>
+                  Numeric Vector</a>
+              </td>
+            </tr>
+            <tr>
+              <td></td>
+              <td class="copula">⍺</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/DynamicFunctions/Dynamic%20Functions%20and%20Operators.htm">
+                  Left <br>
+                  Argument</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="function">∇</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/DynamicFunctions/Recursion.htm">
+                  Function <br>
+                  Self</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="noun">⍵</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/DynamicFunctions/Dynamic%20Functions%20and%20Operators.htm">
+                  Right <br>
+                  Argument</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="noun">#</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Introduction/Namespaces/Namespaces.htm">Root</a>
+              </td>
+            </tr>
+            <tr>
+              <td></td>
+              <td class="copula">⍺⍺</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/DynamicFunctions/Dynamic%20Operators.htm">
+                  Left <br>
+                  Operand</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="copula">∇∇</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/DynamicFunctions/Recursion.htm">
+                  Operator <br>
+                  Self</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="copula">⍵⍵</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/DynamicFunctions/Dynamic%20Operators.htm">
+                  Right <br>
+                  Operand</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="noun">##</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Introduction/Namespaces/Namespaces.htm">Parent</a>
+              </td>
+            </tr>
+            <tr>
+              <td></td>
+              <td class="copula">←</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Symbols/Left%20Arrow.htm">Assign</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="copula">⍝</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Defined%20Functions%20and%20Operators/TradFns/Statements.htm">Comment</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="copula">⎕</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/System%20Functions/Evaluated%20Input%20Output.htm">Evaluated
+                  <br>Input/Stdout</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="noun">⍞</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/System%20Functions/Character%20Input%20Output.htm">
+                  Text <br>
+                  Input/Stderr</a>
+              </td>
+            </tr>
+            <tr>
+              <td></td>
+              <td class="function" style="font-size: 0.75em;white-space: nowrap;">(f g h)</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Introduction/Trains.htm">Fork</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="function" style="font-size: 0.75em;white-space: nowrap;">(X g h)</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Introduction/Trains.htm">Fork</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="function" style="font-size: 0.75em;white-space: nowrap;">(g h)</td>
+              <td>
+                <a href="https://help.dyalog.com/latest/Content/Language/Introduction/Trains.htm">Atop</a>
+              </td>
+              <td></td>
+              <td></td>
+              <td class="noun">¯</td>
+              <td>
+                <a
+                  href="https://help.dyalog.com/latest/Content/Language/Introduction/Variables/Numbers.htm">Negative</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+<footer>
+  <style>
+    footer a::after {
+            content:  attr(href);
+    }
+    </style>
+Ripped from <a href="https://awagga.github.io/dyalog/voc/"></a> (now removed)
+<br>
+Archived <a href="https://web.archive.org/web/https://awagga.github.io/dyalog/voc/"></a>
+</footer>
+</html>
