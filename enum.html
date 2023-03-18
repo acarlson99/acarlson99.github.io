@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            font-family: "Lucida Console", Courier, monospace;
+        }
+    </style>
+</head>
+
+<body>
+    <script src="https://requirejs.org/docs/release/2.3.5/minified/require.js"></script>
+    <script type="module">
+        import { Octokit, App } from "https://cdn.skypack.dev/octokit";
+        ((() => {
+            const zip = (a, b) => a.map((k, i) => [k, b[i]]);
+
+            const octokit = new Octokit({
+                auth: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+            });
+
+            octokit
+                .request("GET /repos/{owner}/{repo}/git/trees/{tree_sha}", {
+                    owner: "acarlson99",
+                    repo: "acarlson99.github.io",
+                    // tree_sha: treeSHA,
+                    tree_sha: "6a87c8cba491c5993c14d2fcdb4b4952874d8784",
+                    recursive: "true",
+                    headers: {
+                        Accept: "application/vnd.github+json",
+                    },
+                })
+                // (new (function () {
+                //     this.data = {
+                //         tree: [
+                //             {
+                //                 path: 'cummy',
+                //                 type: 'tree'
+                //             },
+                //             {
+                //                 path: 'cummy/yummy.txt',
+                //                 type: 'blob'
+                //             },
+                //             {
+                //                 path: 'cummy/cunny.txt',
+                //                 type: 'blob'
+                //             },
+                //             {
+                //                 path: 'ooey',
+                //                 type: 'tree'
+                //             },
+                //             {
+                //                 path: 'ooey/slurps.txt',
+                //                 type: 'tree'
+                //             },
+                //             {
+                //                 path: 'ooey/burps.txt',
+                //                 type: 'tree'
+                //             },
+                //             {
+                //                 path: 'ooey/snurfs.txt',
+                //                 type: 'tree'
+                //             },
+                //             {
+                //                 path: 'ooey/juice.txt',
+                //                 type: 'blob'
+                //             },
+                //             {
+                //                 path: 'abcdef',
+                //                 type: 'blob'
+                //             },
+                //             {
+                //                 path: 'abc/ef',
+                //                 type: 'blob'
+                //             },
+                //             {
+                //                 path: 'abc',
+                //                 type: 'blob'
+                //             },
+                //             {
+                //                 path: 'a',
+                //                 type: 'tree'
+                //             },
+                //             {
+                //                 path: 'a/b/clum/d/e',
+                //                 type: 'tree'
+                //             },
+                //             {
+                //                 path: 'a/b/clum/d/asdf',
+                //                 type: 'blob'
+                //             },
+                //             {
+                //                 path: 'a/b/clum/d/AAAA',
+                //                 type: 'blob'
+                //             },
+                //             {
+                //                 path: 'a/b/clum/d',
+                //                 type: 'tree'
+                //             },
+                //             {
+                //                 path: 'a/b/clum/test.txt',
+                //                 type: 'blob'
+                //             },
+                //             {
+                //                 path: 'a/b/clum',
+                //                 type: 'tree'
+                //             },
+                //             {
+                //                 path: 'a/b',
+                //                 type: 'tree'
+                //             }
+                //         ]
+                //     };
+                //     this.then = (r) => (r(this));
+                // })())
+                .then((resp) => {
+                    console.log(resp);
+                    var fobs = resp.data.tree.map((o) => { return { p: o.path, d: o.type === 'tree' } });
+                    fobs = fobs.sort((a, b) => a.p.localeCompare(b.p));
+                    console.log(fobs);
+                    document.getElementById('out').innerHTML =
+                        zip(fobs, (fobs.slice(1))).map(os => (() => {
+                            const o = os[0];
+                            const no = os[1];
+                            // var padding = s.split('/').slice(0, -1).join('/').split('').map(o=>'-');
+                            var padding = o.p.split('');
+                            console.log(padding)
+                            var i = padding.lastIndexOf('/');
+                            // if (o.p.split('/').length > 2) i += 2;
+                            if (i < 0) return '';
+                            const lhs = o.p.split('/').slice(0, -1).join('/').split('').map(c => { switch (c) { case '/': return '|'; break; default: return '&nbsp;' } }).join('')
+                            if (o.p.split('/').slice(0, -1).join('') === no?.p.split('/').slice(0, -1).join('')) return lhs + '├';
+                            // if (i >= 0) return '&nbsp;'.repeat(i) + '└';
+                            return lhs + '└';
+                        })()
+                            + '<a href="./' + os[0].p + '">' + os[0].p.split('/').slice(-1) + '</a>' + (os[0].d && ((((os[1] === undefined || !os[1]?.p.includes(os[0].p)) && '-') || '┐')) || ''))
+                            .join('<br>');
+                });
+        })());
+    </script>
+    <div id="out"></div>
+</body>
+
+</html>
