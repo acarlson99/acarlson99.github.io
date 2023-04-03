@@ -13,11 +13,12 @@
     <script src="https://requirejs.org/docs/release/2.3.5/minified/require.js"></script>
     <script type="module">
         import { Octokit, App } from "https://cdn.skypack.dev/octokit";
-        ((() => {
+        var apikey = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+        const docgen = (apikey) => {
             const zip = (a, b) => a.map((k, i) => [k, b[i]]);
 
             const octokit = new Octokit({
-                auth: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+                auth: apikey,
             });
 
             octokit
@@ -137,7 +138,9 @@
                             + '<a href="./' + os[0].p + '">' + os[0].p.split('/').slice(-1) + '</a>' + (os[0].d && ((((os[1] === undefined || !os[1]?.p.includes(os[0].p)) && '-') || '┐')) || ''))
                             .join('<br>');
                 });
-        })());
+        };
+        docgen(apikey);
+        document.docgen = docgen;
     </script>
     <div id="out"></div>
 </body>
