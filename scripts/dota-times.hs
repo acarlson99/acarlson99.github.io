@@ -31,7 +31,7 @@ main = do
     "html":_ -> htmlGen maxMin lts
     _ -> asciiGen maxMin lts
   where
-    maxMin = 35::Int
+    maxMin = 70::Int
     lists = liftM2 (,) fst (takeWhile (<=maxMin) . snd) <$> [
         ("gold", [0,3 ..]),
         ("wisdom", [7,14 ..]),
