@@ -32,7 +32,6 @@
 
 	  function roshAegisTime() {
 		agt = Number(document.getElementById('aegistime').value.replace(':', '').replace(' ', ''));
-		if (agt <= 5) agt *= 100;
 		ct = Number(document.getElementById('clocktime').value.replace(':', '').replace(' ', ''));
 		document.getElementById('roshtime').value = ct - (500 - agt);
 		roshTime();
