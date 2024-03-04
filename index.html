@@ -89,7 +89,10 @@
     ws = Array(...words.entries()).map(w => [t[w[0] % t.length], ...w])
     ws.sort()
 
-    targetWords = ['mutineers', 'joust']
+    targetWords = ['mutineers', 'joust', 'rosh-timer']
+    paths = {
+      'rosh-timer': 'static/rosh.html'
+    }
 
     // splice word `W` into string `S` starting at position `I`
     spliceWord = (w, i, s, ln) => s.slice(0, i) + w + s.slice(i + ln)
@@ -104,14 +107,17 @@
       console.log(ws[i][2])
       console.log(ws[i])
     }
-    ws.sort((a, b) => (a[1] > b[1]))
+    ws = ws.sort((a, b) => (a[1] - b[1]))
     words = ws.map(l => l[2])
 
     var p = document.createElement("p")
     // console.log(words.join('<br>').replaceAll(' ', '&nbsp;'))
     let html = words.join('<br>').replaceAll(' ', '&nbsp;')
     for (let target of targetWords) {
-      html = spliceWord('<a href="' + target + '">' + target + '</a>', html.indexOf(target), html, target.length)
+      if (paths[target] == undefined) {
+        paths[target] = target
+      }
+      html = spliceWord('<a href="' + paths[target] + '">' + target + '</a>', html.indexOf(target), html, target.length)
     }
     p.innerHTML = html;
     document.getElementById("code").appendChild(p)
