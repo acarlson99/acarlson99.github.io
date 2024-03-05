@@ -6,12 +6,16 @@
   <style>
     body {
       font-family: monospace;
+      margin: auto;
+    }
+    b, strong {
+      color: red;
     }
   </style>
   <title>Greetings</title>
 </head>
 
-<body style="margin: auto;"><code id="code"></code>
+<body><code id="code"></code>
   <script>
 
     const randomElement = (array) => array[Math.floor(Math.random() * array.length)];
@@ -130,15 +134,21 @@
       let target = linkDict[line.i]
       if (target) {
         let targetLen = target.str.length
-        let i = 0
-        let cnt = 50;
-        containsSpecialChar = (s) => (s.indexOf('`') >= 0 || s.indexOf('\''))
-        do {
-          cnt -= 1
-          i = getRandomInt(line.str.length - targetLen)
-        } while (containsSpecialChar(target.str.slice(i, i + targetLen)) && cnt > 0)
+        let i = getRandomInt(line.str.length - targetLen)
+        let diff = 7 // good prime number by which to shift; should be coprime
+        let firstI = i;
+        if (i > (line.str.length - targetLen) / 2) {
+          diff *= -1
+        }
+        containsSpecialChar = (s) => (s.indexOf('`') >= 0 || s.indexOf('\'') >= 0)
+        while (containsSpecialChar(line.str.slice(i, i + targetLen))) {
+          i += diff
+          let n = line.str.length - targetLen
+          i = (i + n) % n
+          if (i == firstI) { break }
+        }
         p.innerHTML += line.str.slice(0, i).replaceAll(' ', '&nbsp')
-        p.innerHTML += target.str.link(target.path)
+        p.innerHTML += target.str.link(target.path).bold()
         p.innerHTML += line.str.slice(i + targetLen).replaceAll(' ', '&nbsp')
       } else {
         p.innerHTML += line.str.replaceAll(' ', '&nbsp')
