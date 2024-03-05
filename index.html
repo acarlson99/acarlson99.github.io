@@ -11,13 +11,13 @@
   <title>Greetings</title>
 </head>
 
-<body><code id="code"></code>
+<body style="margin: auto;"><code id="code"></code>
   <script>
 
     const randomElement = (array) => array[Math.floor(Math.random() * array.length)];
     const getRandomInt = (max) => Math.floor(Math.random() * max);
 
-    splashes = [
+    const splashes = [
       `;; ............... .                             ............,
 ;; .............                    ,(##(/,         .........,
 ;; ...........                   .#.,%#%%##((((       .......,
@@ -47,80 +47,104 @@
 ;; .....,#%%##%%%%%&&&&&&&&%%%%%&&&&&%&&&&&&%%%%%%%&%%%%&@&&&%
 ;; ....#%&&%&&&&%%%&@&&&&&%%%%%&&&&@&&&&&&&&&%%%%%&%%%%&&@@@&%
 ;; ...#(######%%&&@&@@&&&&&&&%&&&&@&&&&&&&&&&&%%%&%%%&&&@@@@&%`,
-//       `;;                            -:*vJzvvvlv1zxc>:-
-// ;;                       \`^]O#qz?*|zyoZZoy}vvi\\xakur-
-// ;;                    ,zDQNJriLumf?'-,?qNRRRW#QD2>^uQMu:
-// ;;                 -/MQB9>\\6RqHKkXUq:   \\#RRRRRR8NQkr>PBNt.
-// ;;               'aQ#MD>cR$wwwwwwwwwD^   7NRRRRRRRR8#&r^ddBa,
-// ;;             'FQNRNZ:RqwwwmmmmmmmwXM'   ORRRRRRRRRRRB9,wKKBe-
-// ;;            ,NQRRNo;#Pwwmmmmmmmmmwwku   :BRRRRRRRRRRRgN'mqUHB;
-// ;;           ^QNRRgj:QPwmmmmmmmmmmmmmwg    {gRRRRRRRRRRRg#-O969Q7
-// ;;          ?QWRRR#'#kwwmmmmmmmmmmmmmXR     U&RRRRRRRRRRR#a~N6UUQF
-// ;;         ;@WRRRNvcBwwmmmmmmmmmmmmmwK/';   \`8RRRRRRRRRRR8Q\`m6UUUQL
-// ;;        \`QNRRRRB:UDwmmmmmmmmmmmmmwkP;D9e   ~#RRRRRRRRRRRQ:\\O6UU9Q,
-// ;;        zQRRRRRQ,qDwmmmmmmmmmmmmwE9:Rww9u   iNRRRRRRRRRRQ;|O666U89
-// ;;       \`QNRRRRRQ"FgwmmmmmmmmmmwwUm'DXwmwH*   ogRRRRRRRR8Q.j9666U6@.
-// ;;       ;@RRRRRRBc;QwwmmmmmmmmwXKF\`6Pwmmww&,   XWRRRRRRRgd-g6U66UUQ?
-// ;;       \\@RRRRRRN#rFMXwmmmmmmwwdL j$wmmmwwXH\`   ENRRRRR8Q~oO6U66U6#x
-// ;;       \\@RRRRRR&@x/UDwwmmmwXwH? 7Kwwmmmmmwkm    yN8&RRQ?|R6U666U6#J
-// ;;       ;@8RRRRRRQ@ivkRXwwwwwH= ^DwwmmmmmmwwO|    egR&Q?:&666666U6Q*
-// ;;       \`QNRRRRRRN@O;maN9wwXH; :RXwwmmmmmmmmwM,    wBO,-g6UU666U6U@-
-// ;;        /QRRRRRRRQHZhJ^/dH9' 'RwwwmmmmmmmmmwXH\`  _;;,,eK6U6666UUWk
-// ;;         ##RRRRRRQR6$R   ;zRBDXXwmmmmmmmmwwwXdRv/'  PrQ666666U6qQ'
-// ;;         ,QNRRRRRQxeK6R;    '>1Z$DRHdddDRdh27;\`    \`PvQ66666UUUQ=
-// ;;          ;QgRRRRgBezg@@QBBBBgqu^--:M|,_7eDBBQgwv=zRjkg666UUU6QJ
-// ;;           :QNRRRRR##Q@##QQ@Q####96\`\`  9NddKUejUDN@QWK6U66UU9Q/
-// ;;            -KQ8RRRR&@PQMq&^      |' \`         \`9m]OUU6UUU6DN:
-// ;;              rBBRRRRNQHg#B;'     'Q:q         rjdD666666HB{\`
-// ;;                \\NQMRRRRWgNQBP\\i  "Q*Q:  ./BDgBQBRUUU66D#J-
-// ;;                  ;6Q#8RRRR&Bqr#-  \`     ~*Bg6U6U666KNDL\`
-// ;;                    \`?XBQN8RNgjav|k\\?;>>X\\vN9UU69R#Kv,
-// ;;                        ,|oO#QQWq~D\`N\`F,DeQ&g#Hez;\`
-// ;;                             \`,;?ctFy2yfz/r:'`
+      `;;                            -:*vJzvvvlv1zxc>:-
+;;                       "^]O#qz?*|zyoZZoy}vvi\\xakur-
+;;                    ,zDQNJriLumf?"-,?qNRRRW#QD2>^uQMu:
+;;                 -/MQB9\`\\6RqHKkXUq'   \`RRRRRRR8NQkr'PBNt.
+;;               "aQ#MD>\`R$wwwwwwwwwD'  \`7NRRRRRRRR88&r'ddBa,
+;;             "FQNRNZ\`RqwwwmmmmmmmwXM'  \`ORRRRRRRRRRRB9'wKKBe-
+;;            ,NQRRNo;\`Pwwmmmmmmmmmwwku'  \`BRRRRRRRRRRRgN'mqUHB;
+;;           ^QNRRgj\`QPwmmmmmmmmmmmmmwg'   \`gRRRRRRRRRRRgg'O969Q7
+;;          ?QWRRR#"\`kwwmmmmmmmmmmmmmXR'   \`U&RRRRRRRRRRRRa'N6UUQF
+;;         ;@WRRRNv\`BwwmmmmmmmmmmmmmwK'";   \`8RRRRRRRRRRR8Q'm6UUUQL
+;;        "QNRRRRB\`UDwmmmmmmmmmmmmmwkP'\`9e'  \`RRRRRRRRRRRRQ'\\O6UU9Q,
+;;        zQRRRRRQ\`qDwmmmmmmmmmmmmwE9'\`ww9u' \`iNRRRRRRRRRRQ'|O666U89
+;;       "QNRRRRRQ\`FgwmmmmmmmmmmwwUm'\`XwmwH'  \`ogRRRRRRRR8Q'j9666U6@.
+;;       ;@RRRRRRBc\`QwwmmmmmmmmwXKF'\`Pwmmww&'  \`XWRRRRRRRgd'g6U66UUQ?
+;;       \\@RRRRRRN\`rFMXwmmmmmmwwdL'\`$wmmmwwXH'  \`ENRRRRR8Q'oO6U66U6#x
+;;       \\@RRRRRR&\`x/UDwwmmmwXwH?'\`Kwwmmmmmwkm'  \`yN8&RRQ?'R6U666U6#J
+;;       ;@8RRRRRRQ\`ivkRXwwwwwH' \`DwwmmmmmmwwO'   \`egR&Q?'&666666U6Q*
+;;       "QNRRRRRRN@O\`maN9wwXH' \`RXwwmmmmmmmmwM'   \`wBO'-g6UU666U6U@-
+;;        /QRRRRRRRQHZhJ\`/dH9' \`RwwwmmmmmmmmmwXH'  _;;,,eK6U6666UUWk
+;;         ##RRRRRRQR6$R   \`zRBDXXwmmmmmmmmwwwXdRv/'  PrQ666666U6qQ"
+;;         ,QNRRRRRQxeK6R;    \`>1Z$DRHdddDRdh27j'    "PvQ66666UUUQ=
+;;          ;QgRRRRgBezg@@QBBBBgqu^--:M|,_7eDBBQgwv=zRjkg666UUU6QJ
+;;           :QNRRRRR##Q@##QQ@Q####96""  9NddKUejUDN@QWK6U66UU9Q/
+;;            -KQ8RRRR&@PQMq&^      |" "         "9m]OUU6UUU6DN:
+;;              rBBRRRRNQHg#B;"     "Q:q         rjdD666666HB{"
+;;                \\NQMRRRRWgNQBP\\i  "Q*Q:  ./BDgBQBRUUU66D#J-
+;;                  ;6Q#8RRRR&Bqr#-  "     ~*Bg6U6U666KNDL"
+;;                    "?XBQN8RNgjav|k\\?;>>X\\vN9UU69R#Kv,
+;;                        ,|oO#QQWq~D"N"F,DeQ&g#Hez;"
+;;                             ",;?ctFy2yfz/r:"
+`
     ]
 
-    words = randomElement(splashes).split('\n')
-
-    // ensure all words are same length
-    // words.reduce((a,b) => Math.max(a,b.length),0)
-
-    t = String(Date.now()).slice(0,words.length).split('').map(Number)
-    // ws = Array(...words.entries()).map(w => [getRandomInt(words.length * 10), ...w])
-    ws = Array(...words.entries()).map(w => [t[w[0] % t.length], ...w])
-    ws.sort()
-
-    targetWords = ['mutineers', 'joust', 'rosh-timer']
-    paths = {
-      'rosh-timer': 'static/rosh.html'
+    const t = String(Date.now()).split('').map(Number).reverse()
+    const splashSelectorIdx = 6 // changes semi-frequently
+    const lines = splashes[t[6] % splashes.length].split('\n')
+    // ensure all lines are same length
+    // lines.reduce((a,b) => Math.max(a,b.length),0)
+    let ls = Array(...lines.entries()).map(w => {
+      return {
+        rand: t[w[0] % t.length],
+        i: w[0],
+        str: w[1],
+      }
+    })
+    ls.sort((a, b) => a.rand - b.rand)
+    let links = [
+      {
+        str: 'mutineers',
+        path: 'mutineers'
+      }, {
+        str: 'joust',
+        path: 'mutineers'
+      }, {
+        str: 'rosh-timer',
+        path: 'static/rosh.html'
+      }]
+    const randIdxs = ls.slice(0, links.length).map(a => a.i)
+    links = Array(...links.entries()).map(([i, a]) => {
+      return {
+        str: a.str,
+        path: a.path,
+        i: randIdxs[i]
+      }
+    })
+    let linkDict = {}
+    for (let w of links) {
+      linkDict[w.i] = w
     }
 
     // splice word `W` into string `S` starting at position `I`
-    spliceWord = (w, i, s, ln) => s.slice(0, i) + w + s.slice(i + ln)
+    // spliceWord = (w, i, s, ln) => s.slice(0, i) + w + s.slice(i + ln)
 
-    for (let [i, target] of targetWords.entries()) {
-      console.log(i, target)
-      str = ws[i][2]
-      sidx = getRandomInt(str.length - target.length)
-
-      console.log(ws[i][2])
-      ws[i][2] = spliceWord(target, sidx, str, target.length)
-      console.log(ws[i][2])
-      console.log(ws[i])
-    }
-    ws = ws.sort((a, b) => (a[1] - b[1]))
-    words = ws.map(l => l[2])
-
-    var p = document.createElement("p")
-    // console.log(words.join('<br>').replaceAll(' ', '&nbsp;'))
-    let html = words.join('<br>').replaceAll(' ', '&nbsp;')
-    for (let target of targetWords) {
-      if (paths[target] == undefined) {
-        paths[target] = target
+    ls.sort((a, b) => (a.i - b.i))
+    var p = document.getElementById('code')
+    for (let line of ls) {
+      if (line.i > 0) {
+        p.appendChild(document.createElement('br'))
       }
-      html = spliceWord('<a href="' + paths[target] + '">' + target + '</a>', html.indexOf(target), html, target.length)
+
+      let target = linkDict[line.i]
+      if (target) {
+        let targetLen = target.str.length
+        let i = 0
+        let cnt = 50;
+        containsSpecialChar = (s) => (s.indexOf('`') >= 0 || s.indexOf('\''))
+        do {
+          cnt -= 1
+          i = getRandomInt(line.str.length - targetLen)
+        } while (containsSpecialChar(target.str.slice(i, i + targetLen)) && cnt > 0)
+        p.innerHTML += line.str.slice(0, i).replaceAll(' ', '&nbsp')
+        p.innerHTML += target.str.link(target.path)
+        p.innerHTML += line.str.slice(i + targetLen).replaceAll(' ', '&nbsp')
+      } else {
+        p.innerHTML += line.str.replaceAll(' ', '&nbsp')
+      }
     }
-    p.innerHTML = html;
-    document.getElementById("code").appendChild(p)
+    p.innerHTML = p.innerHTML.split('<br>').map(l => l.replaceAll(/`[^'`]*['`]/g, (s) => s.bold())).join('<br>')
 
   </script>
 </body>
