@@ -7,9 +7,13 @@
     body {
       font-family: monospace;
       margin: auto;
+      background-color: black;
+      color: orange;
     }
-    b, strong {
-      color: red;
+
+    b,
+    strong {
+      color: purple;
     }
   </style>
   <title>Greetings</title>
@@ -81,12 +85,43 @@
 ;;                    "?XBQN8RNgjav|k\\?;>>X\\vN9UU69R#Kv,
 ;;                        ,|oO#QQWq~D"N"F,DeQ&g#Hez;"
 ;;                             ",;?ctFy2yfz/r:"
+`,
+      `;;                           \`MOEeajFlx1xJ{u2ekD'
+;;                       \`DPoeXwmeauz7'\\1/\`7vlF}zv2h'
+;;                   \`&Ea6khEPwu\\1':::::_~,,,,,:;\`LzvLu'
+;;                 \`9wq996kEX7^';;;:::::_~,,,,,’’’’’:\`i7/l'
+;;               \`eqKKq9$6ku=';\`r??'::::_~:;;:,’’’’.---\`*i/c'
+;;             \`mOOOKKq9$6S'^\`rumeeZJ':::\`juuFv'’’’.---‘‘’\`//7'
+;;            \`kHdOOKKq9$m?'^\`iwmeeZa|':\`yjufFl'’’’.---‘‘‘‘’\`l|'
+;;          \`aDDHdOOKKq9$}'^^;\`iaeeS/'::_\`zuuJ|'’’’.---‘‘‘‘‘‘_\`||'
+;;         \`eRDDHdOOKKq9$z'^^;;;;;;:::::_~,~~,,’’’’.---‘‘‘‘‘‘ \`||L'
+;;         \`RRDDHdOOKKq9$yr'^;;;;;;\`|{S2l|',,,,’’’’.---‘‘‘‘‘‘  \`*|'
+;;        \`HRRDDHdOOKKq9$k7'^;;;;;\`raaoS2j|',,,’’’’.---‘‘‘‘‘‘   \`||'
+;;       \`a&RRDDHdOOKKq9$6X*';;;;;;\`2aoS2ur',,,’’’’.---‘‘‘‘‘‘   \`r|*'
+;;       \`&&RRDDHdOOKKq9$66m7';;;;;:\`*\\1?:',,,,’’’’.---‘‘‘‘‘‘    \`|?'
+;;       \`M&RRDDHdOOKKq9$6kEPoi';;;:::::_~,,,,,’’’’.---‘‘‘‘‘‘    \`=|'
+;;       \`M&RRDDHdOOKKq9$6kEEPXmf7?';:::_~,,,,,’’’’.---‘‘‘‘‘‘    \`ca'
+;;       \`M&RRDDHdOOKKq9$6kEEPXXmeeZaojuFzc|'",’’’’.---‘‘‘‘‘‘    \`c|'
+;;       \`M&RRDDHdOOKKq9$6kEEPXwmeeZaaoS2jjuuFv',’’.---‘‘‘‘‘‘    \`>?'
+;;       \`M&RRDDHdOOKKq9$6kEEPXwmeeZaliL7ujufFF}z'’.---‘‘‘‘‘‘    \`|?'
+;;       \`X&RRDDHdOOKKq9$6kEEPXwmeeo':::_\`iufFl}{x',---‘‘‘‘‘‘    \`|r'
+;;        \`HRRDDHdOOKKq9$6kEEPXwmee}':::_~\`ufFl}{xJ'.--‘‘‘‘‘‘   \`||'
+;;         \`RRDDHdOOKKq9$6kEEPXwmeeZi':::\`luuFl}{xJz'--‘‘‘‘‘‘  \`*|'
+;;         \`PRDDHdOOKKq9$6kEEPXwmeeZaouFjyjuuFl}{xJz'--‘‘‘‘‘‘ \`*||'
+;;          \`eDDHdOOKKq9$6kEEPXl';;\`vooS2'^:"\`={{xJz'--‘‘‘‘‘‘\`?\\1'
+;;            \`KHdOOKKq9$6kEEPJ';;;:\`ioS{',,,,\`?{xJz'--‘‘‘‘\`:\\1z'
+;;             \`PdOOKKq9$6kEEP2r';;:\`}oSu',,,\`ni{xJ'---‘‘-\`\\1/'
+;;               \`XOKKq9$6kEEPXet7izoaoSSu7?*\\1}tv'’---’\`/i/'
+;;                 \`w6q9$6kEEPXwmeeZaaoS2jjuuFlt',’.,;\`7L7'
+;;                   \`Oew$kEEPXwmeeZaaoS2jjuFLr':^\`cv7vm'
+;;                      \`D9aaPXwmeeZaaoSju{vivJl{7xad'
+;;                           \`8OPeojFlx1xx}uSekR'
 `
     ]
 
     const t = String(Date.now()).split('').map(Number).reverse()
-    const splashSelectorIdx = 6 // changes semi-frequently
-    const lines = splashes[t[6] % splashes.length].split('\n')
+    const splashSelectorIdx = 5 // changes semi-frequently (~3h)
+    const lines = splashes[t[splashSelectorIdx] % splashes.length].split('\n')
     // ensure all lines are same length
     // lines.reduce((a,b) => Math.max(a,b.length),0)
     let ls = Array(...lines.entries()).map(w => {
