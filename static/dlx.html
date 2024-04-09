@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <script src="dlx.js"></script>
+    <script src="tab.js"></script>
+</head>
+
+<body>
+
+    <table id="myTable">
+        <tr>
+            <td>
+                v>
+            </td>
+        </tr>
+    </table>
+
+    <input type="button" onclick="newCol()" value="new col">
+    <input type="button" onclick="delCol()" value="del col">
+    <input type="button" onclick="newRow()" value="new row">
+    <input type="button" onclick="delRow()" value="del row">
+
+    <script>
+        for (var i = 0; i < 5; i++) {
+            newRow();
+            newCol();
+        }
+    </script>
+
+</body>
+
+</html>
