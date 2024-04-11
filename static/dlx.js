@@ -30,6 +30,8 @@ function gothing(X, Y) {
 
     X = Object.keys(X).reduce((acc, j) => {
         acc[j] = new Set();
+        // TODO: change this set<char> to a map<char,int>
+        // acc[j] = {};
         return acc;
     }, {});
 
