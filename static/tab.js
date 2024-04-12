@@ -34,7 +34,7 @@ function newCol() {
         let x = i; // x-coordinate (row index)
 
         newCell.appendChild(newInput(x, y))
-        console.log(i, y)
+        // console.log(i, y)
     }
 }
 
@@ -106,7 +106,7 @@ function cellValueOrPlaceholder(cell) {
 function tabToDLX() {
     let table = document.getElementById("myTable");
     let rowHeader = table.rows[0];
-    console.log(rowHeader);
+    // console.log(rowHeader);
     let m = {};
     let s = new Set();
     for (let i = 1; i < rowHeader.cells.length; i++) {
@@ -116,13 +116,13 @@ function tabToDLX() {
     }
 
     let Ys = {};
-    console.log(m)
+    // console.log(m)
     for (let y = 1; y < table.rows.length; y++) {
         let name = cellValueOrPlaceholder(table.rows[y].cells[0]);
         if (!Ys[name]) Ys[name] = [];
         else console.warn("duplicate name detected", name)
         for (let x = 1; x < table.rows[y].cells.length; x++) {
-            console.log(x, y)
+            // console.log(x, y)
             let val = cellValueOrPlaceholder(table.rows[y].cells[x]);
             if (val == "1") {
                 Ys[name].push(x)
@@ -152,7 +152,7 @@ function rowIdentIdx(v) {
     let r = tab.rows;
     for (let i = 1; i < r.length; i++) {
         let e = r[i].cells[0];
-        console.log(e);
+        // console.log(e);
         if (cellValueOrPlaceholder(e) == v) {
             return i;
         }
@@ -168,7 +168,7 @@ function rowIdentIdx(v) {
 // TODO: below functions should work async (sorta)
 
 cbDel = async function (r, c) {
-    console.log("DEL", r, c);
+    // console.log("DEL", r, c);
 
     let col = rowIdentIdx(c);
     // let id = col + ',' + r;
@@ -182,7 +182,7 @@ cbDel = async function (r, c) {
 }
 
 cbAdd = async function (r, c) {
-    console.log("ADD", r, c);
+    // console.log("ADD", r, c);
 
     let col = rowIdentIdx(c);
     // let id = col + ',' + r;
