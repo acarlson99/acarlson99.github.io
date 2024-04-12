@@ -1,15 +1,32 @@
 // knuth dancing links adapted from
 // https://www.cs.mcgill.ca/~aassaf9/python/algorithm_x.html
 
-let X = new Set([1, 2, 3, 4, 5, 6, 7]);
+let X = new Set([1, 2, 3, 4, 5]);
+// TODO: add this to UI
+// this specifies how many tiles should occupy a column in `X`
+let targets = {
+    1: 1,
+    2: 1,
+    3: 2,
+    4: 1,
+    5: 1,
+}
+// TODO: auto-populate UI with this chart
 let Y = {
-    'A': [1, 4, 7],
-    'B': [1, 4],
-    'C': [4, 5, 7],
-    'D': [3, 5, 6],
-    'E': [2, 3, 6, 7],
-    'F': [2, 7]
+    'A': [2, 3, 4],
+    'B': [1, 2, 4, 5],
+    'C': [1, 5],
+    'D': [1, 2, 3, 4],
+    'E': [3],
 };
+// {
+//     'A': [1, 4, 7],
+//     'B': [1, 4],
+//     'C': [4, 5, 7],
+//     'D': [3, 5, 6],
+//     'E': [2, 3, 6, 7],
+//     'F': [2, 7]
+// };
 // X = new Set([1, 2, 3, 4, 5]);
 // Y = {
 //     'A': [2, 3, 4],
@@ -18,6 +35,8 @@ let Y = {
 //     'D': [1, 2, 3, 4],
 //     'E': [3],
 // };
+
+let strState = () => JSON.stringify(X) + JSON.stringify(Y) + JSON.stringify(targets);
 
 var cbDel = function () { };
 var cbAdd = function () { };
@@ -46,7 +65,7 @@ function gothing(X, Y) {
     let solutions = solve(X, Y);
     let agg = [];
     for (let solution of solutions) {
-        // console.log('SOL:', solution);
+        console.log('SOL:', solution);
         agg.push(solution);
     }
     return agg;
@@ -85,6 +104,8 @@ function* solve(X, Y, solution) {
     }
 }
 
+let EMPTY_PLACEHOLDER = null;
+
 function select(X, Y, r) {
     let cols = [];
     for (let j of Y[r]) {
@@ -99,8 +120,13 @@ function select(X, Y, r) {
                 }
             }
         }
-        cols.push([...X[j]]);
-        delete X[j];
+        targets[j]--;
+        if (targets[j] <= 0) {
+            cols.push([...X[j]]);
+            delete X[j];
+        } else {
+            cols.push(EMPTY_PLACEHOLDER);
+        }
     }
     return cols;
 }
@@ -109,7 +135,10 @@ function deselect(X, Y, r, cols) {
     let keys = Y[r];
     for (let i = keys.length - 1; i >= 0; i--) {
         let j = keys[i];
-        X[j] = new Set(cols.pop());
+        // let xj = cols.pop();
+        let xj = cols.pop();
+        if (xj !== EMPTY_PLACEHOLDER) X[j] = new Set(xj); // TODO: this could be a dict merge
+        targets[j]++;
         // console.log("cols:", cols, X[j])
         // console.log('desel', j, X[j]);
         for (let i of X[j]) {
@@ -125,4 +154,4 @@ function deselect(X, Y, r, cols) {
     }
 }
 
-gothing(X, Y);
+console.log(gothing(X, Y));
