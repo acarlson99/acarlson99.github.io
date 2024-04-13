@@ -10,11 +10,37 @@ let targets = {
     3: 2,
     4: 1,
     5: 1,
+};
+let amounts = {
+    'A': {
+        2: 1,
+        3: 1,
+        4: 1,
+    },
+    'B': {
+        1: 1,
+        2: 1,
+        4: 1,
+        5: 1,
+    },
+    'C': {
+        1: 1,
+        5: 1,
+    },
+    'D': {
+        1: 1,
+        2: 1,
+        3: 1,
+        4: 1,
+    },
+    'E': {
+        3: 2,
+    },
 }
 // TODO: auto-populate UI with this chart
 let Y = {
     'A': [2, 3, 4],
-    'B': [1, 2, 4, 5],
+    'B': [1, 2, 4, 5], // TODO: this should allow for overlapping one column multiple times
     'C': [1, 5],
     'D': [1, 2, 3, 4],
     'E': [3],
@@ -94,6 +120,15 @@ function* solve(X, Y, solution) {
         for (let r of [...X[c]]) {
             solution.push(r);
             let cols = select(X, Y, r);
+            let cset = new Set();
+            for (const col of cols) {
+                col?.forEach(e => Y[e].forEach(e2 => cset.add(e2)));
+            }
+            for (let col of cset) {
+                if (targets[col] < 0)
+                    console.warn(("bad-- col < 0"));
+            }
+            // }
             // console.log("cols = ", cols)
             for (let s of solve(X, Y, solution)) {
                 yield s;
@@ -120,7 +155,10 @@ function select(X, Y, r) {
                 }
             }
         }
-        targets[j]--;
+        // TODO: change this to allow one tile to cover the same column multiple times
+        // targets[j]--;
+        // console.log(r, j, amounts, amounts[r][j]);
+        targets[j] -= amounts[r][j];
         if (targets[j] <= 0) {
             cols.push([...X[j]]);
             delete X[j];
@@ -138,7 +176,9 @@ function deselect(X, Y, r, cols) {
         // let xj = cols.pop();
         let xj = cols.pop();
         if (xj !== EMPTY_PLACEHOLDER) X[j] = new Set(xj); // TODO: this could be a dict merge
-        targets[j]++;
+        // TODO: change this to allow one tile to cover the same column multiple times
+        // console.log(r, j, amounts, amounts[r][j])
+        targets[j] += amounts[r][j];
         // console.log("cols:", cols, X[j])
         // console.log('desel', j, X[j]);
         for (let i of X[j]) {
