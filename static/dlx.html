@@ -29,8 +29,9 @@
     <input type="button" onclick="console.log(go()); alert('open the console')" value="solve">
 
     <script>
-        dlxToTab(X, Y, targets, amounts);
-        // console.log(go());
+        if (new URL(document.location.href).searchParams.size > 0) loadTabFromStateURL();
+        else dlxToTab(X, Y, targets, amounts);
+        console.log(go());
     </script>
 
 </body>

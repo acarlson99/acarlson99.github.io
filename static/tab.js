@@ -344,6 +344,7 @@ function _testRoundtripStateURL(X, Y, targets, amounts) {
 }
 
 // TODO: auto-update URL when changing state
+// TODO: auto-populate table from URL when page loads
 function loadTabFromStateURL() {
     // s ~ "x=X&y=YS&as=AS&ts=TS"
     let s = new URL(document.location.href).searchParams.toString();
@@ -368,7 +369,10 @@ function loadTabFromStateURL() {
 
 function go() {
     let xy = tabToDLX();
+    console.log("go for", xy);
     // document.location.search = encodeStateURL(xy.x, xy.y, xy.targets, xy.amounts)
+    let url = new URL(window.location);
+    window.history.replaceState({}, "", url.pathname + '?' + encodeStateURL(xy.x, xy.y, xy.targets, xy.amounts))
     return gothing(xy.x, xy.y, xy.targets, xy.amounts);
 }
 
