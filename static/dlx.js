@@ -2,7 +2,6 @@
 // https://www.cs.mcgill.ca/~aassaf9/python/algorithm_x.html
 
 let X = new Set([1, 2, 3, 4, 5, 6, 7]);
-// TODO: add this to UI
 // this specifies how many tiles should occupy a column in `X`
 let targets = {
     1: 1,
@@ -43,14 +42,13 @@ let amounts = {
         7: 1,
     },
 }
-// TODO: auto-populate UI with this chart
 let Y = {
-    'A': [2, 3, 4],
-    'B': [1, 2, 4, 5], // TODO: this should allow for overlapping one column multiple times
-    'C': [1, 5],
-    'D': [1, 2, 3, 4],
-    'E': [3],
-    'F': [6, 7],
+    'A': new Set([2, 3, 4]),
+    'B': new Set([1, 2, 4, 5]),
+    'C': new Set([1, 5]),
+    'D': new Set([1, 2, 3, 4]),
+    'E': new Set([3]),
+    'F': new Set([6, 7]),
 };
 // {
 //     'A': [1, 4, 7],
@@ -74,19 +72,19 @@ let strState = () => JSON.stringify(X) + JSON.stringify(Y) + JSON.stringify(targ
 var cbDel = function () { };
 var cbAdd = function () { };
 
-function gothing(X, Y) {
+function gothing(X, Y, ts, amts) {
+    targets = ts;
+    amounts = amts;
     for (let j of X) {
         if (!targets[j]) targets[j] = 1;
     }
     X = [...X].reduce((acc, j) => {
-        acc[j] = new Set(Object.keys(Y).filter(i => Y[i].includes(j)));
+        acc[j] = new Set(Object.keys(Y).filter(i => Y[i].has(j)));
         return acc;
     }, {});
 
     X = Object.keys(X).reduce((acc, j) => {
         acc[j] = new Set();
-        // TODO: change this set<char> to a map<char,int>
-        // acc[j] = {};
         return acc;
     }, {});
 
@@ -163,7 +161,8 @@ let EMPTY_PLACEHOLDER = null;
 
 function select(X, Y, r) {
     let cols = [];
-    for (let j of Y[r]) {
+    let ys = [...Y[r]].sort();
+    for (let j of ys) {
         // console.log('gnsel', j, Object.keys(X))
         for (let i of X[j]) {
             for (let k of Y[i]) {
@@ -190,7 +189,7 @@ function select(X, Y, r) {
 }
 
 function deselect(X, Y, r, cols) {
-    let keys = Y[r];
+    let keys = [...Y[r]].sort();
     for (let i = keys.length - 1; i >= 0; i--) {
         let j = keys[i];
         // let xj = cols.pop();

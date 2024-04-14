@@ -117,7 +117,7 @@ function delRow() {
 
 function go() {
     let xy = tabToDLX();
-    return gothing(xy.x, xy.y)
+    return gothing(xy.x, xy.y, xy.targets, xy.amounts);
 }
 
 function cellValueOrPlaceholder(cell) {
@@ -135,7 +135,6 @@ function getTableCols() {
     return table.rows[0].cells.length
 }
 
-// TODO: function to set row/col size to w,h
 function setTabW(w) {
     let n = w - getTableCols();
     for (let i = 0; i < Math.abs(n); i++) {
@@ -147,7 +146,6 @@ function setTabW(w) {
     }
 }
 
-// TODO: function to set row/col size to w,h
 function setTabH(h) {
     let n = h - getTableRows();
     for (let i = 0; i < Math.abs(n); i++) {
@@ -164,12 +162,11 @@ function setTabWH(w, h) {
     setTabW(w);
 }
 
-function dlxToTab(X, Y, targets) {
+function dlxToTab(X, Y, targets, amounts) {
     let w = X.size + 1;
     let h = Object.keys(Y).length + 1;
     setTabWH(w, h);
     let xs = [...X].sort();
-    // TODO: load X and Y into table cells
     for (let j = 0; j < xs.length; j++) {
         const i = xs[j];
         let amtcol = document.getElementById("amt-col-" + i);
@@ -202,7 +199,6 @@ function cellValue(cell) {
 function tabToDLX() {
     let table = document.getElementById("myTable");
     let rowHeader = table.rows[0];
-    // console.log(rowHeader);
     let m = {};
     let s = new Set();
     for (let i = 1; i < rowHeader.cells.length; i++) {
@@ -213,15 +209,18 @@ function tabToDLX() {
 
     let Ys = {};
     let amounts = {};
-    // console.log(m)
+    let targets = {};
+    for (let x = 1; x < table.rows[0].cells.length; x++) {
+        let amtcol = document.getElementById("amt-col-" + x);
+        if (amtcol) targets[x] = Number(amtcol.value);
+        if (!targets[x]) targets[x] = 1;
+    }
     for (let y = 1; y < table.rows.length; y++) {
         let name = cellValueOrPlaceholder(table.rows[y].cells[0]);
         amounts[name] = {};
-        if (!Ys[name]) Ys[name] = [];
+        if (!Ys[name]) Ys[name] = new Set();
         else console.warn("duplicate name detected", name)
         for (let x = 1; x < table.rows[y].cells.length; x++) {
-            // console.log(x, y)
-            let val = cellValueOrPlaceholder(table.rows[y].cells[x]);
             if (cellValue(table.rows[y].cells[x]) == "") continue;
 
             let n = Number(cellValue(table.rows[y].cells[x]));
@@ -231,13 +230,14 @@ function tabToDLX() {
             else {
                 amounts[name][x] = n;
             }
-            Ys[name].push(x);
+            Ys[name].add(x);
         }
     }
     return {
         x: s,
         y: Ys,
         amounts: amounts,
+        targets: targets,
     }
 }
 
