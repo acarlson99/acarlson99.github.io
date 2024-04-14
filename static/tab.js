@@ -241,6 +241,52 @@ function tabToDLX() {
     }
 }
 
+// URL
+
+function encodeStateURL(X, Y, targets, amounts) {
+    let x = btoa(JSON.stringify(X));
+    let y = btoa(JSON.stringify(Y));
+    let ts = btoa(JSON.stringify(targets));
+    let as = btoa(JSON.stringify(amounts));
+
+    return `x=${x}&y=${y}&ts=${ts}&as=${as}`
+}
+
+function decodeStateURL(s) {
+    let params = new URL('http://a?' + s).searchParams;
+    let x = JSON.parse(atob(params.get('x')))
+    let y = JSON.parse(atob(params.get('y')))
+    let as = JSON.parse(atob(params.get('as')))
+    let ts = JSON.parse(atob(params.get('ts')))
+
+    return {
+        x: x,
+        y: y,
+        amounts: as,
+        targets: ts,
+    };
+}
+
+function _testRoundtripStateURL(X, Y, targets, amounts) {
+    let s = encodeStateURL(X, Y, targets, amounts);
+    let o = decodeStateURL(s);
+    let good = true;
+    for (let [want, got] of [
+        [X, o.x],
+        [Y, o.y],
+        [targets, o.targets],
+        [amounts, o.amounts],
+    ]) {
+        if (JSON.stringify(want) != JSON.stringify(got)) {
+            console.warn("bad conversion", want, got)
+            good = false;
+        }
+    }
+    return good;
+}
+
+// END URL
+
 function colIdentIdx(v) {
     let tab = document.getElementById("myTable");
     let r = tab.rows[0];
