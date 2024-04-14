@@ -36,9 +36,11 @@ let amounts = {
     },
     'E': {
         3: 2,
+        6: 1,
     },
     'F': {
-        6: 2,
+        // 6: 2,
+        6: 1,
         7: 1,
     },
 }
@@ -47,7 +49,7 @@ let Y = {
     'B': new Set([1, 2, 4, 5]),
     'C': new Set([1, 5]),
     'D': new Set([1, 2, 3, 4]),
-    'E': new Set([3]),
+    'E': new Set([3, 6]),
     'F': new Set([6, 7]),
 };
 // {
@@ -163,6 +165,11 @@ function select(X, Y, r) {
     let cols = [];
     let ys = [...Y[r]].sort();
     for (let j of ys) {
+        targets[j] -= amounts[r][j];
+        if (targets[j] > 0) {
+            cols.push(EMPTY_PLACEHOLDER);
+            continue;
+        }
         // console.log('gnsel', j, Object.keys(X))
         for (let i of X[j]) {
             for (let k of Y[i]) {
@@ -174,16 +181,8 @@ function select(X, Y, r) {
                 }
             }
         }
-        // TODO: change this to allow one tile to cover the same column multiple times
-        // targets[j]--;
-        // console.log(r, j, amounts, amounts[r][j]);
-        targets[j] -= amounts[r][j];
-        if (targets[j] <= 0) {
-            cols.push([...X[j]]);
-            delete X[j];
-        } else {
-            cols.push(EMPTY_PLACEHOLDER);
-        }
+        cols.push([...X[j]]);
+        delete X[j];
     }
     return cols;
 }
