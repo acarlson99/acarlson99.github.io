@@ -1,14 +1,34 @@
-
 function newInput(x, y) {
     let input = document.createElement("input");
     input.type = "text";
     input.placeholder = x + "," + y
     input.id = x + "," + y;
     input.classList = "row-" + x + ' ' + "col-" + y;
+    // input.style.width = '4em';
+    input.style.width = '8em';
     // input.onchange = function () {
     //     updateCellValue(x, y, input.value);
     // };
     return input
+}
+
+function newColInput(y) {
+    let input = newInput(0, y);
+    input.style.width = '4em';
+    input.placeholder = 'COL ' + y;
+    // let button = document.createElement("button");
+    let amtInp = document.createElement("input");
+    amtInp.type = "text";
+    amtInp.placeholder = "amount";
+    amtInp.id = "amt-col-" + y;
+    amtInp.classList = "input-col-" + y;
+    amtInp.style.width = '4em';
+    amtInp.defaultValue = 1;
+
+    let body = document.createElement("div");
+    body.appendChild(input);
+    body.appendChild(amtInp);
+    return body;
 }
 
 function newCol() {
@@ -21,7 +41,8 @@ function newCol() {
     let y = row.cells.length; // y-coordinate (column index)
 
     let newCell = row.insertCell(-1);
-    let inp = newInput(0, y);
+    // let inp = newInput(0, y);
+    let inp = newColInput(y);
     inp.placeholder = "COL " + y;
     // inp.onchange = function () {
     //     changeColLabelFor(y)
@@ -101,6 +122,77 @@ function go() {
 
 function cellValueOrPlaceholder(cell) {
     return cell.children[0].value || cell.children[0].placeholder
+}
+
+function getTableRows() {
+    let table = document.getElementById("myTable");
+    return table.rows.length
+}
+
+
+function getTableCols() {
+    let table = document.getElementById("myTable");
+    return table.rows[0].cells.length
+}
+
+// TODO: function to set row/col size to w,h
+function setTabW(w) {
+    let n = w - getTableCols();
+    for (let i = 0; i < Math.abs(n); i++) {
+        if (n < 0) {
+            delCol();
+        } else {
+            newCol();
+        }
+    }
+}
+
+// TODO: function to set row/col size to w,h
+function setTabH(h) {
+    let n = h - getTableRows();
+    for (let i = 0; i < Math.abs(n); i++) {
+        if (n < 0) {
+            delRow();
+        } else {
+            newRow();
+        }
+    }
+}
+
+function setTabWH(w, h) {
+    setTabH(h);
+    setTabW(w);
+}
+
+function dlxToTab(X, Y, targets) {
+    let w = X.size + 1;
+    let h = Object.keys(Y).length + 1;
+    setTabWH(w, h);
+    let xs = [...X].sort();
+    // TODO: load X and Y into table cells
+    for (let j = 0; j < xs.length; j++) {
+        const i = xs[j];
+        let amtcol = document.getElementById("amt-col-" + i);
+        if (amtcol) amtcol.value = targets[i] || 1;
+        else console.warn("unable to set col", j);
+        let cell = document.getElementById("0," + i);
+        if (cell) cell.value = i;
+        else console.warn("unable to set col", j);
+    }
+    let i = 0;
+    for (const [k, v] of Object.entries(Y)) {
+        i++;
+
+        let firstCol = document.getElementById(i + ",0");
+        if (firstCol) firstCol.value = k;
+        else console.warn("unable to set row header", i);
+
+        v.forEach(c => {
+            let cell = document.getElementById(i + "," + c);
+            if (cell) cell.value = Number(cell.value) + 1;
+            else console.warn("unable to set cell", i, c);
+        });
+    }
 }
 
 function tabToDLX() {

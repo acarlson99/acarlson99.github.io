@@ -11,12 +11,14 @@
 
 <body>
     Donald Knuth's eponymous Dancing Links, now on the World Wide Web
-    <table id="myTable">
-        <tr>
-            <td>
-                v>
-            </td>
-        </tr>
+    <table id="myTable" frame="void" rules="cols">
+        <tbody>
+            <tr>
+                <td>
+                    v>
+                </td>
+            </tr>
+        </tbody>
     </table>
 
     <input type="button" onclick="newCol()" value="new col">
@@ -26,10 +28,8 @@
     <input type="button" onclick="go(); alert('open the console')" value="solve">
 
     <script>
-        for (var i = 0; i < 5; i++) {
-            newRow();
-            newCol();
-        }
+        dlxToTab(X, Y, targets);
+        console.log(gothing(X, Y));
     </script>
 
 </body>

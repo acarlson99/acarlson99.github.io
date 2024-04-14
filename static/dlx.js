@@ -1,7 +1,7 @@
 // knuth dancing links adapted from
 // https://www.cs.mcgill.ca/~aassaf9/python/algorithm_x.html
 
-let X = new Set([1, 2, 3, 4, 5]);
+let X = new Set([1, 2, 3, 4, 5, 6, 7]);
 // TODO: add this to UI
 // this specifies how many tiles should occupy a column in `X`
 let targets = {
@@ -44,6 +44,7 @@ let Y = {
     'C': [1, 5],
     'D': [1, 2, 3, 4],
     'E': [3],
+    'F': [6, 7],
 };
 // {
 //     'A': [1, 4, 7],
@@ -68,6 +69,9 @@ var cbDel = function () { };
 var cbAdd = function () { };
 
 function gothing(X, Y) {
+    for (let j of X) {
+        if (!targets[j]) targets[j] = 1;
+    }
     X = [...X].reduce((acc, j) => {
         acc[j] = new Set(Object.keys(Y).filter(i => Y[i].includes(j)));
         return acc;
@@ -85,8 +89,14 @@ function gothing(X, Y) {
             X[j].add(i);
         }
     }
-
+    for (let [k, v] of Object.entries(Y)) {
+        if (!amounts[k]) amounts[k] = {};
+        for (let i of v) {
+            if (!amounts[k][i]) amounts[k][i] = 1;
+        }
+    }
     console.log(X, Y)
+    console.log(amounts)
 
     let solutions = solve(X, Y);
     let agg = [];
@@ -124,14 +134,18 @@ function* solve(X, Y, solution) {
             for (const col of cols) {
                 col?.forEach(e => Y[e].forEach(e2 => cset.add(e2)));
             }
+            let good = true;
             for (let col of cset) {
-                if (targets[col] < 0)
-                    console.warn(("bad-- col < 0"));
+                if (targets[col] < 0) {
+                    // console.warn(("bad-- col < 0"));
+                    good = false;
+                }
             }
-            // }
             // console.log("cols = ", cols)
-            for (let s of solve(X, Y, solution)) {
-                yield s;
+            if (good) {
+                for (let s of solve(X, Y, solution)) {
+                    yield s;
+                }
             }
             deselect(X, Y, r, cols);
             solution.pop();
@@ -193,5 +207,3 @@ function deselect(X, Y, r, cols) {
         }
     }
 }
-
-console.log(gothing(X, Y));
