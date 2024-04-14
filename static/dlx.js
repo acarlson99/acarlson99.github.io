@@ -1,6 +1,7 @@
 // knuth dancing links adapted from
 // https://www.cs.mcgill.ca/~aassaf9/python/algorithm_x.html
 
+// TODO: save (in URL) and auto-load labels for X
 let X = new Set([1, 2, 3, 4, 5, 6, 7]);
 // this specifies how many tiles should occupy a column in `X`
 let targets = {
@@ -166,6 +167,11 @@ function select(X, Y, r) {
     let ys = [...Y[r]].sort();
     for (let j of ys) {
         targets[j] -= amounts[r][j];
+        // TODO: this allows duplicate solutions
+        // a solution A B C with duplicates often results in
+        //      [ [ A B C ] [ A C B ] ]
+        // e.g. "apple" "cans" "snapple" "snap" results in duplicates
+        // fix this
         if (targets[j] > 0) {
             cols.push(EMPTY_PLACEHOLDER);
             continue;
