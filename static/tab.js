@@ -189,10 +189,14 @@ function dlxToTab(X, Y, targets) {
 
         v.forEach(c => {
             let cell = document.getElementById(i + "," + c);
-            if (cell) cell.value = Number(cell.value) + 1;
-            else console.warn("unable to set cell", i, c);
+            if (cell) cell.value = amounts[k][c];
+            else console.warn("unable to set cell", k, c);
         });
     }
+}
+
+function cellValue(cell) {
+    return cell.children[0].value
 }
 
 function tabToDLX() {
@@ -208,22 +212,32 @@ function tabToDLX() {
     }
 
     let Ys = {};
+    let amounts = {};
     // console.log(m)
     for (let y = 1; y < table.rows.length; y++) {
         let name = cellValueOrPlaceholder(table.rows[y].cells[0]);
+        amounts[name] = {};
         if (!Ys[name]) Ys[name] = [];
         else console.warn("duplicate name detected", name)
         for (let x = 1; x < table.rows[y].cells.length; x++) {
             // console.log(x, y)
             let val = cellValueOrPlaceholder(table.rows[y].cells[x]);
-            if (val == "1") {
-                Ys[name].push(x)
+            if (cellValue(table.rows[y].cells[x]) == "") continue;
+
+            let n = Number(cellValue(table.rows[y].cells[x]));
+            if (isNaN(n) || n === undefined || !n) {
+                amounts[name][x] = 1;
             }
+            else {
+                amounts[name][x] = n;
+            }
+            Ys[name].push(x);
         }
     }
     return {
         x: s,
         y: Ys,
+        amounts: amounts,
     }
 }
 

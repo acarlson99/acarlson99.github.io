@@ -10,6 +10,8 @@ let targets = {
     3: 2,
     4: 1,
     5: 1,
+    6: 2,
+    7: 1,
 };
 let amounts = {
     'A': {
@@ -35,6 +37,10 @@ let amounts = {
     },
     'E': {
         3: 2,
+    },
+    'F': {
+        6: 2,
+        7: 1,
     },
 }
 // TODO: auto-populate UI with this chart
