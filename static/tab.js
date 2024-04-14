@@ -257,36 +257,37 @@ function rowIdentIdx(v) {
 //     while (new Date().getTime() - start < milliseconds) { }
 // }
 
+// TODO: option to highlight rows of a proposed answer
 // TODO: below functions should work async (sorta)
 
-cbDel = async function (r, c) {
-    // console.log("DEL", r, c);
+// cbDel = async function (r, c) {
+//     // console.log("DEL", r, c);
 
-    let col = rowIdentIdx(c);
-    // let id = col + ',' + r;
-    // console.log(id)
-    let cellsC = document.getElementsByClassName("col-" + col)
-    Object.values(cellsC).map(e => e.style.background = "red")
-    let cellsR = document.getElementsByClassName("row-" + r)
-    Object.values(cellsR).map(e => e.style.background = "red")
+//     let col = rowIdentIdx(c);
+//     // let id = col + ',' + r;
+//     // console.log(id)
+//     let cellsC = document.getElementsByClassName("col-" + col)
+//     Object.values(cellsC).map(e => e.style.background = "red")
+//     let cellsR = document.getElementsByClassName("row-" + r)
+//     Object.values(cellsR).map(e => e.style.background = "red")
 
-    // sleep(3 * 1000)
-}
+//     // sleep(3 * 1000)
+// }
 
-cbAdd = async function (r, c) {
-    // console.log("ADD", r, c);
+// cbAdd = async function (r, c) {
+//     // console.log("ADD", r, c);
 
-    let col = rowIdentIdx(c);
-    // let id = col + ',' + r;
-    // console.log(id)
-    let cellsC = document.getElementsByClassName("col-" + col)
-    Object.values(cellsC).map(e => e.style.background = "green")
-    let cellsR = document.getElementsByClassName("row-" + r)
-    Object.values(cellsR).map(e => e.style.background = "green")
+//     let col = rowIdentIdx(c);
+//     // let id = col + ',' + r;
+//     // console.log(id)
+//     let cellsC = document.getElementsByClassName("col-" + col)
+//     Object.values(cellsC).map(e => e.style.background = "green")
+//     let cellsR = document.getElementsByClassName("row-" + r)
+//     Object.values(cellsR).map(e => e.style.background = "green")
 
-    // console.log("SLEEP")
-    // sleep(3 * 1000)
-    // console.log("SLEPT")
-}
+//     // console.log("SLEEP")
+//     // sleep(3 * 1000)
+//     // console.log("SLEPT")
+// }
 
 // TODO: preload table with data, and/or store in URL

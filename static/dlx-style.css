@@ -1,0 +1,49 @@
+label,
+input {
+    border: none;
+    margin: auto;
+    background-color: darkred;
+    text-align: center;
+}
+
+table {
+    border: 1;
+}
+
+input[type="text"]:placeholder-shown {
+    background-color: inherit;
+    color: red;
+    opacity: 0.75;
+}
+
+input[type="text"]:not(:placeholder-shown) {
+    color: pink;
+    border: none;
+}
+
+tr,
+td {
+    border: none;
+    margin: auto;
+    text-align: center;
+    vertical-align: middle;
+}
+
+body {
+    background: rebeccapurple;
+    border: none;
+    margin: auto;
+}
+
+table {
+    border-collapse: collapse;
+}
+
+tr {
+    border: solid;
+    border-width: 1px 0;
+}
+
+tbody tr td:nth-child(even) {
+    background-color: purple;
+}
