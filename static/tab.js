@@ -1,3 +1,7 @@
+///////////////////////////////////////////////////////////////////////////////
+//                              Row/Col funcs                                //
+///////////////////////////////////////////////////////////////////////////////
+
 function newInput(x, y) {
     let input = document.createElement("input");
     input.type = "text";
@@ -12,6 +16,8 @@ function newInput(x, y) {
     return input
 }
 
+// new input for first row in col
+// contains input for name and amount
 function newColInput(y) {
     let input = newInput(0, y);
     input.style.width = '4em';
@@ -103,27 +109,6 @@ function delRow() {
     }
 }
 
-
-
-// let X = new Set([1, 2, 3, 4, 5, 6, 7]);
-// let Y = {
-//     'A': [1, 4, 7],
-//     'B': [1, 4],
-//     'C': [4, 5, 7],
-//     'D': [3, 5, 6],
-//     'E': [2, 3, 6, 7],
-//     'F': [2, 7]
-// };
-
-function go() {
-    let xy = tabToDLX();
-    return gothing(xy.x, xy.y, xy.targets, xy.amounts);
-}
-
-function cellValueOrPlaceholder(cell) {
-    return cell.children[0].value || cell.children[0].placeholder
-}
-
 function getTableRows() {
     let table = document.getElementById("myTable");
     return table.rows.length
@@ -162,6 +147,57 @@ function setTabWH(w, h) {
     setTabW(w);
 }
 
+function cellValue(cell) {
+    let isColHeaderNode = cell.children[0].tagName == 'DIV';
+    if (isColHeaderNode) {
+        return cellValue(cell.children[0]);
+    }
+    return cell.children[0].value
+}
+
+function cellValueOrPlaceholder(cell) {
+    let isColHeaderNode = cell.children[0].tagName == 'DIV';
+    if (isColHeaderNode) {
+        return cellValueOrPlaceholder(cell.children[0]);
+    }
+    return cellValue(cell) || cell.children[0].placeholder
+}
+
+// index of col with name `v`
+function colIdentIdx(v) {
+    let tab = document.getElementById("myTable");
+    let r = tab.rows[0];
+    for (let i = 1; i < r.cells.length; i++) {
+        let e = r.cells[i];
+        if (cellValueOrPlaceholder(e) == v) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// index of row with name `v`
+function rowIdentIdx(v) {
+    let tab = document.getElementById("myTable");
+    let r = tab.rows;
+    for (let i = 1; i < r.length; i++) {
+        let e = r[i].cells[0];
+        // console.log(e);
+        if (cellValueOrPlaceholder(e) == v) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//                            END Row/Col funcs                              //
+///////////////////////////////////////////////////////////////////////////////
+
+///////////////////////////////////////////////////////////////////////////////
+//                          Objects to/from table                            //
+///////////////////////////////////////////////////////////////////////////////
+
 function dlxToTab(X, Y, targets, amounts) {
     let w = X.size + 1;
     let h = Object.keys(Y).length + 1;
@@ -190,10 +226,6 @@ function dlxToTab(X, Y, targets, amounts) {
             else console.warn("unable to set cell", k, c);
         });
     }
-}
-
-function cellValue(cell) {
-    return cell.children[0].value
 }
 
 function tabToDLX() {
@@ -241,11 +273,23 @@ function tabToDLX() {
     }
 }
 
-// URL
+///////////////////////////////////////////////////////////////////////////////
+//                        END Objects to/from table                          //
+///////////////////////////////////////////////////////////////////////////////
+
+
+///////////////////////////////////////////////////////////////////////////////
+//                                   URL                                     //
+///////////////////////////////////////////////////////////////////////////////
 
 function encodeStateURL(X, Y, targets, amounts) {
-    let x = btoa(JSON.stringify(X));
-    let y = btoa(JSON.stringify(Y));
+    let x = btoa(JSON.stringify([...X]));
+    let ny = {};
+    for (let [k, v] of Object.entries(Y)) {
+        ny[k] = [...v];
+    }
+    let y = btoa(JSON.stringify(ny));
+    console.log(ny, y)
     let ts = btoa(JSON.stringify(targets));
     let as = btoa(JSON.stringify(amounts));
 
@@ -254,8 +298,12 @@ function encodeStateURL(X, Y, targets, amounts) {
 
 function decodeStateURL(s) {
     let params = new URL('http://a?' + s).searchParams;
-    let x = JSON.parse(atob(params.get('x')))
+    let x = new Set(JSON.parse(atob(params.get('x'))))
     let y = JSON.parse(atob(params.get('y')))
+    for (let k of Object.keys(y)) {
+        y[k] = new Set(y[k]);
+    }
+    console.log(y)
     let as = JSON.parse(atob(params.get('as')))
     let ts = JSON.parse(atob(params.get('ts')))
 
@@ -271,13 +319,23 @@ function _testRoundtripStateURL(X, Y, targets, amounts) {
     let s = encodeStateURL(X, Y, targets, amounts);
     let o = decodeStateURL(s);
     let good = true;
+    for (let [k, v] of Object.entries(Y)) {
+        let want = JSON.toString([...v]);
+        let got = JSON.toString([...o.y[k]]);
+        if (!(o.y[k] instanceof Set)) {
+            console.warn("bad type for key", k, "should be Set", o.y[k]);
+        }
+        if (got != want) {
+            console.warn("bad conversion", want, got);
+        }
+    }
+    // [Y, o.y], // TODO: check Y
     for (let [want, got] of [
-        [X, o.x],
-        [Y, o.y],
-        [targets, o.targets],
-        [amounts, o.amounts],
+        [JSON.stringify([...X]), JSON.stringify([...o.x])],
+        [JSON.stringify(targets), JSON.stringify(o.targets)],
+        [JSON.stringify(amounts), JSON.stringify(o.amounts)],
     ]) {
-        if (JSON.stringify(want) != JSON.stringify(got)) {
+        if (want != got) {
             console.warn("bad conversion", want, got)
             good = false;
         }
@@ -285,31 +343,33 @@ function _testRoundtripStateURL(X, Y, targets, amounts) {
     return good;
 }
 
-// END URL
-
-function colIdentIdx(v) {
-    let tab = document.getElementById("myTable");
-    let r = tab.rows[0];
-    for (let i = 1; i < r.cells.length; i++) {
-        let e = r.cells[i];
-        if (cellValueOrPlaceholder(e) == v) {
-            return i;
-        }
-    }
-    return -1;
+// TODO: auto-update URL when changing state
+function loadTabFromStateURL() {
+    // s ~ "x=X&y=YS&as=AS&ts=TS"
+    let s = new URL(document.location.href).searchParams.toString();
+    let o = decodeStateURL(s);
+    console.log(o);
+    dlxToTab(o.x, o.y, o.targets, o.amounts);
 }
 
-function rowIdentIdx(v) {
-    let tab = document.getElementById("myTable");
-    let r = tab.rows;
-    for (let i = 1; i < r.length; i++) {
-        let e = r[i].cells[0];
-        // console.log(e);
-        if (cellValueOrPlaceholder(e) == v) {
-            return i;
-        }
-    }
-    return -1;
+///////////////////////////////////////////////////////////////////////////////
+//                                 END URL                                   //
+///////////////////////////////////////////////////////////////////////////////
+
+// let X = new Set([1, 2, 3, 4, 5, 6, 7]);
+// let Y = {
+//     'A': [1, 4, 7],
+//     'B': [1, 4],
+//     'C': [4, 5, 7],
+//     'D': [3, 5, 6],
+//     'E': [2, 3, 6, 7],
+//     'F': [2, 7]
+// };
+
+function go() {
+    let xy = tabToDLX();
+    // document.location.search = encodeStateURL(xy.x, xy.y, xy.targets, xy.amounts)
+    return gothing(xy.x, xy.y, xy.targets, xy.amounts);
 }
 
 // function sleep(milliseconds) {
