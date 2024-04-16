@@ -12,16 +12,23 @@
 </head>
 
 <body>
-    Donald Knuth's eponymous Dancing Links, now on the World Wide Web
-    <table id="myTable" frame="void" rules="cols">
-        <tbody>
-            <tr>
-                <td>
-                    v>
-                </td>
-            </tr>
-        </tbody>
-    </table>
+    <div id="mainblurb">
+        <h1>
+            ALGORITHM X
+        </h1>
+        <p>
+            Donald Knuth's eponymous Dancing Links, now on the World Wide Web.
+            <br>
+            This is an implementation of <a href="https://en.wikipedia.org/wiki/Knuth%27s_Algorithm_X">Algorithm X</a>
+            which
+            allows tiles to be covered many times in a solution, and
+            many times per piece (e.g. the word 'mississippi' covers the 'p' "tile" twice).
+            <br>
+            Built to visualize algorithm execution, brainstorm encodings, and solve word puzzles
+            <br>
+            Visualization coming soon
+        </p>
+    </div>
 
     <input type="button" onclick="newCol()" value="new col">
     <input type="button" onclick="delCol()" value="del col">
@@ -38,6 +45,15 @@
             uniqueRes = [...new Set(result.map(a => a.sort().join(',')))].map(a => a.split(','));
             console.log('uniqueRes =', uniqueRes);
     }" value="solve">
+    <table id="myTable" frame="void" rules="cols">
+        <tbody>
+            <tr>
+                <td>
+                    v>
+                </td>
+            </tr>
+        </tbody>
+    </table>
 
     <script>
         if (new URL(document.location.href).searchParams.size > 0) loadTabFromStateURL();

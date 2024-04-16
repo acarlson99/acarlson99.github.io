@@ -209,7 +209,7 @@ function dlxToTab(X, Y, targets, amounts) {
         if (amtcol) amtcol.value = targets[i] || 1;
         else console.warn("unable to set col", j);
         let cell = document.getElementById("0," + i);
-        if (cell) cell.value = i;
+        if (cell) cell.value = 'COL ' + i;
         else console.warn("unable to set col", j);
     }
     let i = 0;

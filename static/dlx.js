@@ -218,7 +218,7 @@ function deselect(X, Y, r, cols) {
                 if (k !== j) {
                     // if (!X[k]) X[k] = new Set();
                     // console.log("READD", k)
-                    cbAdd(k, i);
+                    cbAdd(k, i); // TODO: change these callbacks to be useful
                     X[k].add(i);
                 }
             }

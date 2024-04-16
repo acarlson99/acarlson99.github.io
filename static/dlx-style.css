@@ -2,7 +2,7 @@ label,
 input {
     border: none;
     margin: auto;
-    background-color: darkred;
+    background-color: #8b0000;
     text-align: center;
 }
 
@@ -10,19 +10,25 @@ table {
     border: 1;
 }
 
+a,
+h1 {
+    color: #81d6e3;
+}
+
 input[type="text"]:placeholder-shown {
     background-color: inherit;
-    color: red;
+    color: #81d6e3;
     opacity: 0.75;
 }
 
 input[type="text"]:not(:placeholder-shown) {
-    color: pink;
+    color: #ea7af4;
     border: none;
 }
 
 tr,
 td {
+    background-color: inherit;
     border: none;
     margin: auto;
     text-align: center;
@@ -30,9 +36,8 @@ td {
 }
 
 body {
-    background: rebeccapurple;
-    border: none;
-    margin: auto;
+    color: #ea7af4;
+    background-color: #1b3022;
 }
 
 table {
@@ -45,5 +50,5 @@ tr {
 }
 
 tbody tr td:nth-child(even) {
-    background-color: purple;
+    background-color: #663399;
 }
