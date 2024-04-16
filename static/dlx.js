@@ -150,6 +150,14 @@ let Y = {
 //     'E': [3],
 // };
 
+{
+    let o = convertCardObs(cardObs);
+    X = o.x;
+    Y = o.y;
+    amounts = o.amounts;
+    targets = o.targets;
+}
+
 let strState = () => JSON.stringify(X) + JSON.stringify(Y) + JSON.stringify(targets);
 
 var cbDel = function () { };
