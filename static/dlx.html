@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DLX</title>
     <link rel="stylesheet" href="./dlx-style.css">
+    <script src="cards.js"></script>
     <script src="dlx.js"></script>
     <script src="tab.js"></script>
 </head>
@@ -26,12 +27,23 @@
     <input type="button" onclick="delCol()" value="del col">
     <input type="button" onclick="newRow()" value="new row">
     <input type="button" onclick="delRow()" value="del row">
-    <input type="button" onclick="{result = go(); console.log(result); alert('open the console');}" value="solve">
+    <input type="button" onclick="{
+            alert('open the console if you dare...');
+            console.log('solving...');
+            var startTime = performance.now();
+            result = go();
+            var endTime = performance.now();
+            console.log('result =', result);
+            console.log('calculation took', endTime - startTime, 'ms');
+            uniqueRes = [...new Set(result.map(a => a.sort().join(',')))].map(a => a.split(','));
+            console.log('uniqueRes =', uniqueRes);
+    }" value="solve">
 
     <script>
         if (new URL(document.location.href).searchParams.size > 0) loadTabFromStateURL();
         else dlxToTab(X, Y, targets, amounts);
         var result;
+        var uniqueRes;
     </script>
 
 </body>

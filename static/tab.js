@@ -282,6 +282,9 @@ function tabToDLX() {
 //                                   URL                                     //
 ///////////////////////////////////////////////////////////////////////////////
 
+// TODO: minimize state encoded in URL
+// seriously, it's so much bigger than necessary
+
 function encodeStateURL(X, Y, targets, amounts) {
     let x = btoa(JSON.stringify([...X]));
     let ny = {};
