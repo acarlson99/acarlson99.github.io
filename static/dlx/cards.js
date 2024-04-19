@@ -42,26 +42,27 @@ calcScore([], xs)
 // words = ["cat", "hat"]
 // cards = ["h", "c", "a", "t", "a", "t"]
 function scoreGuess(words, cards) {
-    let sa = [...words.join('')].sort();
-    let sb = [...cards.join('')].sort();
+    let cmap = {};
+    for (let c of cards) {
+        if (!cmap[c]) cmap[c] = 0;
+        cmap[c] += 1;
+    }
 
-    const differentInStr1 = [];
-    const differentInStr2 = [];
-
-    let i = 0, j = 0;
-    while (i < sa.length && j < sb.length) {
-        if (sa[i] < sb[j]) {
-            differentInStr1.push(sa[i]);
-            i++;
-        } else if (sa[i] > sb[j]) {
-            differentInStr2.push(sb[j]);
-            j++;
-        } else {
-            i++;
-            j++;
+    let wcss = words.map(w => wordToCards(w, cards));
+    for (let i = 0; i < wcss.length; i++) {
+        // let wcs = wordToCards(word, cards);
+        let wcs = wcss[i];
+        for (let wc of wcs) {
+            if (!cmap[wc]) {
+                console.warn("Illegal letter", wc, "used in solution", words[0])
+            }
+            cmap[wc] -= 1;
+            if (cmap[wc] === 0) delete cmap[wc];
         }
     }
-    return [differentInStr1, differentInStr2]
+    let ln = (v, n) => { if (n === 0) return []; let _l = ln(v, n - 1); _l.push(v); return _l; }
+    let cardsLeft = Object.keys(cmap).map(k => ln(k, cmap[k]));
+    return calcScore(cardsLeft, words);
 }
 
 function wordToCards(w, cards) {
@@ -98,6 +99,7 @@ function calcScore(boardCards, wordCards) {
     // })
     // let wo = wordCards[0].map(c => {
     let wf = (ws) => {
+        console.log(ws)
         let wo = ws.map(c => {
             return { l: c.length, s: CARD_VAL[c] }
         }).reduce((acc, a) => {
@@ -105,8 +107,7 @@ function calcScore(boardCards, wordCards) {
         }, { l: 0, s: 0 });
         return wo.s + BONUS[wo.l];
     }
-    return wordCards.reduce((acc, b) => wf(b) + acc, 0) - penalty;
-    return score - penalty
+    return wordCards.reduce((acc, b) => wf([...b]) + acc, 0) - penalty;
 }
 
 function removeSubstr(s, needle) {
