@@ -5,14 +5,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DLX</title>
+    <script>
+        let loc = new URL(window.location);
+        let goodPath = (loc.pathname).endsWith('.html') || (loc.pathname).endsWith('/');
+        if (!goodPath) window.location = loc.pathname + '/' + loc.search;
+    </script>
     <link rel="stylesheet" href="dlx-style.css">
     <script src="cards.js"></script>
     <script src="dlx.js"></script>
     <script src="tab.js"></script>
-    <script>
-        let goodPath = ('' + window.location).endsWith('.html') || ('' + window.location).endsWith('/');
-        if (!goodPath) window.location = new URL(window.location).pathname + '/'
-    </script>
+    <script src="vis-state.js"></script>
 </head>
 
 <body>
@@ -39,6 +41,7 @@
     <input type="button" onclick="newRow()" value="new row">
     <input type="button" onclick="delRow()" value="del row">
     <input type="button" onclick="{
+            stateI = undefined;
             alert('open the console if you dare...');
             console.log('solving...');
             var startTime = performance.now();
@@ -48,7 +51,11 @@
             console.log('calculation took', endTime - startTime, 'ms');
             uniqueRes = [...new Set(result.map(a => a.sort().join(',')))].map(a => a.split(','));
             console.log('uniqueRes =', uniqueRes);
+            gotoState(0);
     }" value="solve">
+    <input type="button" onclick="{
+        nextState();
+    }" value="next solve state">
     <table id="myTable" frame="void" rules="cols">
         <tbody>
             <tr>
