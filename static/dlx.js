@@ -70,18 +70,15 @@ let Y = {
 //     'E': [3],
 // };
 
-{
-    let o = convertCardObs(cardObs);
-    X = o.x;
-    Y = o.y;
-    amounts = o.amounts;
-    targets = o.targets;
-}
+// {
+//     let o = convertCardObs(cardObs);
+//     X = o.x;
+//     Y = o.y;
+//     amounts = o.amounts;
+//     targets = o.targets;
+// }
 
 let strState = () => JSON.stringify(X) + JSON.stringify(Y) + JSON.stringify(targets);
-
-var cbDel = function () { };
-var cbAdd = function () { };
 
 function gothing(X, Y, ts, amts) {
     targets = ts;
@@ -116,7 +113,11 @@ function gothing(X, Y, ts, amts) {
     let solutions = solve(X, Y);
     let agg = [];
     for (let solution of solutions) {
-        // console.log('SOL:', solution);
+        states.push({
+            type: "FOUND SOLUTION",
+            s: solution,
+        })
+        console.log('SOL:', solution);
         agg.push(solution);
     }
     return agg;
@@ -143,7 +144,10 @@ function* solve(X, Y, solution) {
         // let c = Object.keys(X).reduce((a, b) => X[a].size <= X[b].size ? a : b);
         // console.log("MIN", c, X, X[c])
         for (let r of [...X[c]]) {
+            // select R
             solution.push(r);
+            cbSelect(r, true);
+            // remove cols from X
             let cols = select(X, Y, r);
             let cset = new Set();
             for (const col of cols) {
@@ -156,13 +160,15 @@ function* solve(X, Y, solution) {
                     good = false;
                 }
             }
-            // console.log("cols = ", cols)
+            console.log("cols = ", JSON.stringify(cols))
             if (good) {
                 for (let s of solve(X, Y, solution)) {
                     yield s;
                 }
             }
+            // re-add deleted cols, deselect R
             deselect(X, Y, r, cols);
+            cbSelect(r, false);
             solution.pop();
         }
     }
@@ -181,6 +187,7 @@ function select(X, Y, r) {
         // e.g. "apple" "cans" "snapple" "snap" results in duplicates
         // fix this
         if (targets[j] > 0) {
+            console.log("pushing empty for", j)
             cols.push(EMPTY_PLACEHOLDER);
             continue;
         }
@@ -195,9 +202,11 @@ function select(X, Y, r) {
                 }
             }
         }
+        console.log("pushing", j, [...X[j]].join(','));
         cols.push([...X[j]]);
         delete X[j];
     }
+    console.log(cols.join(','));
     return cols;
 }
 
@@ -225,3 +234,86 @@ function deselect(X, Y, r, cols) {
         }
     }
 }
+
+function selectState(i) {
+    execState(states[i]);
+}
+function execState(si) {
+    console.log(si);
+    si.ii = rowIdentIdx(si.i);
+    // TODO: add `changedSomething` return bool
+    switch (si.type) {
+        case "SELECT":
+            // CSS select row i
+            [...document.getElementsByClassName("row-" + si.ii)].forEach(cell => {
+                cell.oldBackground = cell.style.background;
+                cell.style.background = 'orange';
+            })
+            break;
+        case "DESELECT":
+            [...document.getElementsByClassName("row-" + si.ii)].forEach(cell => {
+                cell.style.background = cell.oldBackground;
+            })
+            break;
+        case "REM":
+            [...document.getElementsByClassName("row-" + si.ii)].forEach(cell => {
+                if (cell.style.background) return;
+                if (!cell.classList.contains("col-" + si.k)) return;
+                cell.oldBackground = cell.style.background;
+                cell.style.background = 'black';
+            })
+            break;
+        case "ADD":
+            [...document.getElementsByClassName("row-" + si.ii)].forEach(cell => {
+                if (!cell.classList.contains("col-" + si.k)) return;
+                cell.style.background = cell.oldBackground;
+            })
+            break;
+        default:
+            console.log("Should not get here; input:", si);
+    }
+}
+var stateI = undefined; // if undef then start at 0
+function gotoState(i) {
+    if (i === undefined || isNaN(i)) i = 0;
+    if (stateI === undefined) {
+        stateI = 0;
+        selectState(0);
+    }
+    if (i < stateI) return false; // cannot go backwards yet :/
+    while (stateI !== i) {
+        if (stateI < i) stateI++;
+        else stateI--;
+        selectState(stateI);
+    }
+}
+
+let cnt = 0;
+let states = [];
+var cbSelect = function (r, b) {
+    if (b) console.log("SELECT", r);
+    else console.log("DESELECT", r);
+
+    states.push({
+        type: b ? "SELECT" : "DESELECT",
+        i: r,
+    })
+}
+var cbDel = function (k, i) {
+    console.log("REMOVING", k, i);
+    cnt++;
+    states.push({
+        type: "REM",
+        k: k,
+        i: i,
+    })
+};
+var cbAdd = function (k, i) {
+    console.log("ADDING", k, i);
+    cnt++;
+    states.push({
+        type: "ADD",
+        k: k,
+        i: i,
+    })
+};
