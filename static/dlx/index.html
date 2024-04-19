@@ -5,10 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DLX</title>
-    <link rel="stylesheet" href="./dlx-style.css">
+    <link rel="stylesheet" href="dlx-style.css">
     <script src="cards.js"></script>
     <script src="dlx.js"></script>
     <script src="tab.js"></script>
+    <script>
+        let goodPath = ('' + window.location).endsWith('.html') || ('' + window.location).endsWith('/');
+        if (!goodPath) window.location = new URL(window.location).pathname + '/'
+    </script>
 </head>
 
 <body>
