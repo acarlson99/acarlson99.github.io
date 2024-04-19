@@ -51,7 +51,6 @@
             console.log('calculation took', endTime - startTime, 'ms');
             uniqueRes = [...new Set(result.map(a => a.sort().join(',')))].map(a => a.split(','));
             console.log('uniqueRes =', uniqueRes);
-            gotoState(0);
     }" value="solve">
     <input type="button" onclick="{
         nextState();

@@ -96,7 +96,7 @@ function gotoState(i) {
 function nextState() {
     let i = stateI;
     if (!i) i = 0;
-    while (i < states.length && !selectState(i++)) { }
+    while (i < states.length && !selectState(i++)) { stateI = i; }
 }
 
 let cnt = 0;
