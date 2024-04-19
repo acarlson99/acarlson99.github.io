@@ -113,10 +113,7 @@ function gothing(X, Y, ts, amts) {
     let solutions = solve(X, Y);
     let agg = [];
     for (let solution of solutions) {
-        states.push({
-            type: "FOUND SOLUTION",
-            s: solution,
-        })
+        cbSolved(solution);
         console.log('SOL:', solution);
         agg.push(solution);
     }
@@ -234,86 +231,3 @@ function deselect(X, Y, r, cols) {
         }
     }
 }
-
-function selectState(i) {
-    execState(states[i]);
-}
-function execState(si) {
-    console.log(si);
-    si.ii = rowIdentIdx(si.i);
-    // TODO: add `changedSomething` return bool
-    switch (si.type) {
-        case "SELECT":
-            // CSS select row i
-            [...document.getElementsByClassName("row-" + si.ii)].forEach(cell => {
-                cell.oldBackground = cell.style.background;
-                cell.style.background = 'orange';
-            })
-            break;
-        case "DESELECT":
-            [...document.getElementsByClassName("row-" + si.ii)].forEach(cell => {
-                cell.style.background = cell.oldBackground;
-            })
-            break;
-        case "REM":
-            [...document.getElementsByClassName("row-" + si.ii)].forEach(cell => {
-                if (cell.style.background) return;
-                if (!cell.classList.contains("col-" + si.k)) return;
-                cell.oldBackground = cell.style.background;
-                cell.style.background = 'black';
-            })
-            break;
-        case "ADD":
-            [...document.getElementsByClassName("row-" + si.ii)].forEach(cell => {
-                if (!cell.classList.contains("col-" + si.k)) return;
-                cell.style.background = cell.oldBackground;
-            })
-            break;
-        default:
-            console.log("Should not get here; input:", si);
-    }
-}
-var stateI = undefined; // if undef then start at 0
-function gotoState(i) {
-    if (i === undefined || isNaN(i)) i = 0;
-    if (stateI === undefined) {
-        stateI = 0;
-        selectState(0);
-    }
-    if (i < stateI) return false; // cannot go backwards yet :/
-    while (stateI !== i) {
-        if (stateI < i) stateI++;
-        else stateI--;
-        selectState(stateI);
-    }
-}
-
-let cnt = 0;
-let states = [];
-var cbSelect = function (r, b) {
-    if (b) console.log("SELECT", r);
-    else console.log("DESELECT", r);
-
-    states.push({
-        type: b ? "SELECT" : "DESELECT",
-        i: r,
-    })
-}
-var cbDel = function (k, i) {
-    console.log("REMOVING", k, i);
-    cnt++;
-    states.push({
-        type: "REM",
-        k: k,
-        i: i,
-    })
-};
-var cbAdd = function (k, i) {
-    console.log("ADDING", k, i);
-    cnt++;
-    states.push({
-        type: "ADD",
-        k: k,
-        i: i,
-    })
-};
