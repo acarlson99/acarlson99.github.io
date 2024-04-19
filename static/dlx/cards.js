@@ -29,6 +29,56 @@ BONUS = [0, 0, 0, 0, 0, 2, 5, 10, 20, 30, 40, 50, 60, 70]
 PUZZLE_DATE_REGEX = "\$\(\"\#quitter-puzzle_id\"\)\.val\(\"(\d{2}\/\d{2}\/\d{4})\"\)"
 PUZZLE_DATA_REGEX = "dictionary\.init\(\"([a-z\",]+)\"\);board = new QuiddlerBoard\(dictionary, gameOver,1,\"\.\.\"\);board\.loadCards\(([\"A-Z,0-9]+)\)"
 
+/*
+let o = convertCardObs(cardObs);
+let xs = uniqueRes[0].map(w => wordToCards(w,o.cards));
+calcScore([], xs)
+*/
+
+// score a guess given words and cards
+// words = ["cat", "hat"]
+// cards = ["h", "c", "a", "t", "a", "t"]
+function scoreGuess(words, cards) {
+    let sa = [...words.join('')].sort();
+    let sb = [...cards.join('')].sort();
+
+    const differentInStr1 = [];
+    const differentInStr2 = [];
+
+    let i = 0, j = 0;
+    while (i < sa.length && j < sb.length) {
+        if (sa[i] < sb[j]) {
+            differentInStr1.push(sa[i]);
+            i++;
+        } else if (sa[i] > sb[j]) {
+            differentInStr2.push(sb[j]);
+            j++;
+        } else {
+            i++;
+            j++;
+        }
+    }
+    return [differentInStr1, differentInStr2]
+}
+
+function wordToCards(w, cards) {
+    cards = cards.sort((a, b) => b.length - a.length);
+
+    let agg = [];
+    let i = 0;
+    while (w != '') {
+        if (!cards[i]) return false;
+        let s = removeSubstr(w, cards[i]);
+        if (w == s) {
+            i++;
+            continue;
+        }
+        agg.push(cards[i]);
+        w = s;
+    }
+    return agg;
+}
+
 function calcScore(boardCards, wordCards) {
     // assuming wordCards is an array of arrays of cards representing words
     // and boardCards is letters left on the board
@@ -36,13 +86,23 @@ function calcScore(boardCards, wordCards) {
     var score = 0
     var length = 0
     boardCards.forEach(elem => { penalty += CARD_VAL[elem]; })
-    wordCards.forEach(word => {
-        word.forEach(card => {
-            length += card.length();
-            score += CARD_VAL[card];
-        })
-        score += BONUS[length];
-    })
+    // wordCards.forEach(word => {
+    //     word.forEach(card => {
+    //         length += card.length;
+    //         score += CARD_VAL[card];
+    //     })
+    //     score += BONUS[length];
+    // })
+    // let wo = wordCards[0].map(c => {
+    let wf = (ws) => {
+        let wo = ws.map(c => {
+            return { l: c.length, s: CARD_VAL[c] }
+        }).reduce((acc, a) => {
+            return { l: acc.l + a.l, s: acc.l + a.l }
+        }, { l: 0, s: 0 });
+        return wo.s + BONUS[wo.l];
+    }
+    return wordCards.reduce((acc, b) => wf(b) + acc, 0) - penalty;
     return score - penalty
 }
 
@@ -65,10 +125,12 @@ function removeSubstr(s, needle) {
 // encoded and unable to find it.
 function convertCardObs(cardObs) {
     let namedTargets = {};
+    let cards = [];
     for (let i = 0; i < cardObs.cards.length; i++) {
         if (i % 2 == 1) continue;
         const c = cardObs.cards[i].toUpperCase();
 
+        cards.push(c);
         if (!namedTargets[c]) namedTargets[c] = 0;
         namedTargets[c] += 1;
     }
@@ -112,5 +174,7 @@ function convertCardObs(cardObs) {
         y: Y,
         targets: targets,
         amounts: amounts,
+
+        cards: cards,
     };
 }
