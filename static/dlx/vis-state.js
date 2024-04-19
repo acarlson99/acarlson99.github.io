@@ -1,3 +1,10 @@
+function clearCellStyles() {
+    for (let i = 0; ; i++) {
+        let es = [...document.getElementsByClassName("row-" + i)];
+        if (es.length === 0) break;
+        es.forEach(uncolorCell);
+    }
+}
 
 function selectState(i) {
     return execState(states[i]);
@@ -5,16 +12,19 @@ function selectState(i) {
 
 function colorCell(cell, color) {
     let didChange = false;
-    if (!cell.colorStack) { cell.colorStack = []; didChange = true; }
+    if (!cell.colorStack) {
+        cell.colorStack = [];
+    }
+    didChange = true;
     cell.colorStack.push(cell.style.background);
     cell.style.background = color;
     return didChange;
 }
 
 function uncolorCell(cell) {
+    if (!cell.colorStack) return false;
     cell.style.background = cell.colorStack.pop();
-    if (cell.colorStack.length == 0) return true;
-    return false;
+    return true;
 }
 
 function colorRow(r, color) {
@@ -96,7 +106,11 @@ function gotoState(i) {
 function nextState() {
     let i = stateI;
     if (!i) i = 0;
-    while (i < states.length && !selectState(i++)) { stateI = i; }
+    while (i < states.length && !selectState(i++)) { }
+    stateI = i;
+    if (!states[stateI]) {
+        console.warn("end of state list");
+    }
 }
 
 let cnt = 0;
