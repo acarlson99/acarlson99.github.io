@@ -41,17 +41,7 @@
     <input type="button" onclick="newRow()" value="new row">
     <input type="button" onclick="delRow()" value="del row">
     <input type="button" onclick="{
-            stateI = undefined;
-            clearCellStyles();
-            alert('open the console if you dare...');
-            console.log('solving...');
-            var startTime = performance.now();
-            result = go();
-            var endTime = performance.now();
-            console.log('result =', result);
-            console.log('calculation took', endTime - startTime, 'ms');
-            uniqueRes = [...new Set(result.map(a => a.sort().join(',')))].map(a => a.split(','));
-            console.log('uniqueRes =', uniqueRes);
+            go();
     }" value="solve">
     <input type="button" onclick="{
         nextState();

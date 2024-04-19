@@ -116,8 +116,8 @@ function nextState() {
 let cnt = 0;
 let states = [];
 var cbSelect = function (r, b) {
-    if (b) console.log("SELECT", r);
-    else console.log("DESELECT", r);
+    // if (b) console.log("SELECT", r);
+    // else console.log("DESELECT", r);
 
     states.push({
         type: b ? "SELECT" : "DESELECT",
@@ -125,7 +125,7 @@ var cbSelect = function (r, b) {
     })
 }
 var cbDel = function (k, i) {
-    console.log("REMOVING", k, i);
+    // console.log("REMOVING", k, i);
     cnt++;
     states.push({
         type: "REM",
@@ -134,7 +134,7 @@ var cbDel = function (k, i) {
     })
 };
 var cbAdd = function (k, i) {
-    console.log("ADDING", k, i);
+    // console.log("ADDING", k, i);
     cnt++;
     states.push({
         type: "ADD",

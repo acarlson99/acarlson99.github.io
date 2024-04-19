@@ -371,12 +371,25 @@ function loadTabFromStateURL() {
 // };
 
 function go() {
+    stateI = undefined;
+    clearCellStyles();
+    console.log('solving...');
+    var startTime = performance.now();
     let xy = tabToDLX();
     console.log("go for", xy);
     // document.location.search = encodeStateURL(xy.x, xy.y, xy.targets, xy.amounts)
     let url = new URL(window.location);
     window.history.replaceState({}, "", url.pathname + '?' + encodeStateURL(xy.x, xy.y, xy.targets, xy.amounts))
-    return gothing(xy.x, xy.y, xy.targets, xy.amounts);
+
+    result = gothing(xy.x, xy.y, xy.targets, xy.amounts);
+
+    alert('open the console if you dare...');
+
+    console.log('result =', result);
+    var endTime = performance.now();
+    console.log('calculation took', endTime - startTime, 'ms');
+    uniqueRes = [...new Set(result.map(a => a.sort().join(',')))].map(a => a.split(','));
+    console.log('uniqueRes =', uniqueRes);
 }
 
 // function sleep(milliseconds) {
