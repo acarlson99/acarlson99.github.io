@@ -32,11 +32,18 @@
 
 <body>
     <div id="main">
+        <h1>Radix sort</h1>
+        <a href="https://en.wikipedia.org/wiki/Radix_sort">https://en.wikipedia.org/wiki/Radix_sort</a><br /><br />
+        Sort a series of numbers in any base<br />
+        Input (in base 10) is converted to a list of numbers in base <b>Radix</b> and sorted<br />
         <table id="sortTable" class="center"></table>
         <form id="numForm">
-            <textarea rows="5" cols="30" name="input" placeholder="Enter Text" id="numText"></textarea>
+            <textarea rows="5" cols="10" name="input" placeholder="123
+321
+231
+312" id="numText"></textarea>
             <br />
-            <textarea name="radix" placeholder="Radix" id="rdxText"></textarea>
+            Radix <input name="radix" type="number" placeholder="Radix" id="rdxText"></input>
             <br />
             <input id="submit" type="submit" value="Submit">
         </form>
@@ -146,10 +153,10 @@
             let x = nums
                 .map((a) => a.toString(10).length)
                 .reduce((a, b) => Math.max(a, b));
-            document.getElementById("numText").cols = clamp(15, x, 50);
-        } else {
-            document.getElementById("numText").value = ([951, 627, 384] + '').replace(/,/g, "\n");
-            document.getElementById("submit").click();
+            document.getElementById("numText").cols = clamp(10, x, 50);
+            // } else {
+            //     document.getElementById("numText").value = ([951, 627, 384] + '').replace(/,/g, "\n");
+            //     document.getElementById("submit").click();
         }
 
     </script>
