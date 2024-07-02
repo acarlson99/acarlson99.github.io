@@ -16,6 +16,16 @@
     strong {
       color: purple;
     }
+
+    #code {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+      display: block;
+      /* mostly never overflows */
+      font-size: min(20px, 2.2vw);
+    }
   </style>
   <title>Greetings</title>
 </head>
@@ -26,7 +36,7 @@
     const randomElement = (array) => array[Math.floor(Math.random() * array.length)];
     const getRandomInt = (max) => Math.floor(Math.random() * max);
 
-    const splashes = [
+    const splashes = [ // `x`.repeat(80)
       `;; ............... .                             ............,
 ;; .............                    ,(##(/,         .........,
 ;; ...........                   .#.,%#%%##((((       .......,
