@@ -201,7 +201,7 @@
         p.innerHTML += line.str.replaceAll(' ', '&nbsp')
       }
     }
-    p.innerHTML = p.innerHTML.split('<br>').map(l => l.replaceAll(/`[^'`]*['`]/g, (s) => s.bold())).join('<br>')
+    p.innerHTML = p.innerHTML.split('<br>').map(l => l.replaceAll(/`[^'`]*['`]/g, (s) => '`' + s.slice(1, -1).bold() + '`')).join('<br>')
 
   </script>
 </body>
