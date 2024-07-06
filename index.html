@@ -16,6 +16,10 @@
       color: purple;
     }
 
+    a:visited {
+      color: #40F99B;
+    }
+
     #code {
       white-space: nowrap;
       overflow: hidden;
@@ -128,7 +132,7 @@
     ]
 
     const t = String(Date.now()).split('').map(Number).reverse()
-    const splashSelectorIdx = 5 // changes semi-frequently (~3h)
+    const splashSelectorIdx = 6 // changes semi-frequently (~3h)
     const lines = splashes[t[splashSelectorIdx] % splashes.length].split('\n')
     // ensure all lines are same length
     // lines.reduce((a,b) => Math.max(a,b.length),0)
