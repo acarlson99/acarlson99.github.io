@@ -6,9 +6,8 @@ DIRS = static/research
 
 all: ${DIRS} ${TARGETS}
 
-deps:
-	# pandoc
-	go install github.com/gomarkdown/mdtohtml@latest
+depcheck:
+	pandoc -v
 
 ${DIRS}:
 	mkdir -p $@
