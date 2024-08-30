@@ -20,7 +20,7 @@ This is especially useful for extending AlgoX to operate on words which frequent
 >    2. delete column _j_ from matrix _A_.
 > 6. Repeat this algorithm recursively on the reduced matrix _A_.
 
-![A classic Algorithm X example](./algo-x-example.png)
+![A classic Algorithm X example](/static/algo-x-example.png)
 
 A classic Algorithm X [example](https://acarlson99.github.io/static/dlx/?x=WzEsMiwzLDQsNSw2LDdd&y=eyJBIjpbMSw0LDddLCJCIjpbMSw0XSwiQyI6WzQsNSw3XSwiRCI6WzMsNSw2XSwiRSI6WzIsMyw2LDddLCJGIjpbMiw3XX0=&ts=eyIxIjoxLCIyIjoxLCIzIjoxLCI0IjoxLCI1IjoxLCI2IjoxLCI3IjoxfQ==&as=eyJBIjp7IjEiOjEsIjQiOjEsIjciOjF9LCJCIjp7IjEiOjEsIjQiOjF9LCJDIjp7IjQiOjEsIjUiOjEsIjciOjF9LCJEIjp7IjMiOjEsIjUiOjEsIjYiOjF9LCJFIjp7IjIiOjEsIjMiOjEsIjYiOjEsIjciOjF9LCJGIjp7IjIiOjEsIjciOjF9fQ==)
 

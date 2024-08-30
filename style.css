@@ -1,19 +1,21 @@
+td,
+th {
+    text-align: center;
+}
+
+.clickable {
+    cursor: pointer;
+}
+
 body {
-    font-family: monospace;
-    margin: auto;
-    background-color: black;
-    color: orange;
+    background-color: beige;
 }
 
-b,
-strong {
-    color: purple;
+#main {
+    text-align: center;
 }
 
-a {
-    color: #AEA4BF;
-}
-
-a:visited {
-    color: #BDD9BF;
+.center {
+    margin-left: auto;
+    margin-right: auto;
 }
