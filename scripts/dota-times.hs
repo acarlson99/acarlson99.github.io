@@ -21,7 +21,7 @@ htmlGen maxMin lts = do
   printf "<table>"
   printFirstCol "" <> printCols1 (map show [0 .. maxMin]) <> printf "\n"
   printf "<tr>" <> mapM_ (\(a, b) -> printFirstCol a <> printCols2 b <> printf "</tr>\n") lts
-  printf "<table>\n"
+  printf "</table>\n"
   where
     printFirstCol = printf "<td>%s</td>"
     printCols1 = foldr ((<>) . printf "<td>%s</td>") (return ())
