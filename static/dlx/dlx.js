@@ -188,13 +188,15 @@ function select(X, Y, r) {
             cols.push(EMPTY_PLACEHOLDER);
             continue;
         }
+        cbDelCol(j);
         // console.log('gnsel', j, Object.keys(X))
         for (let i of X[j]) {
+            cbDelRow(i);
             for (let k of Y[i]) {
                 // console.log('ik', i, k)
+                // cbDel(k, i);
                 if (k !== j) {
                     // if (!X[k]) X[k] = new Set();
-                    cbDel(k, i);
                     X[k].delete(i);
                 }
             }
@@ -213,18 +215,22 @@ function deselect(X, Y, r, cols) {
         let j = keys[i];
         // let xj = cols.pop();
         let xj = cols.pop();
-        if (xj !== EMPTY_PLACEHOLDER) X[j] = new Set(xj); // TODO: this could be a dict merge
+        if (xj !== EMPTY_PLACEHOLDER) {
+            cbAddCol(j);
+            X[j] = new Set(xj); // TODO: this could be a dict merge
+        }
         // TODO: change this to allow one tile to cover the same column multiple times
         // console.log(r, j, amounts, amounts[r][j])
         targets[j] += amounts[r][j];
         // console.log("cols:", cols, X[j])
         // console.log('desel', j, X[j]);
         for (let i of X[j]) {
+            cbAddRow(i);
             for (let k of Y[i]) {
+                // cbAdd(k, i);
                 if (k !== j) {
                     // if (!X[k]) X[k] = new Set();
                     // console.log("READD", k)
-                    cbAdd(k, i); // TODO: change these callbacks to be useful
                     X[k].add(i);
                 }
             }

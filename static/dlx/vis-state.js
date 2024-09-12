@@ -49,6 +49,18 @@ function execState(si) {
     // TODO: add `changedSomething` return bool
     let didChange = false;
     switch (si.type) {
+        case "ADDROW":
+            didChange |= uncolorRow(si.ii);
+            break;
+        case "DELROW":
+            didChange |= colorRow(si.ii, 'black');
+            break;
+        case "ADDCOL":
+            didChange |= uncolorCell(document.getElementById("0," + si.i));
+            break;
+        case "DELCOL":
+            didChange |= colorCell(document.getElementById("0," + si.i), 'black');
+            break;
         case "SELECT":
             // CSS select row i
             didChange |= colorRow(si.ii, 'orange');
@@ -130,6 +142,34 @@ var cbDel = function (k, i) {
     states.push({
         type: "REM",
         k: k,
+        i: i,
+    })
+};
+var cbDelRow = function (i) {
+    cnt++;
+    states.push({
+        type: "DELROW",
+        i: i,
+    })
+};
+var cbAddRow = function (i) {
+    cnt++;
+    states.push({
+        type: "ADDROW",
+        i: i,
+    })
+};
+var cbDelCol = function (i) {
+    cnt++;
+    states.push({
+        type: "DELCOL",
+        i: i,
+    })
+};
+var cbAddCol = function (i) {
+    cnt++;
+    states.push({
+        type: "ADDCOL",
         i: i,
     })
 };
