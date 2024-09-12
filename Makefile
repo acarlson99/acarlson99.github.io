@@ -46,3 +46,6 @@ clean:
 	rmdir ${BUILD_DIRS} > /dev/null 2>&1 || true
 
 re: clean all
+
+host: all
+	php -S localhost:8080
