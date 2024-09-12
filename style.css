@@ -1,6 +1,7 @@
 td,
 th {
     text-align: center;
+    border: 1px solid grey;
 }
 
 .clickable {
