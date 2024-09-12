@@ -1,6 +1,6 @@
 # Algorithm X Overlap Redux
 
-In another [writing](./algorithm-x-with-overlapping-tiles.md) I discuss a method of encoding double letters in Algorithm-X, and generalize to any tile overlapping.
+In another [writing](./algorithm-x-with-overlapping-tiles) I discuss a method of encoding double letters in Algorithm-X, and generalize to any tile overlapping.
 
 # An alternate encoding
 
