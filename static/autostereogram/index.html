@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Autostereogram Generator</title>
+</head>
+
+<body>
+    <h1>Autostereogram Generator</h1>
+    See <a href="http://www.techmind.org/stereo/stech.html">http://www.techmind.org/stereo/stech.html</a><br><br>
+    <label for="canvasWidth">Width:</label>
+    <input type="number" id="canvasWidth" value="1024">
+    <label for="canvasHeight">Height:</label>
+    <input type="number" id="canvasHeight" value="768">
+    <button id="generateStereogram">Generate Stereogram</button>
+    <br><br>
+
+    <canvas id="canvas" width="1024" height="768" style="border: 1px solid black;"></canvas>
+    <br><br>
+
+    <h3>Select Depth Map</h3>
+    <button id="defaultDepthMap">Bunny</button>
+    <input type="file" id="uploadDepthMap" accept="image/*">
+    <img id="depthMapPreview" src="./depth_bunny.png" style="max-width: 200px; display: none;">
+    <br><br>
+
+    <h3>Select Sample Texture</h3>
+    <button id="randomTexture">Use Random Noise</button>
+    <button id="defaultTexture">Cracks</button>
+    <input type="file" id="uploadTexture" accept="image/*">
+    <img id="texturePreview" src="./cracked_ground.jpg" style="max-width: 200px; display: none;">
+    <br><br>
+
+    <script src="./autostereogram.js"></script>
+    <script>
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+
+        const depthMapPreview = document.getElementById("depthMapPreview");
+        const texturePreview = document.getElementById("texturePreview");
+
+        let depthMap = depthMapPreview; // Default depth map
+        depthMap.src = "./depth_bunny.png";
+        depthMap.style.display = "block";
+        let sampleTexture = texturePreview; // Default texture
+        let useRandomTexture = true;
+
+        document.getElementById("defaultDepthMap").addEventListener("click", () => {
+            depthMap.src = "./depth_bunny.png";
+            depthMap.style.display = "block";
+        });
+
+        document.getElementById("uploadDepthMap").addEventListener("change", (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    depthMap.src = e.target.result;
+                    depthMap.style.display = "block";
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        document.getElementById("randomTexture").addEventListener("click", () => {
+            useRandomTexture = true;
+            sampleTexture.style.display = "none";
+        });
+
+        document.getElementById("defaultTexture").addEventListener("click", () => {
+            useRandomTexture = false;
+            sampleTexture.src = "./cracked_ground.jpg";
+            sampleTexture.style.display = "block";
+        });
+
+        document.getElementById("uploadTexture").addEventListener("change", (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                useRandomTexture = false;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    sampleTexture.src = e.target.result;
+                    sampleTexture.style.display = "block";
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        document.getElementById("generateStereogram").addEventListener("click", () => {
+            const width = parseInt(document.getElementById("canvasWidth").value);
+            const height = parseInt(document.getElementById("canvasHeight").value);
+            canvas.width = width;
+            canvas.height = height;
+            const texture = useRandomTexture ? null : sampleTexture;
+            drawAutostereogram(canvas, depthMap, texture);
+        });
+    </script>
+</body>
+
+</html>
