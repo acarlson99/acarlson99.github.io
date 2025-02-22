@@ -30,7 +30,7 @@ void main(void) {
 
   // Mix two colors based on the intensity
   vec3 color = mix(u_color, vec3(1.0, 0.8, 0.3), intensity*u_intensity);
-  if (u_mode) color = 1.-color;
+  if (u_mode) { color = 1.0-color; }
 
   gl_FragColor = vec4(color, 1.0);
 }

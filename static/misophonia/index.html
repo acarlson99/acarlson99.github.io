@@ -193,6 +193,49 @@
       }
     `;
 
+        const targetShaderUrl = './demo/sample.glsl'; // Change to your URL
+        const targetControlsUrl = './demo/controls.json'; // Change to your URL
+
+        console.log("whoa");
+        fetch(targetShaderUrl)
+            .then(response => {
+                console.log("hjii");
+                if (!response.ok) throw new Error(response.statusText);
+                return response.text();
+            })
+            .then(data => {
+                console.log("hjii");
+                const newFragmentShaderSource = data;
+                fragmentShaderSource = newFragmentShaderSource;
+
+                // Update the fragment shader source and recompile the shader program.
+                console.log(fragmentShaderSource);
+                const newProgram = createProgram(gl, vertexShaderSource, fragmentShaderSource);
+                if (newProgram) {
+                    shaderProgram = newProgram;
+                    updateUniformLocations();
+                    console.log("Shader updated successfully from URL.");
+                } else {
+                    console.error("Failed to compile shader from URL.");
+                }
+            })
+            .catch(error => console.error("Error loading shader config:", error));
+        fetch(targetControlsUrl)
+            .then(response => {
+                if (!response.ok) throw new Error(response.statusText);
+                return response.json();
+            })
+            .then(data => {
+                const newControls = data.controls;
+
+                // Update the control panel.
+                const controlsContainer = document.getElementById('controls-container');
+                controlsContainer.innerHTML = ""; // Clear existing controls
+                renderControls({ controls: newControls });
+            })
+            .catch(error => console.error("Error loading shader config:", error));
+
+
         let shaderProgram = null;
         let timeLocation = null;
         let resolutionLocation = null;
