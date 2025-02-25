@@ -360,12 +360,24 @@ function updateCustomUniforms() {
     }
 }
 
+let isPaused = false;
+let lastFrameTime = 0;   // Last timestamp from requestAnimationFrame
+let effectiveTime = 0;   // Accumulated animation time (in ms)
 function render(time) {
+    if (lastFrameTime === 0) lastFrameTime = time;
+    const delta = time - lastFrameTime;
+    lastFrameTime = time;
+
+    // Only update effectiveTime if not paused.
+    if (!isPaused) {
+        effectiveTime += delta;
+    }
+
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(shaderProgram);
-    if (timeLocation) gl.uniform1f(timeLocation, time * 0.001);
+    if (timeLocation) gl.uniform1f(timeLocation, effectiveTime * 0.001);
     if (resolutionLocation) gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
     updateCustomUniforms();
 
@@ -392,3 +404,62 @@ function render(time) {
     requestAnimationFrame(render);
 }
 requestAnimationFrame(render);
+
+// Add event listeners for the new buttons.
+document.getElementById('play-pause').addEventListener('click', function () {
+    isPaused = !isPaused;
+    // Update button text: when paused, button shows "Play"
+    this.textContent = isPaused ? 'Play' : 'Pause';
+});
+
+document.getElementById('restart').addEventListener('click', function () {
+    effectiveTime = 0; // Reset animation time
+});
+
+// Create a stream from the canvas at 30 fps.
+const canvasStream = canvas.captureStream(30);
+
+// Variables to manage recording.
+let mediaRecorder;
+let recordedChunks = [];
+
+// Start recording function.
+function startRecording() {
+    recordedChunks = [];
+    // Create a MediaRecorder instance with the canvas stream.
+    mediaRecorder = new MediaRecorder(canvasStream, {
+        mimeType: 'video/webm'
+    });
+    // When data is available, push it into the recordedChunks array.
+    mediaRecorder.ondataavailable = event => {
+        if (event.data.size > 0) {
+            recordedChunks.push(event.data);
+        }
+    };
+    // When recording stops, create a Blob from the chunks.
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        // Create a download link for the video.
+        const a = document.createElement('a');
+        a.style.display = 'none';
+        a.href = url;
+        a.download = 'recording.webm';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+    };
+    mediaRecorder.start();
+    console.log("Recording started.");
+}
+
+// Stop recording function.
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+        console.log("Recording stopped.");
+    }
+}
+
+document.getElementById('start-record').addEventListener('click', startRecording);
+document.getElementById('stop-record').addEventListener('click', stopRecording);
