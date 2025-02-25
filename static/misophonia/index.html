@@ -196,20 +196,16 @@
         const targetShaderUrl = './demo/sample.glsl'; // Change to your URL
         const targetControlsUrl = './demo/controls.json'; // Change to your URL
 
-        console.log("whoa");
         fetch(targetShaderUrl)
             .then(response => {
-                console.log("hjii");
                 if (!response.ok) throw new Error(response.statusText);
                 return response.text();
             })
             .then(data => {
-                console.log("hjii");
                 const newFragmentShaderSource = data;
                 fragmentShaderSource = newFragmentShaderSource;
 
                 // Update the fragment shader source and recompile the shader program.
-                console.log(fragmentShaderSource);
                 const newProgram = createProgram(gl, vertexShaderSource, fragmentShaderSource);
                 if (newProgram) {
                     shaderProgram = newProgram;
@@ -313,6 +309,23 @@
             }
         }
 
+        navigator.mediaDevices.getUserMedia({ audio: true })
+            .then(stream => {
+                const audioContext = new AudioContext();
+                const source = audioContext.createMediaStreamSource(stream);
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256; // Lower size for faster, less detailed analysis.
+                source.connect(analyser);
+
+                // Create a buffer to hold the frequency data.
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                // Attach these objects to window (or your own global) for use in the render loop.
+                window.audioAnalyser = analyser;
+                window.audioDataArray = dataArray;
+            })
+            .catch(err => console.error("Error accessing microphone:", err));
+
         // Main render loop: update uniforms and draw the full-screen quad
         function render(time) {
             gl.viewport(0, 0, canvas.width, canvas.height);
@@ -327,6 +340,20 @@
             gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
             gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
             gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+
+            // If audio data is available, get frequency data and compute an average amplitude.
+            if (window.audioAnalyser && window.audioDataArray) {
+                window.audioAnalyser.getByteFrequencyData(window.audioDataArray);
+                let sum = 0;
+                for (let i = 0; i < window.audioDataArray.length; i++) {
+                    sum += window.audioDataArray[i];
+                }
+                const average = sum / window.audioDataArray.length;
+                // Normalize the average to a 0.0 to 1.0 range.
+                customUniforms['u_audio'] = average / 255;
+            }
+
             requestAnimationFrame(render);
         }
         requestAnimationFrame(render);
