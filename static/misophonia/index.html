@@ -235,6 +235,7 @@
         let shaderProgram = null;
         let timeLocation = null;
         let resolutionLocation = null;
+        let audioTextureLocation = null;
 
         // Compile shader from source
         function createShader(gl, type, source) {
@@ -326,6 +327,25 @@
             })
             .catch(err => console.error("Error accessing microphone:", err));
 
+        let audioTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, audioTexture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        // Initially, allocate a texture of size [frequencyBinCount x 1] with null data.
+        gl.texImage2D(
+            gl.TEXTURE_2D, 0, gl.LUMINANCE,
+            window.audioDataArray ? window.audioDataArray.length : 128, 1,
+            0, gl.LUMINANCE, gl.UNSIGNED_BYTE, null
+        );
+        function updateUniformLocations() {
+            timeLocation = gl.getUniformLocation(shaderProgram, 'u_time');
+            resolutionLocation = gl.getUniformLocation(shaderProgram, 'u_resolution');
+            audioTextureLocation = gl.getUniformLocation(shaderProgram, 'u_audioTexture');
+        }
+        updateUniformLocations();
+
         // Main render loop: update uniforms and draw the full-screen quad
         function render(time) {
             gl.viewport(0, 0, canvas.width, canvas.height);
@@ -341,17 +361,20 @@
             gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
             gl.drawArrays(gl.TRIANGLES, 0, 6);
 
-
-            // If audio data is available, get frequency data and compute an average amplitude.
+            // audio uniform
             if (window.audioAnalyser && window.audioDataArray) {
                 window.audioAnalyser.getByteFrequencyData(window.audioDataArray);
-                let sum = 0;
-                for (let i = 0; i < window.audioDataArray.length; i++) {
-                    sum += window.audioDataArray[i];
+                gl.activeTexture(gl.TEXTURE0); // Use texture unit 0.
+                gl.bindTexture(gl.TEXTURE_2D, audioTexture);
+                gl.texImage2D(
+                    gl.TEXTURE_2D, 0, gl.LUMINANCE,
+                    window.audioDataArray.length, 1,
+                    0, gl.LUMINANCE, gl.UNSIGNED_BYTE, window.audioDataArray
+                );
+                // Bind the texture to the uniform sampler2D in the shader.
+                if (audioTextureLocation) {
+                    gl.uniform1i(audioTextureLocation, 0);
                 }
-                const average = sum / window.audioDataArray.length;
-                // Normalize the average to a 0.0 to 1.0 range.
-                customUniforms['u_audio'] = average / 255;
             }
 
             requestAnimationFrame(render);
