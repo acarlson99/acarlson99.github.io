@@ -1,24 +1,28 @@
-⍝ dyalogscript tile.dyalog | cat | tr -d ' ' | tr '\\' '\\\\\\' > out.txt
+⍝ dyalog -script tile.dyalog
 
 :namespace tile
 
-    f←{3 3⍴(⊃⌷∘⍵)¨1 2 1 2 3 2 1 2 1}
+    fn←{3 3⍴(⊃⌷∘⍵)¨1 2 1 2 3 2 1 2 1}
 
     a←3 3⍴'\|/-╬-/|\'
     b←3 3⍴'#+#+X+#+#'
     c←3 3⍴'/-\|O|\-/'
+    d←3 3⍴'    X    '
+    e←3 3⍴'+ +   + +'
+    f←3 3⍴' '
       t←{
-        ⍝ ⍵ ← a b c
-        ⍝ ⍺ ← n
-      ⍝ TODO: recursively add depth to pattern (somehow)
-          ⍺≤1:f ⍵
-          ⋄ ta←(⍺-1)∇ ⍵
-          ⋄ tb←(⍺-1)∇(1⌽⍵)
-          ⋄ tc←(⍺-1)∇(2⌽⍵)
-          ⋄ f ta tb tc
+          ⍺≤1:fn⊃¨⍵
+          ⋄ ta←(⍺-1)∇⌽(2⌽¨⍵)
+          ⋄ tb←(⍺-1)∇(1⌽(3⌽¨⍵))
+          ⋄ tc←(⍺-1)∇(2⌽(1⌽¨⍵))
+          ⋄ fn ta tb tc
       }
-    ⍝ ⎕←3 t a b c
 
-    s←3 t a b c
-    ⎕←s
+    res← 3 t (c a d) ((⍉b) e (⍉c)) (f (⍉a) b)
+    ⎕PW←⊃⌈/⍴⍕res
+
+    table←⍕res
+    mask←∧/[1](' '≠⍕{'X'}¨¨¨¨¨¨¨¨res)
+    ⍝⎕←mask/table ⍝ without spaces
+    ⎕←table      ⍝ with spaces
 :endnamespace

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="/fun-style.css">
+  <style>
+    #code {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      width: 100%;
+      display: block;
+      /* mostly never overflows */
+      font-size: min(20px, 2.2vw);
+    }
+  </style>
+  <title>acarlson</title>
+</head>
+
+<body><code id="code"></code>
+  <script>
+
+    const randomElement = (array) => array[Math.floor(Math.random() * array.length)];
+    const getRandomInt = (max) => Math.floor(Math.random() * max);
+
+    const splashes = [ // `x`.repeat(80)
+      `;; ............... .                             ............,
+;; .............                    ,(##(/,         .........,
+;; ...........                   .#.,%#%%##((((       .......,
+;; .........                    * G/%%%%%%%%%###(     ........
+;; .......                    #%%%#%%%%%%%%&%%%%%#      ......
+;; .....            &&%###(((%%%%%%%%%%%%%%%%%%%%%#.     ...,.
+;; ....             %@@@@#%#%%%%%&%%%%%%&&%%%%%%%%%#     ...,.
+;; ...                     (%%%%%%%%%@%%%%%%%%%%%%&&     ...,,
+;; ..                      .*/((#%&&&&&&@&&%%%%%%%%&     .,,,.
+;; ..                       *//((//(////#&@@@@%%%&&%     .,,,,
+;;                          ,/**////****(%&&%%#/&&%.     .,,,,
+;;                        .***,,,*,,,***/##(##/##&@..    .,,,,
+;;                        *((/(,,,*****/##(#//(&@@&*,    .,,,,
+;;                          ,**,,,******//(/*((&@@%&*.,  .,,,,
+;;                          ,*/(*******//((((((%@&%/%/.  .,,*,
+;;                       *#(#***/**////(((((((((((#%/#((/****,
+;;                  .*((##&/***/((###(((((((((((/*/(%##%#####/
+;;               ./((#%##%&%&&&%%%%(%(#((((((((((/(######%##((
+;;              /(##%#&%%%&%&&&&%%#%(####(((/(((#(###%##%##%#(
+;;            *(###%%##&%%&&&&%&%%%######(((((##/%%%###%%##%##
+;;           /(##%#%&%%%&%&%%&%%%%%%%%##(((((((%%%%%#%%%%%%%##
+;; ..       /(##%#%%&%%&%%@%&&%%%&%&%%%%#(((/%%%&%#%%%%%%#%%#%
+;; .....   .##%#%%%%%%%&&&&&%&&%%&%%&%%%%%#%%%&%%%%%#%#%%%%%%%
+;; ....... (##%#%%%%@%%&&&&&&&&&%%&%&%&&%&%%%%%%%%%%%#%%%&&&&%
+;; ........((#%%#%#&&&%&%&%%%%%&&&%%%%&&&%%%##%%%%%%%%%%%@&&%&
+;; ....../##(####&&%%&&&&&&&%&&%&&&%%%&&&&%%%#%%%%%%%%%%&@&&&%
+;; .....,#%%##%%%%%&&&&&&&&%%%%%&&&&&%&&&&&&%%%%%%%&%%%%&@&&&%
+;; ....#%&&%&&&&%%%&@&&&&&%%%%%&&&&@&&&&&&&&&%%%%%&%%%%&&@@@&%
+;; ...#(######%%&&@&@@&&&&&&&%&&&&@&&&&&&&&&&&%%%&%%%&&&@@@@&%`,
+      `;;                            -:*vJzvvvlv1zxc>:-
+;;                       "^]O#qz?*|zyoZZoy}vvi\\xakur-
+;;                    ,zDQNJriLumf?"-,?qNRRRW#QD2>^uQMu:
+;;                 -/MQB9\`\\6RqHKkXUq'   \`RRRRRRR8NQkr'PBNt.
+;;               "aQ#MD>\`R$wwwwwwwwwD'  \`7NRRRRRRRR88&r'ddBa,
+;;             "FQNRNZ\`RqwwwmmmmmmmwXM'  \`ORRRRRRRRRRRB9'wKKBe-
+;;            ,NQRRNo;\`Pwwmmmmmmmmmwwku'  \`BRRRRRRRRRRRgN'mqUHB;
+;;           ^QNRRgj\`QPwmmmmmmmmmmmmmwg'   \`gRRRRRRRRRRRgg'O969Q7
+;;          ?QWRRR#"\`kwwmmmmmmmmmmmmmXR'   \`U&RRRRRRRRRRRRa'N6UUQF
+;;         ;@WRRRNv\`BwwmmmmmmmmmmmmmwK'";   \`8RRRRRRRRRRR8Q'm6UUUQL
+;;        "QNRRRRB\`UDwmmmmmmmmmmmmmwkP'\`9e'  \`RRRRRRRRRRRRQ'\\O6UU9Q,
+;;        zQRRRRRQ\`qDwmmmmmmmmmmmmwE9'\`ww9u' \`iNRRRRRRRRRRQ'|O666U89
+;;       "QNRRRRRQ\`FgwmmmmmmmmmmwwUm'\`XwmwH'  \`ogRRRRRRRR8Q'j9666U6@.
+;;       ;@RRRRRRBc\`QwwmmmmmmmmwXKF'\`Pwmmww&'  \`XWRRRRRRRgd'g6U66UUQ?
+;;       \\@RRRRRRN\`rFMXwmmmmmmwwdL'\`$wmmmwwXH'  \`ENRRRRR8Q'oO6U66U6#x
+;;       \\@RRRRRR&\`x/UDwwmmmwXwH?'\`Kwwmmmmmwkm'  \`yN8&RRQ?'R6U666U6#J
+;;       ;@8RRRRRRQ\`ivkRXwwwwwH' \`DwwmmmmmmwwO'   \`egR&Q?'&666666U6Q*
+;;       "QNRRRRRRN@O\`maN9wwXH' \`RXwwmmmmmmmmwM'   \`wBO'-g6UU666U6U@-
+;;        /QRRRRRRRQHZhJ\`/dH9' \`RwwwmmmmmmmmmwXH'  _;;,,eK6U6666UUWk
+;;         ##RRRRRRQR6$R   \`zRBDXXwmmmmmmmmwwwXdRv/'  PrQ666666U6qQ"
+;;         ,QNRRRRRQxeK6R;    \`>1Z$DRHdddDRdh27j'    "PvQ66666UUUQ=
+;;          ;QgRRRRgBezg@@QBBBBgqu^--:M|,_7eDBBQgwv=zRjkg666UUU6QJ
+;;           :QNRRRRR##Q@##QQ@Q####96""  9NddKUejUDN@QWK6U66UU9Q/
+;;            -KQ8RRRR&@PQMq&^      |" "         "9m]OUU6UUU6DN:
+;;              rBBRRRRNQHg#B;"     "Q:q         rjdD666666HB{"
+;;                \\NQMRRRRWgNQBP\\i  "Q*Q:  ./BDgBQBRUUU66D#J-
+;;                  ;6Q#8RRRR&Bqr#-  "     ~*Bg6U6U666KNDL"
+;;                    "?XBQN8RNgjav|k\\?;>>X\\vN9UU69R#Kv,
+;;                        ,|oO#QQWq~D"N"F,DeQ&g#Hez;"
+;;                             ",;?ctFy2yfz/r:"`,
+      `;;                           \`MOEeajFlx1xJ{u2ekD'
+;;                       \`DPoeXwmeauz7'\\1/\`7vlF}zv2h'
+;;                   \`&Ea6khEPwu\\1':::::_~,,,,,:;\`LzvLu'
+;;                 \`9wq996kEX7^';;;:::::_~,,,,,’’’’’:\`i7/l'
+;;               \`eqKKq9$6ku=';\`r??'::::_~:;;:,’’’’.---\`*i/c'
+;;             \`mOOOKKq9$6S'^\`rumeeZJ':::\`juuFv'’’’.---‘‘’\`//7'
+;;            \`kHdOOKKq9$m?'^\`iwmeeZa|':\`yjufFl'’’’.---‘‘‘‘’\`l|'
+;;          \`aDDHdOOKKq9$}'^^;\`iaeeS/'::_\`zuuJ|'’’’.---‘‘‘‘‘‘_\`||'
+;;         \`eRDDHdOOKKq9$z'^^;;;;;;:::::_~,~~,,’’’’.---‘‘‘‘‘‘ \`||L'
+;;         \`RRDDHdOOKKq9$yr'^;;;;;;\`|{S2l|',,,,’’’’.---‘‘‘‘‘‘  \`*|'
+;;        \`HRRDDHdOOKKq9$k7'^;;;;;\`raaoS2j|',,,’’’’.---‘‘‘‘‘‘   \`||'
+;;       \`a&RRDDHdOOKKq9$6X*';;;;;;\`2aoS2ur',,,’’’’.---‘‘‘‘‘‘   \`r|*'
+;;       \`&&RRDDHdOOKKq9$66m7';;;;;:\`*\\1?:',,,,’’’’.---‘‘‘‘‘‘    \`|?'
+;;       \`M&RRDDHdOOKKq9$6kEPoi';;;:::::_~,,,,,’’’’.---‘‘‘‘‘‘    \`=|'
+;;       \`M&RRDDHdOOKKq9$6kEEPXmf7?';:::_~,,,,,’’’’.---‘‘‘‘‘‘    \`ca'
+;;       \`M&RRDDHdOOKKq9$6kEEPXXmeeZaojuFzc|'",’’’’.---‘‘‘‘‘‘    \`c|'
+;;       \`M&RRDDHdOOKKq9$6kEEPXwmeeZaaoS2jjuuFv',’’.---‘‘‘‘‘‘    \`>?'
+;;       \`M&RRDDHdOOKKq9$6kEEPXwmeeZaliL7ujufFF}z'’.---‘‘‘‘‘‘    \`|?'
+;;       \`X&RRDDHdOOKKq9$6kEEPXwmeeo':::_\`iufFl}{x',---‘‘‘‘‘‘    \`|r'
+;;        \`HRRDDHdOOKKq9$6kEEPXwmee}':::_~\`ufFl}{xJ'.--‘‘‘‘‘‘   \`||'
+;;         \`RRDDHdOOKKq9$6kEEPXwmeeZi':::\`luuFl}{xJz'--‘‘‘‘‘‘  \`*|'
+;;         \`PRDDHdOOKKq9$6kEEPXwmeeZaouFjyjuuFl}{xJz'--‘‘‘‘‘‘ \`*||'
+;;          \`eDDHdOOKKq9$6kEEPXl';;\`vooS2'^:"\`={{xJz'--‘‘‘‘‘‘\`?\\1'
+;;            \`KHdOOKKq9$6kEEPJ';;;:\`ioS{',,,,\`?{xJz'--‘‘‘‘\`:\\1z'
+;;             \`PdOOKKq9$6kEEP2r';;:\`}oSu',,,\`ni{xJ'---‘‘-\`\\1/'
+;;               \`XOKKq9$6kEEPXet7izoaoSSu7?*\\1}tv'’---’\`/i/'
+;;                 \`w6q9$6kEEPXwmeeZaaoS2jjuuFlt',’.,;\`7L7'
+;;                   \`Oew$kEEPXwmeeZaaoS2jjuFLr':^\`cv7vm'
+;;                      \`D9aaPXwmeeZaaoSju{vivJl{7xad'
+;;                           \`8OPeojFlx1xx}uSekR'`,
+      `DYALOG_TILE_DATA`
+    ]
+
+    const t = String(Date.now()).split('').map(Number).reverse()
+    const splashSelectorIdx = 6 // changes semi-frequently (~3h)
+    // const lines = splashes[3].split('\n')
+    const lines = splashes[t[splashSelectorIdx] % splashes.length].split('\n')
+    // ensure all lines are same length
+    // lines.reduce((a,b) => Math.max(a,b.length),0)
+    let ls = Array(...lines.entries()).map(w => {
+      return {
+        rand: t[w[0] % t.length],
+        i: w[0],
+        str: w[1],
+      }
+    })
+    ls.sort((a, b) => a.rand - b.rand)
+    let links = [
+      {
+        str: 'mutineers',
+        path: 'mutineers',
+      }, {
+        str: 'joust',
+        path: 'joust',
+      }, {
+        str: 'tools',
+        path: 'static/tools.html',
+      }]
+    const randIdxs = ls.slice(0, links.length).map(a => a.i)
+    links = Array(...links.entries()).map(([i, a]) => {
+      return {
+        str: a.str,
+        path: a.path,
+        i: randIdxs[i]
+      }
+    })
+    let linkDict = {}
+    for (let w of links) {
+      linkDict[w.i] = w
+    }
+
+    // splice word `W` into string `S` starting at position `I`
+    // spliceWord = (w, i, s, ln) => s.slice(0, i) + w + s.slice(i + ln)
+
+    ls.sort((a, b) => (a.i - b.i))
+    var p = document.getElementById('code')
+    for (let line of ls) {
+      if (line.i > 0) {
+        p.appendChild(document.createElement('br'))
+      }
+
+      let target = linkDict[line.i]
+      if (target) {
+        let targetLen = target.str.length
+        let i = getRandomInt(line.str.length - targetLen)
+        let diff = 7 // good prime number by which to shift; should be coprime
+        let firstI = i;
+        if (i > (line.str.length - targetLen) / 2) {
+          diff *= -1
+        }
+        containsSpecialChar = (s) => (s.indexOf('`') >= 0 || s.indexOf('\'') >= 0)
+        while (containsSpecialChar(line.str.slice(i, i + targetLen))) {
+          i += diff
+          let n = line.str.length - targetLen
+          i = (i + n) % n
+          if (i == firstI) { break }
+        }
+        p.innerHTML += line.str.slice(0, i).replaceAll(' ', '&nbsp')
+        p.innerHTML += target.str.link(target.path).bold()
+        p.innerHTML += line.str.slice(i + targetLen).replaceAll(' ', '&nbsp')
+      } else {
+        p.innerHTML += line.str.replaceAll(' ', '&nbsp')
+      }
+    }
+    p.innerHTML = p.innerHTML.split('<br>').map(l => l.replaceAll(/`[^'`]*['`]/g, (s) => '`' + s.slice(1, -1).bold() + '`')).join('<br>')
+
+  </script>
+</body>
+
+</html>
