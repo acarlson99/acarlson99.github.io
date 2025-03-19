@@ -63,5 +63,4 @@ main = do
             " X ",
             "/ \\"
           ]
-      fractal = gen ([c, a, d], [b, e, c], [a, f, b]) depth
-  printMatrix fractal
+  printMatrix $ gen ([c, a, d], [b, e, c], [a, f, b]) depth
