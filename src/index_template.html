@@ -119,76 +119,80 @@
 
     const t = String(Date.now()).split('').map(Number).reverse()
     const splashSelectorIdx = 6 // changes semi-frequently (~3h)
-    // const lines = splashes[3].split('\n')
-    const lines = splashes[t[splashSelectorIdx] % splashes.length].split('\n')
-    // ensure all lines are same length
-    // lines.reduce((a,b) => Math.max(a,b.length),0)
-    let ls = Array(...lines.entries()).map(w => {
-      return {
-        rand: t[w[0] % t.length],
-        i: w[0],
-        str: w[1],
-      }
-    })
-    ls.sort((a, b) => a.rand - b.rand)
-    let links = [
-      {
-        str: 'mutineers',
-        path: 'mutineers',
-      }, {
-        str: 'joust',
-        path: 'joust',
-      }, {
-        str: 'tools',
-        path: 'static/tools.html',
-      }]
-    const randIdxs = ls.slice(0, links.length).map(a => a.i)
-    links = Array(...links.entries()).map(([i, a]) => {
-      return {
-        str: a.str,
-        path: a.path,
-        i: randIdxs[i]
-      }
-    })
-    let linkDict = {}
-    for (let w of links) {
-      linkDict[w.i] = w
-    }
-
-    // splice word `W` into string `S` starting at position `I`
-    // spliceWord = (w, i, s, ln) => s.slice(0, i) + w + s.slice(i + ln)
-
-    ls.sort((a, b) => (a.i - b.i))
-    var p = document.getElementById('code')
-    for (let line of ls) {
-      if (line.i > 0) {
-        p.appendChild(document.createElement('br'))
-      }
-
-      let target = linkDict[line.i]
-      if (target) {
-        let targetLen = target.str.length
-        let i = getRandomInt(line.str.length - targetLen)
-        let diff = 7 // good prime number by which to shift; should be coprime
-        let firstI = i;
-        if (i > (line.str.length - targetLen) / 2) {
-          diff *= -1
+    let idx = t[splashSelectorIdx]
+    function loadSplash(idx) {
+      const lines = splashes[idx % splashes.length].split('\n')
+      // const lines = splashes[3].split('\n')
+      // ensure all lines are same length
+      // lines.reduce((a,b) => Math.max(a,b.length),0)
+      let ls = Array(...lines.entries()).map(w => {
+        return {
+          rand: t[w[0] % t.length],
+          i: w[0],
+          str: w[1],
         }
-        containsSpecialChar = (s) => (s.indexOf('`') >= 0 || s.indexOf('\'') >= 0)
-        while (containsSpecialChar(line.str.slice(i, i + targetLen))) {
-          i += diff
-          let n = line.str.length - targetLen
-          i = (i + n) % n
-          if (i == firstI) { break }
+      })
+      ls.sort((a, b) => a.rand - b.rand)
+      let links = [
+        {
+          str: 'mutineers',
+          path: 'mutineers',
+        }, {
+          str: 'joust',
+          path: 'joust',
+        }, {
+          str: 'tools',
+          path: 'static/tools.html',
+        }]
+      const randIdxs = ls.slice(0, links.length).map(a => a.i)
+      links = Array(...links.entries()).map(([i, a]) => {
+        return {
+          str: a.str,
+          path: a.path,
+          i: randIdxs[i]
         }
-        p.innerHTML += line.str.slice(0, i).replaceAll(' ', '&nbsp')
-        p.innerHTML += target.str.link(target.path).bold()
-        p.innerHTML += line.str.slice(i + targetLen).replaceAll(' ', '&nbsp')
-      } else {
-        p.innerHTML += line.str.replaceAll(' ', '&nbsp')
+      })
+      let linkDict = {}
+      for (let w of links) {
+        linkDict[w.i] = w
       }
+
+      // splice word `W` into string `S` starting at position `I`
+      // spliceWord = (w, i, s, ln) => s.slice(0, i) + w + s.slice(i + ln)
+
+      ls.sort((a, b) => (a.i - b.i))
+      var p = document.getElementById('code')
+      for (let line of ls) {
+        if (line.i > 0) {
+          p.appendChild(document.createElement('br'))
+        }
+
+        let target = linkDict[line.i]
+        if (target) {
+          let targetLen = target.str.length
+          let i = getRandomInt(line.str.length - targetLen)
+          let diff = 7 // good prime number by which to shift; should be coprime
+          let firstI = i;
+          if (i > (line.str.length - targetLen) / 2) {
+            diff *= -1
+          }
+          containsSpecialChar = (s) => (s.indexOf('`') >= 0 || s.indexOf('\'') >= 0)
+          while (containsSpecialChar(line.str.slice(i, i + targetLen))) {
+            i += diff
+            let n = line.str.length - targetLen
+            i = (i + n) % n
+            if (i == firstI) { break }
+          }
+          p.innerHTML += line.str.slice(0, i).replaceAll(' ', '&nbsp')
+          p.innerHTML += target.str.link(target.path).bold()
+          p.innerHTML += line.str.slice(i + targetLen).replaceAll(' ', '&nbsp')
+        } else {
+          p.innerHTML += line.str.replaceAll(' ', '&nbsp')
+        }
+      }
+      p.innerHTML = p.innerHTML.split('<br>').map(l => l.replaceAll(/`[^'`]*['`]/g, (s) => '`' + s.slice(1, -1).bold() + '`')).join('<br>')
     }
-    p.innerHTML = p.innerHTML.split('<br>').map(l => l.replaceAll(/`[^'`]*['`]/g, (s) => '`' + s.slice(1, -1).bold() + '`')).join('<br>')
+    loadSplash(splashSelectorIdx)
 
   </script>
 </body>
