@@ -9,57 +9,66 @@ combine a b c = foldl1 (++) [t, m, t]
 
 rot n as = drop n as ++ take n as
 
-gen :: (Eq a, Num a) => ([Matrix Char], [Matrix Char], [Matrix Char]) -> a -> [Matrix Char]
-gen (a, b, c) 1 = combine <$> a <*> b <*> c
-gen (a, b, c) n =
+gen :: (Eq a, Num a) => [Matrix Char] -> [Matrix Char] -> [Matrix Char] -> a -> [Matrix Char]
+gen a b c 1 = combine <$> a <*> b <*> c
+gen a b c n =
   combine <$> a' <*> b' <*> c'
   where
-    a' = gen (rot 0 b, rot 1 c, rot 2 a) (n - 1)
-    b' = gen (rot 1 c, rot 2 a, rot 0 b) (n - 1)
-    c' = gen (rot 2 a, rot 0 b, rot 1 c) (n - 1)
+    a' = gen (rot 0 b) (rot 1 c) (rot 2 a) (n - 1)
+    b' = gen (rot 1 c) (rot 2 a) (rot 0 b) (n - 1)
+    c' = gen (rot 2 a) (rot 0 b) (rot 1 c) (n - 1)
 
 printMatrix :: Matrix Char -> IO ()
 printMatrix = mapM_ putStrLn
 
+pad = map (++ " ")
+
+a =
+  pad
+    [ " ^ ",
+      "<#>",
+      " V "
+    ]
+
+b =
+  pad
+    [ "#.#",
+      ".X.",
+      "#.#"
+    ]
+
+c =
+  pad
+    [ "/_\\",
+      "|O|",
+      "\\-/"
+    ]
+
+d =
+  pad
+    [ "   ",
+      " X ",
+      "   "
+    ]
+
+e =
+  pad
+    [ "# #",
+      "   ",
+      "# #"
+    ]
+
+f =
+  pad
+    [ "\\ /",
+      " X ",
+      "/ \\"
+    ]
+
 main :: IO ()
 main = do
   let depth = 5
-      pad = map (++ " ")
-      a =
-        pad
-          [ " ^ ",
-            "<#>",
-            " V "
-          ]
-      b =
-        pad
-          [ "#.#",
-            ".X.",
-            "#.#"
-          ]
-      c =
-        pad
-          [ "/_\\",
-            "|O|",
-            "\\-/"
-          ]
-      d =
-        pad
-          [ "   ",
-            " X ",
-            "   "
-          ]
-      e =
-        pad
-          [ "# #",
-            "   ",
-            "# #"
-          ]
-      f =
-        pad
-          [ "\\ /",
-            " X ",
-            "/ \\"
-          ]
       head_ (a : _) = a
-  printMatrix . head_ $ gen ([c, a, d], [b, e, c], [a, f, b]) depth
+  printMatrix . head_ $ gen [c, a, d] [b, e, c] [a, f, b] depth
+
+-- mapM_ printMatrix  $ gen [c, a, d] [b, e, c] [a, f, b] 4
