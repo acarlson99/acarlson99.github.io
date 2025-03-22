@@ -1,15 +1,86 @@
+{-# LANGUAGE UndecidableInstances #-}
+
+import Control.Monad (when)
+import Data.Maybe (fromJust, fromMaybe)
+import System.Console.GetOpt
+import System.Environment (getArgs, getProgName)
+import Text.Read (readMaybe)
+
+-- BEGIN ALGORITHM
+
 type Matrix a = [[a]]
+
+data TTree a = Node (TTree a) (TTree a) (TTree a) | Leaf a
+
+instance Functor TTree where
+  fmap f (Leaf a) = Leaf $ f a
+  fmap f (Node a b c) = Node a' b' c'
+    where
+      a' = fmap f a
+      b' = fmap f b
+      c' = fmap f c
+
+instance Applicative TTree where
+  (<*>) (Leaf f) (Leaf b) = Leaf (f b)
+  (<*>) (Node a b c) (Node d e f) = Node (a <*> d) (b <*> e) (c <*> f)
+  (<*>) (Node a b c) (Leaf d) = Node (a <*> pure d) (b <*> pure d) (c <*> pure d)
+  (<*>) (Leaf f) (Node a b c) = Node (f <$> a) (f <$> b) (f <$> c)
+  pure = Leaf
+
+pad :: Int -> a -> [a] -> [a]
+pad n x xs = replicate pl x ++ xs ++ replicate (diff - pl) x
+  where
+    diff = n - length xs
+    pl = diff `div` 2
 
 combine :: Matrix Char -> Matrix Char -> Matrix Char -> Matrix Char
 combine a b c = foldl1 (++) [t, m, t]
   where
+    maxL = maximum $ map length [a, b, c]
+    padTo mx = pad maxL ' ' <$> pad maxL [] mx
     comb = zipWith (++)
-    t = foldl1 comb [a, b, a]
-    m = foldl1 comb [b, c, b]
+    t = foldl1 comb $ map padTo [a, b, a]
+    m = foldl1 comb $ map padTo [b, c, b]
+
+class ETree a where
+  evalTree :: TTree a -> a
+
+instance (Applicative f) => ETree (f (Matrix Char)) where
+  evalTree (Node a b c) = combine <$> a' <*> b' <*> c'
+    where
+      a' = evalTree a
+      b' = evalTree b
+      c' = evalTree c
+  evalTree (Leaf a) = a
+
+genTree :: a -> a -> a -> Int -> TTree a
+genTree a b c 1 = Node (Leaf a) (Leaf b) (Leaf c)
+genTree a b c n
+  | n <= 0 = genTree a b c 1
+  | otherwise = Node a' b' c'
+  where
+    a' = genTree a b c (n - 1)
+    b' = genTree a b c (n - 1)
+    c' = genTree a b c (n - 1)
+
+printMatrix :: Matrix Char -> IO ()
+printMatrix = mapM_ putStrLn
+
+-- these functions basically make the "pointer" jump around
+-- to select patterns in a stable fashion
+walkTree :: (Int -> Int) -> (Int -> Int) -> (Int -> Int) -> TTree [Matrix Char] -> TTree [Matrix Char]
+walkTree f1 f2 f3 t = rf t 1
+  where
+    rf :: TTree [Matrix Char] -> Int -> TTree [Matrix Char]
+    rf (Node a b c) d = Node (rf a (f1 d)) (rf b (f2 d)) (rf c (f3 d))
+    rf (Leaf as) d = pure . who $ cycle as
+      where
+        who cyc = (cyc !! max 0 d) : who (drop d cyc)
 
 rot n as = drop n as ++ take n as
 
-gen :: (Eq a, Num a) => [Matrix Char] -> [Matrix Char] -> [Matrix Char] -> a -> [Matrix Char]
+-- old version, kept for posterity
+gen :: [Matrix Char] -> [Matrix Char] -> [Matrix Char] -> Int -> [Matrix Char]
 gen a b c 1 = combine <$> a <*> b <*> c
 gen a b c n =
   combine <$> a' <*> b' <*> c'
@@ -18,57 +89,136 @@ gen a b c n =
     b' = gen (rot 1 c) (rot 2 a) (rot 0 b) (n - 1)
     c' = gen (rot 2 a) (rot 0 b) (rot 1 c) (n - 1)
 
-printMatrix :: Matrix Char -> IO ()
-printMatrix = mapM_ putStrLn
+-- END ALGORITHM
 
-pad = map (++ " ")
+-- BEGIN OPT
+
+data Mode = ModeWalk | ModeNormal deriving (Show, Eq)
+
+data Options = Options
+  { optOutput :: Maybe FilePath,
+    optEndless :: Bool,
+    optDepth :: Int,
+    optMode :: Mode,
+    optNth :: Int,
+    optSpaced :: Bool,
+    optLegacy :: Bool -- old algorithm
+  }
+  deriving (Show)
+
+defaultOptions :: Options
+defaultOptions =
+  Options
+    { optOutput = Nothing,
+      optEndless = False,
+      optDepth = 2,
+      optMode = ModeNormal,
+      optNth = 0,
+      optSpaced = False,
+      optLegacy = False
+    }
+
+options :: [OptDescr (Options -> Options)]
+options =
+  [ Option
+      ['o']
+      ["output"]
+      (ReqArg (\arg opts -> opts {optOutput = Just arg}) "FILE")
+      "Output file",
+    Option
+      ['e']
+      ["endless"]
+      (NoArg (\opts -> opts {optEndless = True}))
+      "Turn on endless mode",
+    Option
+      ['d']
+      ["depth"]
+      (ReqArg (\arg opts -> opts {optDepth = read arg}) "INT")
+      "Depth (small integer)",
+    Option
+      []
+      ["walk"]
+      (NoArg (\opts -> opts {optMode = ModeWalk}))
+      "walk the tree and find an interesting pattern (instead of selecting `nth`)",
+    Option
+      ['s']
+      ["space"]
+      (NoArg (\opts -> opts {optSpaced = True}))
+      "add spaces between patterns (makes some larger patterns easier to distinguish)",
+    Option
+      []
+      ["legacy"]
+      (NoArg (\opts -> opts {optLegacy = True}))
+      "use older algorithm",
+    Option
+      ['n']
+      ["nth"]
+      (ReqArg (\arg opts -> opts {optNth = read arg}) "INT")
+      "Print nth generated pattern"
+  ]
+
+-- END OPT
 
 a =
-  pad
-    [ " ^ ",
-      "<#>",
-      " V "
-    ]
+  [ " ^ ",
+    "<#>",
+    " V "
+  ]
 
 b =
-  pad
-    [ "#.#",
-      ".X.",
-      "#.#"
-    ]
+  [ "#.#",
+    ".X.",
+    "#.#"
+  ]
 
 c =
-  pad
-    [ "/_\\",
-      "|O|",
-      "\\-/"
-    ]
+  [ "/_\\",
+    "|O|",
+    "\\-/"
+  ]
 
 d =
-  pad
-    [ "   ",
-      " X ",
-      "   "
-    ]
+  [ "   ",
+    " X ",
+    "   "
+  ]
 
 e =
-  pad
-    [ "# #",
-      "   ",
-      "# #"
-    ]
+  [ "# #",
+    "   ",
+    "# #"
+  ]
 
 f =
-  pad
-    [ "\\ /",
-      " X ",
-      "/ \\"
-    ]
+  [ "\\ /",
+    " X ",
+    "/ \\"
+  ]
+
+everyNth n xs = if n >= length xs then [] else (xs !! max 0 n) : everyNth n (drop n xs)
 
 main :: IO ()
 main = do
-  let depth = 5
-      head_ (a : _) = a
-  printMatrix . head_ $ gen [c, a, d] [b, e, c] [a, f, b] depth
-
--- mapM_ printMatrix  $ gen [c, a, d] [b, e, c] [a, f, b] 4
+  args <- getArgs
+  progName <- getProgName
+  let (actions, nonOptions, errors) = getOpt Permute options args
+  if not (null errors)
+    then ioError (userError (concat errors ++ usageInfo progName options))
+    else do
+      let opts = foldl (flip id) defaultOptions actions
+          depth = optDepth opts
+          tt = genTree [a, b, c, e] [b, d, e, f] [a, c, d, f] depth
+          wt = walkTree (+ 1) (+ 2) (+ 3) tt -- Surely this walking algorithm could be improved
+          -- wt = walkTree (+ 1) (`subtract` 2) (\a -> a * a) tt
+          -- wt = walkTree (+ 3) (`subtract` 2) (\a -> a * a) tt
+          targetTree = if optMode opts == ModeWalk then wt else tt
+      let transF = if optSpaced opts then map (map (++ " ")) else id
+          outputData'
+            | optLegacy opts = gen [c, a, d] [b, e, c] [a, f, b] depth
+            | otherwise = evalTree $ transF <$> targetTree
+          outputData
+            | optEndless opts = everyNth (max 1 (optNth opts)) outputData'
+            | otherwise = [cycle outputData' !! optNth opts]
+      case optOutput opts of
+        Nothing -> mapM_ printMatrix outputData
+        Just file -> writeFile file (unlines (map unlines outputData))
