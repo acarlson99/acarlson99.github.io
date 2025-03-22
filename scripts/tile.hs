@@ -68,14 +68,16 @@ printMatrix = mapM_ putStrLn
 
 -- these functions basically make the "pointer" jump around
 -- to select patterns in a stable fashion
-walkTree :: (Int -> Int) -> (Int -> Int) -> (Int -> Int) -> TTree [Matrix Char] -> TTree [Matrix Char]
+walkTree :: (Int -> Int) -> (Int -> Int) -> (Int -> Int) -> TTree [Matrix Char] -> TTree (Matrix Char)
 walkTree f1 f2 f3 t = rf t 1
   where
-    rf :: TTree [Matrix Char] -> Int -> TTree [Matrix Char]
+    rf :: TTree [Matrix Char] -> Int -> TTree (Matrix Char)
     rf (Node a b c) d = Node (rf a (f1 d)) (rf b (f2 d)) (rf c (f3 d))
-    rf (Leaf as) d = pure . who $ cycle as
-      where
-        who cyc = (cyc !! max 0 d) : who (drop d cyc)
+    rf (Leaf as) d = pure (cycle as !! d)
+
+-- rf (Leaf as) d = pure . who $ cycle as
+--   where
+--     who cyc = (cyc !! max 0 d) : who (drop d cyc)
 
 rot n as = drop n as ++ take n as
 
@@ -91,6 +93,25 @@ gen a b c n =
 
 -- END ALGORITHM
 
+-- BEGIN COLORIZER
+
+data Color = Red | Green | Yellow | Blue | Magenta | Cyan | None
+
+colorize :: Color -> String -> String
+colorize color s =
+  let colorCode = case color of
+        Red -> "\ESC[31m"
+        Green -> "\ESC[32m"
+        Yellow -> "\ESC[33m"
+        Blue -> "\ESC[34m"
+        Magenta -> "\ESC[35m"
+        Cyan -> "\ESC[36m"
+        _ -> "\ESC[0m"
+      resetCode = "\ESC[0m"
+   in colorCode ++ s ++ resetCode
+
+-- END COLORIZER
+
 -- BEGIN OPT
 
 data Mode = ModeWalk | ModeNormal deriving (Show, Eq)
@@ -102,6 +123,7 @@ data Options = Options
     optMode :: Mode,
     optNth :: Int,
     optSpaced :: Bool,
+    optColor :: Bool,
     optLegacy :: Bool -- old algorithm
   }
   deriving (Show)
@@ -115,6 +137,7 @@ defaultOptions =
       optMode = ModeNormal,
       optNth = 0,
       optSpaced = False,
+      optColor = False,
       optLegacy = False
     }
 
@@ -150,6 +173,11 @@ options =
       ["legacy"]
       (NoArg (\opts -> opts {optLegacy = True}))
       "use older algorithm",
+    Option
+      ['c']
+      ["color"]
+      (NoArg (\opts -> opts {optColor = True}))
+      "color output using ASCII color-escapes (does not work with legacy algorithm)",
     Option
       ['n']
       ["nth"]
@@ -206,18 +234,23 @@ main = do
     then ioError (userError (concat errors ++ usageInfo progName options))
     else do
       let opts = foldl (flip id) defaultOptions actions
+
+          padTree = if optSpaced opts then map (map (++ " ")) else id
+          colorMats ms = zipWith (\m c -> colorize c <$> m) ms (cycle $ reverse [Cyan, Red, Blue, Magenta, Green, Yellow])
+          colorTree = if optColor opts then fmap colorMats else id
+
           depth = optDepth opts
-          tt = genTree [a, b, c, e] [b, d, e, f] [a, c, d, f] depth
+          tt = colorTree $ genTree [a, b, c, e] [b, d, e, f] [a, c, d, f] depth
           wt = walkTree (+ 1) (+ 2) (+ 3) tt -- Surely this walking algorithm could be improved
           -- wt = walkTree (+ 1) (`subtract` 2) (\a -> a * a) tt
           -- wt = walkTree (+ 3) (`subtract` 2) (\a -> a * a) tt
-          targetTree = if optMode opts == ModeWalk then wt else tt
-      let transF = if optSpaced opts then map (map (++ " ")) else id
+          targetTree = if optMode opts == ModeWalk then pure <$> wt else tt
           outputData'
             | optLegacy opts = gen [c, a, d] [b, e, c] [a, f, b] depth
-            | otherwise = evalTree $ transF <$> targetTree
+            | otherwise = evalTree $ padTree <$> targetTree
           outputData
-            | optEndless opts = everyNth (max 1 (optNth opts)) outputData'
+            | optEndless opts = outputData'
+            -- \| optEndless opts = everyNth (max 1 (optNth opts)) outputData' -- commented out since sanity checks make this take forever
             | otherwise = [cycle outputData' !! optNth opts]
       case optOutput opts of
         Nothing -> mapM_ printMatrix outputData
