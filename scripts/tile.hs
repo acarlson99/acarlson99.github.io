@@ -33,6 +33,8 @@ pad n x xs = replicate pl x ++ xs ++ replicate (diff - pl) x
     diff = n - length xs
     pl = diff `div` 2
 
+-- TODO: this function will end up taking a `path` arg, and `a,b,c` will
+-- become functions of type `path -> a -> b -> c -> Matrix Char`
 combine :: Matrix Char -> Matrix Char -> Matrix Char -> Matrix Char
 combine a b c = foldl1 (++) [t, m, t]
   where
@@ -53,6 +55,7 @@ instance (Applicative f) => ETree (f (Matrix Char)) where
       c' = evalTree c
   evalTree (Leaf a) = a
 
+-- TODO: generalize this function, and then create a version of this function which calls `generator` functions instead of walking a tree like a forager
 genTree :: a -> a -> a -> Int -> TTree a
 genTree a b c 1 = Node (Leaf a) (Leaf b) (Leaf c)
 genTree a b c n
