@@ -215,15 +215,21 @@ d =
   ]
 
 e =
-  [ "# #",
+  [ "   ",
     "   ",
-    "# #"
+    "   "
   ]
 
 f =
   [ "\\ /",
     " X ",
     "/ \\"
+  ]
+
+g =
+  [ "# #",
+    "   ",
+    "# #"
   ]
 
 everyNth n xs = if n >= length xs then [] else (xs !! max 0 n) : everyNth n (drop n xs)
@@ -243,7 +249,7 @@ main = do
           colorTree = if optColor opts then fmap colorMats else id
 
           depth = optDepth opts
-          tt = colorTree $ genTree [a, b, c, e] [b, d, e, f] [a, c, d, f] depth
+          tt = colorTree $ genTree [e, e, a, e, b, e, e, c, e, e] [e, b, d, e, f] [e, a, e, c, e, g, e, d, e, f] depth
           wt = walkTree (+ 1) (+ 2) (+ 3) tt -- Surely this walking algorithm could be improved
           -- wt = walkTree (+ 1) (`subtract` 2) (\a -> a * a) tt
           -- wt = walkTree (+ 3) (`subtract` 2) (\a -> a * a) tt
