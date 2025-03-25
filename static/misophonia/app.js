@@ -7,6 +7,14 @@ if (!gl) {
     alert("WebGL is not supported by your browser.");
 }
 
+if (document.URL.startsWith("http://localhost")) {
+    function LOG() {
+        console.log(...arguments);
+    }
+} else {
+    function LOG() { }
+}
+
 // Global object to store control values
 let customUniforms = {};
 
@@ -24,10 +32,9 @@ function hexToRgb(hex) {
     ];
 }
 
-// Smoothstep helper function
-function smoothstep(edge0, edge1, x) {
-    x = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
-    return x * x * (3 - 2 * x);
+// mix helper function
+function mix(a, b, t) {
+    return a * (1 - t) + b * t;
 }
 
 /***************************************
@@ -82,6 +89,9 @@ document.getElementById('image-upload').addEventListener('change', function (eve
         console.log("Image texture loaded from file.");
     };
     img.src = URL.createObjectURL(file);
+    img.width = 200;
+    img.height = 200;
+    document.getElementById("image-upload-container").appendChild(img);
 });
 
 /***************************************
@@ -242,34 +252,84 @@ function renderControls(schema) {
             case 'xy-plane':
                 inputElement = document.createElement('div');
                 inputElement.className = 'xy-plane';
+
+                // Create a grid overlay for guideline lines.
+                const grid = document.createElement('div');
+                grid.className = 'xy-grid';
+                inputElement.appendChild(grid);
+
+                // Calculate normalized default values.
+                const normX = (control.default.x - control.min.x) / (control.max.x - control.min.x);
+                const normY = (control.default.y - control.min.y) / (control.max.y - control.min.y);
+
+                // Create the indicator element.
+                // Use normalized default values to position the indicator.
                 const indicator = document.createElement('div');
                 indicator.className = 'xy-indicator';
-                indicator.style.left = (control.default.x * 200) + 'px';
-                indicator.style.top = (control.default.y * 200) + 'px';
+                indicator.style.left = (normX * 200) + 'px';
+                indicator.style.top = ((1 - normY) * 200) + 'px';
                 inputElement.appendChild(indicator);
+
+                // Create labels for min and max values.
+                const minLabel = document.createElement('div');
+                minLabel.className = 'xy-label xy-label-min';
+                minLabel.innerText = `Min: ${control.min.x}, ${control.min.y}`;
+                inputElement.appendChild(minLabel);
+
+                const maxLabel = document.createElement('div');
+                maxLabel.className = 'xy-label xy-label-max';
+                maxLabel.innerText = `Max: ${control.max.x}, ${control.max.y}`;
+                inputElement.appendChild(maxLabel);
+
+                // Create an info bubble for displaying the current XY value.
+                const infoBubble = document.createElement('div');
+                infoBubble.className = 'xy-info-bubble';
+                infoBubble.style.display = 'none';
+                inputElement.appendChild(infoBubble);
+
+                // Update function that moves the indicator and updates the info bubble.
                 function updateXY(e) {
                     const rect = inputElement.getBoundingClientRect();
                     const rawX = e.clientX - rect.left;
                     const rawY = e.clientY - rect.top;
                     const clampedX = Math.min(Math.max(rawX, 0), rect.width);
                     const clampedY = Math.min(Math.max(rawY, 0), rect.height);
+
+                    // Position the indicator.
                     indicator.style.left = clampedX + 'px';
                     indicator.style.top = clampedY + 'px';
-                    let x = smoothstep(control.min.x || 0, control.max.x || 1, rawX / rect.width);
-                    let y = smoothstep(control.min.y || 0, control.max.y || 1, 1 - rawY / rect.height);
-                    // console.log("x,y = ", x, y);
-                    customUniforms[control.uniform] = {
-                        x: x,
-                        y: y
-                    };
+
+                    // Map raw values to the control's min/max range.
+                    // For x: left (0) -> min.x and right (rect.width) -> max.x.
+                    let x = mix(control.min.x, control.max.x, clampedX / rect.width);
+                    // For y: bottom (rect.height) -> min.y and top (0) -> max.y.
+                    let y = mix(control.min.y, control.max.y, 1 - (clampedY / rect.height));
+
+                    LOG("x,y=", x, y);
+                    customUniforms[control.uniform] = { x, y };
+
+                    // Update the info bubble's text and position.
+                    infoBubble.innerText = `(${x.toFixed(2)}, ${y.toFixed(2)})`;
+                    // Position the bubble to the right of the indicator and slightly above.
+                    infoBubble.style.left = (clampedX + 50) + 'px';
+                    infoBubble.style.top = (clampedY - 25) + 'px';
                 }
+
                 inputElement.addEventListener('mousedown', e => {
+                    // Show the info bubble when the user begins interaction.
+                    infoBubble.style.display = 'block';
                     updateXY(e);
-                    function onMouseMove(e) { updateXY(e); }
+
+                    function onMouseMove(e) {
+                        updateXY(e);
+                    }
+
                     document.addEventListener('mousemove', onMouseMove);
                     document.addEventListener('mouseup', function onMouseUp() {
                         document.removeEventListener('mousemove', onMouseMove);
                         document.removeEventListener('mouseup', onMouseUp);
+                        // Hide the bubble when the user releases the mouse.
+                        infoBubble.style.display = 'none';
                     });
                 });
                 break;
