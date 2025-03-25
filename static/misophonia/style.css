@@ -24,21 +24,44 @@ body {
     box-sizing: border-box;
 }
 
-/* Canvas settings and folder upload container */
-#canvas-settings,
+/* Canvas settings container */
+#canvas-settings {
+    margin-bottom: 10px;
+}
+
 #folder-upload-container {
     margin-bottom: 10px;
 }
 
-#canvas-settings label,
-#folder-upload-container label {
+#canvas-settings label {
     margin-right: 10px;
+}
+
+/* New container for uploads */
+#uploads-container {
+    margin-bottom: 15px;
+}
+
+#uploads-container {
+    margin-top: 20px;
+}
+
+/* Output container styles */
+#output-container {
+    margin-top: 15px;
+    border: 1px solid #ccc;
+    padding: 10px;
+    background: #fafafa;
+    font-family: monospace;
+    height: 150px;
+    overflow-y: auto;
 }
 
 /* Canvas: No fixed CSS size—inline styles determine display dimensions */
 #shader-canvas {
     border: 1px solid #ccc;
     display: block;
+    margin-bottom: 15px;
 }
 
 /* Control Panel Styles */

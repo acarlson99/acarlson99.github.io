@@ -7,12 +7,51 @@ if (!gl) {
     alert("WebGL is not supported by your browser.");
 }
 
+let devMode = false;
 if (document.URL.startsWith("http://localhost")) {
-    function LOG() {
-        console.log(...arguments);
+    devMode = true;
+}
+
+function LOG() {
+    if (devMode) console.log(...arguments);
+}
+
+const maxLines = 100;
+const outputMessages = [];
+
+function logMessage(...args) {
+    // Convert each argument to a string.
+    const message = args
+        .map(arg => {
+            if (typeof arg === 'object') {
+                try {
+                    return JSON.stringify(arg);
+                } catch (e) {
+                    return String(arg);
+                }
+            }
+            return String(arg);
+        })
+        .join(' ');
+
+    // Add the new message to our array.
+    outputMessages.push(message);
+
+    // Remove the oldest message if we exceed maxLines.
+    if (outputMessages.length > maxLines) {
+        outputMessages.shift();
     }
-} else {
-    function LOG() { }
+
+    // Update the output element's text content.
+    const outputEl = document.getElementById('output');
+    outputEl.textContent = outputMessages.join('\n');
+
+    // Scroll the output container to the bottom so that the latest message is visible.
+    const container = document.getElementById('output-container');
+    container.scrollTop = container.scrollHeight;
+}
+function logMessageErr(...args) {
+    logMessage("ERROR:", ...args)
 }
 
 // Global object to store control values
@@ -142,7 +181,9 @@ function createShader(gl, type, source) {
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        console.error("Shader compile error:", gl.getShaderInfoLog(shader));
+        let e = gl.getShaderInfoLog(shader);
+        console.error("Shader compile error:", e);
+        logMessageErr("Shader compile error:", e);
         gl.deleteShader(shader);
         return null;
     }
@@ -424,9 +465,9 @@ function handleFolderUpload(event) {
             if (newProgram) {
                 shaderProgram = newProgram;
                 updateUniformLocations();
-                console.log("Shader updated from folder successfully!");
+                logMessage("Shader updated from folder successfully!");
             } else {
-                console.error("Failed to compile shader from folder.");
+                logMessageErr("Failed to compile shader from folder.");
             }
             const controlsContainer = document.getElementById('controls-container');
             controlsContainer.innerHTML = "";
@@ -558,14 +599,16 @@ function startRecording() {
         window.URL.revokeObjectURL(url);
     };
     mediaRecorder.start();
-    console.log("Recording started.");
+    logMessage("Recording started.");
 }
 
 // Stop recording function.
 function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
-        console.log("Recording stopped.");
+        logMessage("Recording stopped.");
+    } else {
+        logMessage("No recording active.");
     }
 }
 
