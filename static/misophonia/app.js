@@ -49,6 +49,42 @@ document.getElementById('update-canvas-dimensions')
 updateCanvasDimensions(); // Initialize on load
 
 /***************************************
+ * Image Texture Setup
+ ***************************************/
+let imageTexture = gl.createTexture();
+function isPowerOf2(value) {
+    return (value & (value - 1)) === 0;
+}
+document.getElementById('image-upload').addEventListener('change', function (event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const img = new Image();
+    img.onload = function () {
+        gl.bindTexture(gl.TEXTURE_2D, imageTexture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(
+            gl.TEXTURE_2D, 0, gl.RGBA,
+            gl.RGBA, gl.UNSIGNED_BYTE, img
+        );
+
+        if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
+            // For power-of-two textures, enable mipmapping.
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        } else {
+            // For NPOT textures, disable mipmapping and set wrapping to CLAMP_TO_EDGE.
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        }
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        console.log("Image texture loaded from file.");
+    };
+    img.src = URL.createObjectURL(file);
+});
+
+/***************************************
  * Shader Renderer Setup
  ***************************************/
 const vertexShaderSource = `
@@ -81,11 +117,12 @@ if (!shaderProgram) {
     console.error("Failed to initialize the shader program.");
 }
 
-let timeLocation, resolutionLocation, audioTextureLocation;
+let timeLocation, resolutionLocation, audioTextureLocation, imageTextureLocation;
 function updateUniformLocations() {
     timeLocation = gl.getUniformLocation(shaderProgram, 'u_time');
     resolutionLocation = gl.getUniformLocation(shaderProgram, 'u_resolution');
     audioTextureLocation = gl.getUniformLocation(shaderProgram, 'u_audioTexture');
+    imageTextureLocation = gl.getUniformLocation(shaderProgram, 'u_imageTexture');
 }
 updateUniformLocations();
 
@@ -218,9 +255,12 @@ function renderControls(schema) {
                     const clampedY = Math.min(Math.max(rawY, 0), rect.height);
                     indicator.style.left = clampedX + 'px';
                     indicator.style.top = clampedY + 'px';
+                    let x = smoothstep(control.min.x || 0, control.max.x || 1, rawX / rect.width);
+                    let y = smoothstep(control.min.y || 0, control.max.y || 1, 1 - rawY / rect.height);
+                    // console.log("x,y = ", x, y);
                     customUniforms[control.uniform] = {
-                        x: smoothstep(control.min.x || 0, control.max.x || 1, clampedX / rect.width),
-                        y: smoothstep(control.min.y || 0, control.max.y || 1, 1 - clampedY / rect.height)
+                        x: x,
+                        y: y
                     };
                 }
                 inputElement.addEventListener('mousedown', e => {
@@ -377,9 +417,17 @@ function render(time) {
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.useProgram(shaderProgram);
+    updateCustomUniforms();
     if (timeLocation) gl.uniform1f(timeLocation, effectiveTime * 0.001);
     if (resolutionLocation) gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
-    updateCustomUniforms();
+
+    if (imageTexture) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, imageTexture);
+    }
+    if (imageTextureLocation) {
+        gl.uniform1i(imageTextureLocation, 1);
+    }
 
     // Update the audio texture from the analyser data
     if (window.audioAnalyser && window.audioDataArray) {
