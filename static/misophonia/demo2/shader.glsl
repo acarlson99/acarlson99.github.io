@@ -36,7 +36,7 @@ void main( void )
     vec2 rotated_f = (f - center) * rot + center;
     
     // Reconstruct the full UV coordinate for the rotated square.
-    vec2 rotated_uv = (grid + rotated_f) / squares + u_uvOff-.25/2.;
+    vec2 rotated_uv = (grid + rotated_f) / squares + u_uvOff;
     
     // Determine which squares will use which coordinate.
     float checker = mod(grid.x + grid.y, 2.0);
