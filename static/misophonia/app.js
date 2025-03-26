@@ -218,31 +218,35 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 /***************************************
  * Audio Setup: Creating an Audio Texture
  ***************************************/
-navigator.mediaDevices.getUserMedia({ audio: true })
-    .then(stream => {
-        const audioContext = new AudioContext();
-        const source = audioContext.createMediaStreamSource(stream);
-        const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        source.connect(analyser);
-        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-        window.audioAnalyser = analyser;
-        window.audioDataArray = dataArray;
-    })
-    .catch(err => console.error("Error accessing microphone:", err));
+let audioTexture = null;
+function loadMicrophone() {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+            const audioContext = new AudioContext();
+            const source = audioContext.createMediaStreamSource(stream);
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            window.audioAnalyser = analyser;
+            window.audioDataArray = dataArray;
+        })
+        .catch(err => console.error("Error accessing microphone:", err));
+    if (audioTexture === null) audioTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, audioTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    // Allocate initial texture (using default size if audioDataArray is not ready)
+    gl.texImage2D(
+        gl.TEXTURE_2D, 0, gl.LUMINANCE,
+        window.audioDataArray ? window.audioDataArray.length : 128, 1,
+        0, gl.LUMINANCE, gl.UNSIGNED_BYTE, null
+    );
+}
 
-let audioTexture = gl.createTexture();
-gl.bindTexture(gl.TEXTURE_2D, audioTexture);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-// Allocate initial texture (using default size if audioDataArray is not ready)
-gl.texImage2D(
-    gl.TEXTURE_2D, 0, gl.LUMINANCE,
-    window.audioDataArray ? window.audioDataArray.length : 128, 1,
-    0, gl.LUMINANCE, gl.UNSIGNED_BYTE, null
-);
+document.getElementById('enable-mic').addEventListener('click', loadMicrophone);
 
 /***************************************
  * Control Panel Setup & Rendering
