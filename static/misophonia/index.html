@@ -29,6 +29,7 @@
             <br>
             <button id="start-record">Record</button>
             <button id="stop-record">Stop</button>
+            <button id="save-image">Save Image</button>
             <br>
             <!-- Output container for user messages -->
             <div id="output-container">
@@ -44,9 +45,11 @@
                     <!-- The webkitdirectory attribute enables directory selection in supported browsers -->
                     <input type="file" id="folder-upload" webkitdirectory directory multiple>
                 </div>
-                <div id="image-upload-container">
-                    <label for="image-upload">Upload Image:</label>
-                    <input type="file" id="image-upload" accept="image/*">
+                <div id="sample-texture-upload-container">
+                    <input type="file" id="sample-texture-0" accept="image/*">
+                    <input type="file" id="sample-texture-1" accept="image/*">
+                    <input type="file" id="sample-texture-2" accept="image/*">
+                    <input type="file" id="sample-texture-3" accept="image/*">
                 </div>
                 <div>
                     <button id="enable-mic">enable mic</button>

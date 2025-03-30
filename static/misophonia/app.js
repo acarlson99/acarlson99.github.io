@@ -2,7 +2,7 @@
  * Global Setup & Utility Functions
  ***************************************/
 const canvas = document.getElementById('shader-canvas');
-const gl = canvas.getContext('webgl');
+const gl = canvas.getContext('webgl', { preserveDrawingBugger: true });
 if (!gl) {
     alert("WebGL is not supported by your browser.");
 }
@@ -95,43 +95,46 @@ document.getElementById('update-canvas-dimensions')
 updateCanvasDimensions(); // Initialize on load
 
 /***************************************
- * Image Texture Setup
+ * Multiple Sample Texture Setup
  ***************************************/
-let imageTexture = gl.createTexture();
+
 function isPowerOf2(value) {
     return (value & (value - 1)) === 0;
 }
-document.getElementById('image-upload').addEventListener('change', function (event) {
-    const file = event.target.files[0];
-    if (!file) return;
+const sampleTextures = [null, null, null, null];
+const sampleTextureLocations = [null, null, null, null];
 
-    const img = new Image();
-    img.onload = function () {
-        gl.bindTexture(gl.TEXTURE_2D, imageTexture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        gl.texImage2D(
-            gl.TEXTURE_2D, 0, gl.RGBA,
-            gl.RGBA, gl.UNSIGNED_BYTE, img
-        );
+// Initialize textures
+for (let i = 0; i < 4; i++) {
+    sampleTextures[i] = gl.createTexture();
+    const inputEl = document.getElementById(`sample-texture-${i}`);
+    if (!inputEl) continue;
 
-        if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
-            // For power-of-two textures, enable mipmapping.
-            gl.generateMipmap(gl.TEXTURE_2D);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-        } else {
-            // For NPOT textures, disable mipmapping and set wrapping to CLAMP_TO_EDGE.
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        }
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        console.log("Image texture loaded from file.");
-    };
-    img.src = URL.createObjectURL(file);
-    img.width = 200;
-    img.height = 200;
-    document.getElementById("image-upload-container").appendChild(img);
-});
+    inputEl.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const img = new Image();
+        img.onload = () => {
+            gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+
+            if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
+                gl.generateMipmap(gl.TEXTURE_2D);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+            } else {
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            }
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            logMessage(`Sample texture ${i} loaded.`);
+        };
+        img.src = URL.createObjectURL(file);
+    });
+}
+
 
 /***************************************
  * Shader Renderer Setup
@@ -166,12 +169,14 @@ if (!shaderProgram) {
     console.error("Failed to initialize the shader program.");
 }
 
-let timeLocation, resolutionLocation, audioTextureLocation, imageTextureLocation;
+let timeLocation, resolutionLocation, audioTextureLocation;
 function updateUniformLocations() {
     timeLocation = gl.getUniformLocation(shaderProgram, 'u_time');
     resolutionLocation = gl.getUniformLocation(shaderProgram, 'u_resolution');
     audioTextureLocation = gl.getUniformLocation(shaderProgram, 'u_audioTexture');
-    imageTextureLocation = gl.getUniformLocation(shaderProgram, 'u_imageTexture');
+    for (let i = 0; i < 4; i++) {
+        sampleTextureLocations[i] = gl.getUniformLocation(shaderProgram, `u_texture${i}`);
+    }
 }
 updateUniformLocations();
 
@@ -437,11 +442,10 @@ function handleFolderUpload(event) {
         }
     }
     if (!schemaFile) {
-        console.error("No JSON schema file found in the directory.");
-        return;
+        logMessage("No JSON schema file found in the directory.");
     }
     if (!shaderFile) {
-        console.error("No GLSL shader file found in the directory.");
+        logMessage("No GLSL shader file found in the directory.");
         return;
     }
     let newSchemaData = null;
@@ -451,7 +455,7 @@ function handleFolderUpload(event) {
         try {
             newSchemaData = JSON.parse(e.target.result);
         } catch (err) {
-            console.error("Error parsing JSON schema:", err);
+            logMessage("Error parsing JSON schema:", err);
         }
         checkAndApply();
     };
@@ -526,12 +530,13 @@ function render(time) {
     if (timeLocation) gl.uniform1f(timeLocation, effectiveTime * 0.001);
     if (resolutionLocation) gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
 
-    if (imageTexture) {
-        gl.activeTexture(gl.TEXTURE1);
-        gl.bindTexture(gl.TEXTURE_2D, imageTexture);
-    }
-    if (imageTextureLocation) {
-        gl.uniform1i(imageTextureLocation, 1);
+    // Bind and set each sample texture
+    for (let i = 0; i < 4; i++) {
+        if (sampleTextures[i] && sampleTextureLocations[i]) {
+            gl.activeTexture(gl.TEXTURE2 + i); // TEXTURE2, TEXTURE3, TEXTURE4, TEXTURE5
+            gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
+            gl.uniform1i(sampleTextureLocations[i], 2 + i);
+        }
     }
 
     // Update the audio texture from the analyser data
@@ -618,3 +623,24 @@ function stopRecording() {
 
 document.getElementById('start-record').addEventListener('click', startRecording);
 document.getElementById('stop-record').addEventListener('click', stopRecording);
+document.getElementById('save-image').addEventListener('click', () => {
+    // Pause the render loop temporarily (if applicable)
+    isPaused = true;
+
+    // Wait for the current frame to complete.
+    requestAnimationFrame(() => {
+        gl.finish(); // Ensure all GL commands are done
+        const dataURL = canvas.toDataURL("image/png");
+
+        // For download:
+        const a = document.createElement('a');
+        a.href = dataURL;
+        a.download = 'shader_snapshot.png';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        // Optionally resume rendering:
+        isPaused = false;
+    });
+});
