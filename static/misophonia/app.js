@@ -7,57 +7,39 @@ if (!gl) {
     alert("WebGL is not supported by your browser.");
 }
 
-let devMode = false;
-if (document.URL.startsWith("http://localhost")) {
-    devMode = true;
-}
+let devMode = document.URL.startsWith("http://localhost");
 
-function LOG() {
-    if (devMode) console.log(...arguments);
+function LOG(...args) {
+    if (devMode) console.log(...args);
 }
 
 const maxLines = 100;
 const outputMessages = [];
 
 function logMessage(...args) {
-    // Convert each argument to a string.
-    const message = args
-        .map(arg => {
-            if (typeof arg === 'object') {
-                try {
-                    return JSON.stringify(arg);
-                } catch (e) {
-                    return String(arg);
-                }
-            }
-            return String(arg);
-        })
-        .join(' ');
+    const message = args.map(arg => {
+        if (typeof arg === 'object') {
+            try { return JSON.stringify(arg); }
+            catch (e) { return String(arg); }
+        }
+        return String(arg);
+    }).join(' ');
 
-    // Add the new message to our array.
     outputMessages.push(message);
+    if (outputMessages.length > maxLines) outputMessages.shift();
 
-    // Remove the oldest message if we exceed maxLines.
-    if (outputMessages.length > maxLines) {
-        outputMessages.shift();
-    }
-
-    // Update the output element's text content.
     const outputEl = document.getElementById('output');
     outputEl.textContent = outputMessages.join('\n');
-
-    // Scroll the output container to the bottom so that the latest message is visible.
-    const container = document.getElementById('output-container');
-    container.scrollTop = container.scrollHeight;
+    document.getElementById('output-container').scrollTop = document.getElementById('output-container').scrollHeight;
 }
+
 function logMessageErr(...args) {
-    logMessage("ERROR:", ...args)
+    logMessage("ERROR:", ...args);
 }
 
-// Global object to store control values
+// Global object for user-controlled uniforms
 let customUniforms = {};
 
-// Convert hex color string to normalized RGB array
 function hexToRgb(hex) {
     hex = hex.replace(/^#/, '');
     if (hex.length === 3) {
@@ -71,7 +53,6 @@ function hexToRgb(hex) {
     ];
 }
 
-// mix helper function
 function mix(a, b, t) {
     return a * (1 - t) + b * t;
 }
@@ -87,158 +68,234 @@ function updateCanvasDimensions() {
         canvas.height = height;
         canvas.style.width = width + 'px';
         canvas.style.height = height + 'px';
-        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.viewport(0, 0, width, height);
     }
 }
-document.getElementById('update-canvas-dimensions')
-    .addEventListener('click', updateCanvasDimensions);
-updateCanvasDimensions(); // Initialize on load
+document.getElementById('update-canvas-dimensions').addEventListener('click', updateCanvasDimensions);
+updateCanvasDimensions();
 
 /***************************************
  * Multiple Sample Texture Setup
  ***************************************/
+const MAX_TEXTURE_SLOTS = 4;
+const sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
+const sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
+// Each entry is an object: { type: "image"|"video"|"audio", element: MediaElement, (optional) analyser, dataArray }
+const sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
+
+/* Advanced Media Input Component for each texture slot.
+   Provides a dropdown to select source type (None, File, URL, or Microphone),
+   and then displays related controls. */
+function createAdvancedMediaInput(slotIndex) {
+    const container = document.createElement('div');
+    container.className = 'advanced-media-input';
+
+    const sourceSelect = document.createElement('select');
+    sourceSelect.innerHTML = `
+        <option value="none">None</option>
+        <option value="file">File Upload</option>
+        <option value="url">URL</option>
+        <option value="mic">Microphone</option>
+    `;
+    container.appendChild(sourceSelect);
+
+    const inputContainer = document.createElement('div');
+    inputContainer.className = 'media-input-controls';
+    container.appendChild(inputContainer);
+
+    const previewContainer = document.createElement('div');
+    previewContainer.id = `media-preview-${slotIndex}`;
+    previewContainer.className = 'media-preview';
+    container.appendChild(previewContainer);
+
+    function clearInputs() {
+        inputContainer.innerHTML = '';
+        previewContainer.innerHTML = '';
+        sampleMedia[slotIndex] = null;
+    }
+
+    sourceSelect.addEventListener('change', () => {
+        clearInputs();
+        const val = sourceSelect.value;
+        if (val === 'file') {
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = 'image/*,video/*,audio/*';
+            fileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const fileType = file.type;
+                let mediaObj = { type: null, element: null };
+                if (fileType.startsWith('image/')) {
+                    const img = new Image();
+                    img.onload = () => {
+                        gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
+                        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                        if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
+                            gl.generateMipmap(gl.TEXTURE_2D);
+                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                        } else {
+                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                        }
+                        gl.bindTexture(gl.TEXTURE_2D, null);
+                        logMessage(`Slot ${slotIndex} loaded (image file).`);
+                    };
+                    img.src = URL.createObjectURL(file);
+                    mediaObj = { type: "image", element: img };
+                } else if (fileType.startsWith('video/')) {
+                    const video = document.createElement('video');
+                    video.setAttribute('playsinline', '');
+                    video.autoplay = true;
+                    video.loop = true;
+                    video.muted = true;
+                    video.src = URL.createObjectURL(file);
+                    video.play();
+                    video.addEventListener('loadeddata', () => {
+                        gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
+                        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                        gl.bindTexture(gl.TEXTURE_2D, null);
+                        logMessage(`Slot ${slotIndex} loaded (video file).`);
+                    });
+                    mediaObj = { type: "video", element: video };
+                } else if (fileType.startsWith('audio/')) {
+                    const audio = document.createElement('audio');
+                    audio.controls = true;
+                    audio.src = URL.createObjectURL(file);
+                    audio.addEventListener('loadeddata', () => {
+                        logMessage(`Slot ${slotIndex} loaded (audio file).`);
+                    });
+                    mediaObj = { type: "audio", element: audio };
+                } else {
+                    logMessage("Unsupported file type.");
+                    return;
+                }
+                sampleMedia[slotIndex] = mediaObj;
+                previewContainer.appendChild(mediaObj.element);
+            });
+            inputContainer.appendChild(fileInput);
+
+        } else if (val === 'url') {
+            const urlInput = document.createElement('input');
+            urlInput.type = 'text';
+            urlInput.placeholder = 'Enter media URL...';
+            const loadBtn = document.createElement('button');
+            loadBtn.textContent = 'Load';
+            loadBtn.addEventListener('click', () => {
+                const url = urlInput.value;
+                if (!url) return;
+                let mediaObj = { type: null, element: null };
+                if (url.match(/\.(jpg|jpeg|png|gif)$/i)) {
+                    const img = new Image();
+                    img.crossOrigin = "anonymous";
+                    img.onload = () => {
+                        gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
+                        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                        if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
+                            gl.generateMipmap(gl.TEXTURE_2D);
+                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                        } else {
+                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                        }
+                        gl.bindTexture(gl.TEXTURE_2D, null);
+                        logMessage(`Slot ${slotIndex} loaded (image URL).`);
+                    };
+                    img.src = url;
+                    mediaObj = { type: "image", element: img };
+                } else if (url.match(/\.(mp4|webm|ogg)$/i)) {
+                    const video = document.createElement('video');
+                    video.setAttribute('playsinline', '');
+                    video.autoplay = true;
+                    video.loop = true;
+                    video.muted = true;
+                    video.crossOrigin = "anonymous";
+                    video.src = url;
+                    video.play();
+                    video.addEventListener('loadeddata', () => {
+                        gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
+                        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                        gl.bindTexture(gl.TEXTURE_2D, null);
+                        logMessage(`Slot ${slotIndex} loaded (video URL).`);
+                    });
+                    mediaObj = { type: "video", element: video };
+                } else if (url.match(/\.(mp3|wav|ogg)$/i)) {
+                    const audio = document.createElement('audio');
+                    audio.controls = true;
+                    audio.crossOrigin = "anonymous";
+                    audio.src = url;
+                    audio.addEventListener('loadeddata', () => {
+                        logMessage(`Slot ${slotIndex} loaded (audio URL).`);
+                    });
+                    mediaObj = { type: "audio", element: audio };
+                } else {
+                    logMessage(`Cannot determine media type for URL: ${url}`);
+                    return;
+                }
+                sampleMedia[slotIndex] = mediaObj;
+                previewContainer.appendChild(mediaObj.element);
+            });
+            inputContainer.appendChild(urlInput);
+            inputContainer.appendChild(loadBtn);
+
+        } else if (val === 'mic') {
+            const micBtn = document.createElement('button');
+            micBtn.textContent = 'Enable Microphone';
+            micBtn.addEventListener('click', () => {
+                navigator.mediaDevices.getUserMedia({ audio: true })
+                    .then(stream => {
+                        const audioContext = new AudioContext();
+                        const source = audioContext.createMediaStreamSource(stream);
+                        const analyser = audioContext.createAnalyser();
+                        analyser.fftSize = 256;
+                        source.connect(analyser);
+                        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                        sampleMedia[slotIndex] = { type: "audio", element: null, analyser, dataArray };
+                        logMessage(`Slot ${slotIndex} using microphone input.`);
+                        previewContainer.innerHTML = 'Microphone Enabled';
+                    })
+                    .catch(err => {
+                        logMessageErr("Error accessing microphone:", err);
+                    });
+            });
+            inputContainer.appendChild(micBtn);
+        }
+    });
+
+    const defaultRemoveBtn = document.createElement('button');
+    defaultRemoveBtn.textContent = 'Remove';
+    defaultRemoveBtn.addEventListener('click', () => {
+        clearInputs();
+        logMessage(`Slot ${slotIndex} unassigned.`);
+    });
+    container.appendChild(defaultRemoveBtn);
+
+    return container;
+}
 
 function isPowerOf2(value) {
     return (value & (value - 1)) === 0;
 }
 
-const MAX_TEXTURE_SLOTS = 4;
-const sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
-const sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
-// Each entry is an object { type: "image"|"video"|"audio", element: <MediaElement>, offscreenCanvas?: HTMLCanvasElement }
-const sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
-
-// For each texture slot, create the texture and attach a unified file input handler.
+// Initialize advanced inputs for all texture slots.
+const advancedInputContainer = document.getElementById('advanced-inputs');
 for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
     sampleTextures[i] = gl.createTexture();
-    const inputEl = document.getElementById(`sample-texture-${i}`);
-    if (!inputEl) continue;
-
-    inputEl.setAttribute('accept', 'image/*,video/*,audio/*');
-
-    inputEl.addEventListener('change', (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const fileType = file.type;
-
-        let mediaObj = { type: null, element: null };
-
-        // For images:
-        if (fileType.startsWith('image/')) {
-            const img = new Image();
-            img.onload = () => {
-                gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
-                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-                if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
-                    gl.generateMipmap(gl.TEXTURE_2D);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-                } else {
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                }
-                gl.bindTexture(gl.TEXTURE_2D, null);
-                logMessage(`Texture ${i} loaded (image).`);
-            };
-            img.src = URL.createObjectURL(file);
-            mediaObj = { type: "image", element: img };
-
-        } else if (fileType.startsWith('video/')) {
-            const video = document.createElement('video');
-            video.setAttribute('playsinline', '');
-            video.autoplay = true;
-            video.loop = true;
-            video.muted = true;
-            video.src = URL.createObjectURL(file);
-            video.play();
-            video.addEventListener('loadeddata', () => {
-                gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
-                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                gl.bindTexture(gl.TEXTURE_2D, null);
-                logMessage(`Texture ${i} loaded (video).`);
-            });
-            mediaObj = { type: "video", element: video };
-
-        } else if (fileType.startsWith('audio/')) {
-            const audio = document.createElement('audio');
-            // Show audio controls so the user can manage playback.
-            audio.controls = true;
-            audio.src = URL.createObjectURL(file);
-            audio.addEventListener('loadeddata', () => {
-                // Optionally, if you want to visualize audio data,
-                // you could create an offscreen canvas and draw a waveform.
-                logMessage(`Texture ${i} loaded (audio).`);
-            });
-            mediaObj = { type: "audio", element: audio };
-
-        } else {
-            logMessage("Unsupported file type.");
-            return;
-        }
-
-        // Save the media object to the unified array.
-        sampleMedia[i] = mediaObj;
-
-        // Manage the preview display.
-        let previewContainer = document.getElementById(`media-preview-${i}`);
-        if (!previewContainer) {
-            previewContainer = document.createElement('div');
-            previewContainer.id = `media-preview-${i}`;
-            previewContainer.className = 'media-preview';
-            inputEl.parentNode.appendChild(previewContainer);
-        } else {
-            previewContainer.innerHTML = '';
-        }
-        previewContainer.appendChild(mediaObj.element);
-
-        // Create a control bar with play/pause/restart and a remove button.
-        const controlBar = document.createElement('div');
-        controlBar.className = 'media-controls';
-
-        const playBtn = document.createElement('button');
-        playBtn.textContent = 'Play';
-        const pauseBtn = document.createElement('button');
-        pauseBtn.textContent = 'Pause';
-        const restartBtn = document.createElement('button');
-        restartBtn.textContent = 'Restart';
-        const removeBtn = document.createElement('button');
-        removeBtn.textContent = 'Remove';
-
-        // Enable controls only for media types that support playback (video and audio).
-        if (mediaObj.type === "video" || mediaObj.type === "audio") {
-            playBtn.addEventListener('click', () => { mediaObj.element.play(); });
-            pauseBtn.addEventListener('click', () => { mediaObj.element.pause(); });
-            restartBtn.addEventListener('click', () => {
-                mediaObj.element.currentTime = 0;
-                mediaObj.element.play();
-            });
-        } else {
-            playBtn.disabled = true;
-            pauseBtn.disabled = true;
-            restartBtn.disabled = true;
-        }
-
-        // Remove button: clear the preview and unassign texture.
-        removeBtn.addEventListener('click', () => {
-            sampleMedia[i] = null;
-            previewContainer.innerHTML = '';
-            inputEl.value = '';
-            logMessage(`Texture slot ${i} unassigned.`);
-        });
-
-        controlBar.appendChild(playBtn);
-        controlBar.appendChild(pauseBtn);
-        controlBar.appendChild(restartBtn);
-        controlBar.appendChild(removeBtn);
-        previewContainer.appendChild(controlBar);
-    });
+    const advancedInput = createAdvancedMediaInput(i);
+    advancedInputContainer.appendChild(advancedInput);
 }
-
 
 /***************************************
  * Shader Renderer Setup
@@ -256,7 +313,11 @@ let fragmentShaderSource = `
   #endif
   uniform float u_time;
   uniform vec2 u_resolution;
-  // Add sampler for video texture (if used in shader)
+  // Channels: u_texture0, u_texture1, u_texture2, u_texture3
+  uniform sampler2D u_texture0;
+  uniform sampler2D u_texture1;
+  uniform sampler2D u_texture2;
+  uniform sampler2D u_texture3;
   void main(void) {
     vec2 uv = gl_FragCoord.xy / u_resolution;
     uv = uv - 0.5;
@@ -265,7 +326,6 @@ let fragmentShaderSource = `
     float wave = sin(dist * 10.0 - u_time * 3.0);
     float intensity = smoothstep(0.3, 0.0, abs(wave));
     vec3 color = mix(vec3(0.2, 0.1, 0.5), vec3(1.0, 0.8, 0.3), intensity);
-    // Optionally mix in the video texture color (this example does not use it directly)
     gl_FragColor = vec4(color, 1.0);
   }
 `;
@@ -275,7 +335,7 @@ if (!shaderProgram) {
     console.error("Failed to initialize the shader program.");
 }
 
-let timeLocation, resolutionLocation, audioTextureLocation, videoTextureLocation;
+let timeLocation, resolutionLocation;
 function updateUniformLocations() {
     timeLocation = gl.getUniformLocation(shaderProgram, 'u_time');
     resolutionLocation = gl.getUniformLocation(shaderProgram, 'u_resolution');
@@ -285,13 +345,12 @@ function updateUniformLocations() {
 }
 updateUniformLocations();
 
-// Helper functions for shader compilation and linking
 function createShader(gl, type, source) {
     const shader = gl.createShader(type);
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        let e = gl.getShaderInfoLog(shader);
+        const e = gl.getShaderInfoLog(shader);
         console.error("Shader compile error:", e);
         logMessageErr("Shader compile error:", e);
         gl.deleteShader(shader);
@@ -326,7 +385,7 @@ const positions = [
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
 /***************************************
- * Audio Setup: Creating an Audio Texture
+ * Audio Texture Setup (Microphone)
  ***************************************/
 let audioTexture = null;
 function loadMicrophone() {
@@ -348,20 +407,16 @@ function loadMicrophone() {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    // Allocate initial texture (using default size if audioDataArray is not ready)
-    gl.texImage2D(
-        gl.TEXTURE_2D, 0, gl.LUMINANCE,
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE,
         window.audioDataArray ? window.audioDataArray.length : 128, 1,
-        0, gl.LUMINANCE, gl.UNSIGNED_BYTE, null
-    );
+        0, gl.LUMINANCE, gl.UNSIGNED_BYTE, null);
 }
-
 document.getElementById('enable-mic').addEventListener('click', loadMicrophone);
 
 /***************************************
  * Control Panel Setup & Rendering
  ***************************************/
-const defaultControlSchema = { "controls": [] };
+const defaultControlSchema = { controls: [] };
 
 function renderControls(schema) {
     const container = document.getElementById('controls-container');
@@ -372,9 +427,8 @@ function renderControls(schema) {
         label.textContent = control.label;
         controlDiv.appendChild(label);
         let inputElement;
-        // Initialize uniform value
+
         customUniforms[control.uniform] = control.default;
-        // Create input element based on control type
         switch (control.type) {
             case 'knob':
             case 'slider':
@@ -407,74 +461,48 @@ function renderControls(schema) {
             case 'xy-plane':
                 inputElement = document.createElement('div');
                 inputElement.className = 'xy-plane';
-
-                // Create a grid overlay for guideline lines.
                 const grid = document.createElement('div');
                 grid.className = 'xy-grid';
                 inputElement.appendChild(grid);
-
-                // Calculate normalized default values.
                 const normX = (control.default.x - control.min.x) / (control.max.x - control.min.x);
                 const normY = (control.default.y - control.min.y) / (control.max.y - control.min.y);
-
-                // Create the indicator element.
-                // Use normalized default values to position the indicator.
                 const indicator = document.createElement('div');
                 indicator.className = 'xy-indicator';
                 indicator.style.left = (normX * 200) + 'px';
                 indicator.style.top = ((1 - normY) * 200) + 'px';
                 inputElement.appendChild(indicator);
-
-                // Create labels for min and max values.
                 const minLabel = document.createElement('div');
                 minLabel.className = 'xy-label xy-label-min';
                 minLabel.innerText = `Min: ${control.min.x}, ${control.min.y}`;
                 inputElement.appendChild(minLabel);
-
                 const maxLabel = document.createElement('div');
                 maxLabel.className = 'xy-label xy-label-max';
                 maxLabel.innerText = `Max: ${control.max.x}, ${control.max.y}`;
                 inputElement.appendChild(maxLabel);
-
-                // Create an info bubble for displaying the current XY value.
                 const infoBubble = document.createElement('div');
                 infoBubble.className = 'xy-info-bubble';
                 infoBubble.style.display = 'none';
                 inputElement.appendChild(infoBubble);
-
-                // Update function that moves the indicator and updates the info bubble.
                 function updateXY(e) {
                     const rect = inputElement.getBoundingClientRect();
                     const rawX = e.clientX - rect.left;
                     const rawY = e.clientY - rect.top;
                     const clampedX = Math.min(Math.max(rawX, 0), rect.width);
                     const clampedY = Math.min(Math.max(rawY, 0), rect.height);
-
-                    // Position the indicator.
                     indicator.style.left = clampedX + 'px';
                     indicator.style.top = clampedY + 'px';
-
-                    // Map raw values to the control's min/max range.
                     let x = mix(control.min.x, control.max.x, clampedX / rect.width);
                     let y = mix(control.min.y, control.max.y, 1 - (clampedY / rect.height));
-
                     LOG("x,y=", x, y);
                     customUniforms[control.uniform] = { x, y };
-
-                    // Update the info bubble's text and position.
                     infoBubble.innerText = `(${x.toFixed(2)}, ${y.toFixed(2)})`;
                     infoBubble.style.left = (clampedX + 50) + 'px';
                     infoBubble.style.top = (clampedY - 25) + 'px';
                 }
-
                 inputElement.addEventListener('mousedown', e => {
                     infoBubble.style.display = 'block';
                     updateXY(e);
-
-                    function onMouseMove(e) {
-                        updateXY(e);
-                    }
-
+                    function onMouseMove(e) { updateXY(e); }
                     document.addEventListener('mousemove', onMouseMove);
                     document.addEventListener('mouseup', function onMouseUp() {
                         document.removeEventListener('mousemove', onMouseMove);
@@ -535,11 +563,8 @@ function handleFolderUpload(event) {
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
         const name = file.name.toLowerCase();
-        if (name.endsWith('.json')) {
-            schemaFile = file;
-        } else if (name.endsWith('.glsl') || name.endsWith('.frag') || name.endsWith('.txt')) {
-            shaderFile = file;
-        }
+        if (name.endsWith('.json')) schemaFile = file;
+        else if (name.endsWith('.glsl') || name.endsWith('.frag') || name.endsWith('.txt')) shaderFile = file;
     }
     if (!schemaFile) {
         logMessage("No JSON schema file found in the directory.");
@@ -548,15 +573,11 @@ function handleFolderUpload(event) {
         logMessage("No GLSL shader file found in the directory.");
         return;
     }
-    let newSchemaData = null;
-    let newShaderSource = null;
+    let newSchemaData = null, newShaderSource = null;
     const schemaReader = new FileReader();
     schemaReader.onload = e => {
-        try {
-            newSchemaData = JSON.parse(e.target.result);
-        } catch (err) {
-            logMessage("Error parsing JSON schema:", err);
-        }
+        try { newSchemaData = JSON.parse(e.target.result); }
+        catch (err) { logMessage("Error parsing JSON schema:", err); }
         checkAndApply();
     };
     schemaReader.readAsText(schemaFile);
@@ -577,8 +598,7 @@ function handleFolderUpload(event) {
             } else {
                 logMessageErr("Failed to compile shader from folder.");
             }
-            const controlsContainer = document.getElementById('controls-container');
-            controlsContainer.innerHTML = "";
+            document.getElementById('controls-container').innerHTML = "";
             renderControls(newSchemaData);
         }
     }
@@ -587,38 +607,15 @@ function handleFolderUpload(event) {
 /***************************************
  * Main Render Loop
  ***************************************/
-function updateCustomUniforms() {
-    for (let name in customUniforms) {
-        const value = customUniforms[name];
-        const loc = gl.getUniformLocation(shaderProgram, name);
-        if (loc === null) continue;
-        if (typeof value === 'number') {
-            gl.uniform1f(loc, value);
-        } else if (typeof value === 'boolean') {
-            gl.uniform1i(loc, value ? 1 : 0);
-        } else if (typeof value === 'object' && value !== null && 'x' in value && 'y' in value) {
-            gl.uniform2f(loc, value.x, value.y);
-        } else if (typeof value === 'string') {
-            if (value.startsWith('#')) {
-                const rgb = hexToRgb(value);
-                gl.uniform3f(loc, rgb[0], rgb[1], rgb[2]);
-            } else {
-                gl.uniform1f(loc, parseFloat(value) || 0);
-            }
-        }
-    }
-}
-
 let isPaused = false;
-let lastFrameTime = 0;   // Last timestamp from requestAnimationFrame
-let effectiveTime = 0;   // Accumulated animation time (in ms)
+let lastFrameTime = 0;
+let effectiveTime = 0;
 function render(time) {
     if (lastFrameTime === 0) lastFrameTime = time;
     const delta = time - lastFrameTime;
     lastFrameTime = time;
-    if (!isPaused) {
-        effectiveTime += delta;
-    }
+    if (!isPaused) effectiveTime += delta;
+
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -627,18 +624,15 @@ function render(time) {
     if (timeLocation) gl.uniform1f(timeLocation, effectiveTime * 0.001);
     if (resolutionLocation) gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
 
-    // For each texture slot, if a media is assigned, update the texture.
     for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
         if (sampleTextures[i] && sampleTextureLocations[i] && sampleMedia[i]) {
-            // For video types (and optionally if you add an offscreen canvas for audio), update each frame.
             if (sampleMedia[i].type === "video") {
                 gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sampleMedia[i].element);
                 gl.bindTexture(gl.TEXTURE_2D, null);
             }
-            // (For images, the texture is static. Audio could be processed similarly via an offscreen canvas.)
-            gl.activeTexture(gl.TEXTURE2 + i); // Start at TEXTURE2.
+            gl.activeTexture(gl.TEXTURE2 + i);
             gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
             gl.uniform1i(sampleTextureLocations[i], 2 + i);
         }
@@ -653,40 +647,51 @@ function render(time) {
 }
 requestAnimationFrame(render);
 
-// Main controls: Play/Pause and Restart.
+function updateCustomUniforms() {
+    for (let name in customUniforms) {
+        const value = customUniforms[name];
+        const loc = gl.getUniformLocation(shaderProgram, name);
+        if (loc === null) continue;
+        if (typeof value === 'number') {
+            gl.uniform1f(loc, value);
+        } else if (typeof value === 'boolean') {
+            gl.uniform1i(loc, value ? 1 : 0);
+        } else if (typeof value === 'object' && value && 'x' in value && 'y' in value) {
+            gl.uniform2f(loc, value.x, value.y);
+        } else if (typeof value === 'string') {
+            if (value.startsWith('#')) {
+                const rgb = hexToRgb(value);
+                gl.uniform3f(loc, rgb[0], rgb[1], rgb[2]);
+            } else {
+                gl.uniform1f(loc, parseFloat(value) || 0);
+            }
+        }
+    }
+}
+
+/***************************************
+ * Main Controls & Recording
+ ***************************************/
 document.getElementById('play-pause').addEventListener('click', function () {
     isPaused = !isPaused;
     this.textContent = isPaused ? 'Play' : 'Pause';
 });
 
 document.getElementById('restart').addEventListener('click', function () {
-    effectiveTime = 0; // Reset animation time
-    // Restart video input.
-    if (videoElement) {
-        videoElement.currentTime = 0;
-        videoElement.play();
-    }
-    // Restart audio input by reinitializing the microphone.
-    if (window.audioAnalyser) {
-        loadMicrophone();
-    }
+    effectiveTime = 0;
+    // If you use dedicated video elements, reset here.
+    if (window.audioAnalyser) loadMicrophone();
 });
 
-// Create a stream from the canvas at 30 fps.
 const canvasStream = canvas.captureStream(30);
-
 let mediaRecorder;
 let recordedChunks = [];
 
 function startRecording() {
     recordedChunks = [];
-    mediaRecorder = new MediaRecorder(canvasStream, {
-        mimeType: 'video/webm'
-    });
+    mediaRecorder = new MediaRecorder(canvasStream, { mimeType: 'video/webm' });
     mediaRecorder.ondataavailable = event => {
-        if (event.data.size > 0) {
-            recordedChunks.push(event.data);
-        }
+        if (event.data.size > 0) recordedChunks.push(event.data);
     };
     mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: 'video/webm' });

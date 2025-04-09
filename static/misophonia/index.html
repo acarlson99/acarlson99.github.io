@@ -15,6 +15,7 @@
             <h2>Controls</h2>
             <div id="controls-container"></div>
         </div>
+        <!-- Right Panel: Canvas and Uploads -->
         <div id="right-panel">
             <div id="canvas-settings">
                 <label for="canvas-width">Canvas Width:</label>
@@ -31,32 +32,24 @@
             <button id="stop-record">Stop</button>
             <button id="save-image">Save Image</button>
             <br>
-            <!-- Output container for user messages -->
+            <!-- Output Container -->
             <div id="output-container">
                 <h3>Output</h3>
                 <pre id="output"></pre>
             </div>
-            <!-- Moved upload container to the bottom -->
+            <!-- Uploads Container -->
             <div id="uploads-container">
                 <div id="folder-upload-container">
-                    <label for="folder-upload">
-                        Upload Folder (with JSON schema & GLSL shader):
-                    </label>
-                    <!-- The webkitdirectory attribute enables directory selection in supported browsers -->
+                    <label for="folder-upload">Upload Folder (with JSON schema & GLSL shader):</label>
                     <input type="file" id="folder-upload" webkitdirectory directory multiple>
                 </div>
-                <div id="sample-texture-upload-container">
-                    <input type="file" id="sample-texture-0" accept="image/*,video/*">
-                    <input type="file" id="sample-texture-1" accept="image/*,video/*">
-                    <input type="file" id="sample-texture-2" accept="image/*,video/*">
-                    <input type="file" id="sample-texture-3" accept="image/*,video/*">
-                </div>
+                <!-- Advanced Media Inputs for texture channels -->
+                <div id="advanced-inputs"></div>
                 <div>
-                    <button id="enable-mic">enable mic</button>
+                    <button id="enable-mic">Enable Mic</button>
                 </div>
             </div>
         </div>
-    </div>
     </div>
     <script src="app.js"></script>
 </body>
