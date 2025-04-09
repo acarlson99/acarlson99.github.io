@@ -4,7 +4,7 @@ precision mediump float;
 
 uniform float u_time;
 uniform vec2 u_resolution;
-uniform sampler2D u_imageTexture;
+uniform sampler2D u_texture0;
 uniform float u_squares;
 uniform vec2 u_uvOff;
 
@@ -42,8 +42,8 @@ void main( void )
     float checker = mod(grid.x + grid.y, 2.0);
     
     // Sample textures: one with the original uv, one with the rotated uv.
-    vec3 sampleNonRotated = texture2D(u_imageTexture, uv).rgb * vec3(1.,1.,1.);
-    vec3 sampleRotated    = texture2D(u_imageTexture, rotated_uv).rgb * vec3(1.,1.,1.);
+    vec3 sampleNonRotated = texture2D(u_texture0, uv).rgb * vec3(1.,1.,1.);
+    vec3 sampleRotated    = texture2D(u_texture0, rotated_uv).rgb * vec3(1.,1.,1.);
     
     // Mix the two samples based on the checker pattern.
     vec3 color = mix(sampleRotated, sampleNonRotated, checker);
