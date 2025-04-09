@@ -101,18 +101,20 @@ updateCanvasDimensions(); // Initialize on load
 function isPowerOf2(value) {
     return (value & (value - 1)) === 0;
 }
-// Global array for textures and media elements.
-const sampleTextures = [null, null, null, null];
-const sampleTextureLocations = [null, null, null, null];
-const sampleMedia = [null, null, null, null]; // Now each entry will be { type, element }
+
+const MAX_TEXTURE_SLOTS = 4;
+const sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
+const sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
+// Each entry is an object { type: "image"|"video"|"audio", element: <MediaElement>, offscreenCanvas?: HTMLCanvasElement }
+const sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
 
 // For each texture slot, create the texture and attach a unified file input handler.
-for (let i = 0; i < 4; i++) {
+for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
     sampleTextures[i] = gl.createTexture();
     const inputEl = document.getElementById(`sample-texture-${i}`);
     if (!inputEl) continue;
 
-    inputEl.setAttribute('accept', 'image/*,video/*');
+    inputEl.setAttribute('accept', 'image/*,video/*,audio/*');
 
     inputEl.addEventListener('change', (event) => {
         const file = event.target.files[0];
@@ -121,6 +123,7 @@ for (let i = 0; i < 4; i++) {
 
         let mediaObj = { type: null, element: null };
 
+        // For images:
         if (fileType.startsWith('image/')) {
             const img = new Image();
             img.onload = () => {
@@ -140,6 +143,7 @@ for (let i = 0; i < 4; i++) {
             };
             img.src = URL.createObjectURL(file);
             mediaObj = { type: "image", element: img };
+
         } else if (fileType.startsWith('video/')) {
             const video = document.createElement('video');
             video.setAttribute('playsinline', '');
@@ -159,14 +163,28 @@ for (let i = 0; i < 4; i++) {
                 logMessage(`Texture ${i} loaded (video).`);
             });
             mediaObj = { type: "video", element: video };
+
+        } else if (fileType.startsWith('audio/')) {
+            const audio = document.createElement('audio');
+            // Show audio controls so the user can manage playback.
+            audio.controls = true;
+            audio.src = URL.createObjectURL(file);
+            audio.addEventListener('loadeddata', () => {
+                // Optionally, if you want to visualize audio data,
+                // you could create an offscreen canvas and draw a waveform.
+                logMessage(`Texture ${i} loaded (audio).`);
+            });
+            mediaObj = { type: "audio", element: audio };
+
         } else {
             logMessage("Unsupported file type.");
             return;
         }
 
+        // Save the media object to the unified array.
         sampleMedia[i] = mediaObj;
 
-        // Manage the preview display
+        // Manage the preview display.
         let previewContainer = document.getElementById(`media-preview-${i}`);
         if (!previewContainer) {
             previewContainer = document.createElement('div');
@@ -178,7 +196,7 @@ for (let i = 0; i < 4; i++) {
         }
         previewContainer.appendChild(mediaObj.element);
 
-        // Create control bar
+        // Create a control bar with play/pause/restart and a remove button.
         const controlBar = document.createElement('div');
         controlBar.className = 'media-controls';
 
@@ -188,19 +206,35 @@ for (let i = 0; i < 4; i++) {
         pauseBtn.textContent = 'Pause';
         const restartBtn = document.createElement('button');
         restartBtn.textContent = 'Restart';
+        const removeBtn = document.createElement('button');
+        removeBtn.textContent = 'Remove';
 
-        if (mediaObj.type === "video") {
+        // Enable controls only for media types that support playback (video and audio).
+        if (mediaObj.type === "video" || mediaObj.type === "audio") {
             playBtn.addEventListener('click', () => { mediaObj.element.play(); });
             pauseBtn.addEventListener('click', () => { mediaObj.element.pause(); });
-            restartBtn.addEventListener('click', () => { mediaObj.element.currentTime = 0; mediaObj.element.play(); });
+            restartBtn.addEventListener('click', () => {
+                mediaObj.element.currentTime = 0;
+                mediaObj.element.play();
+            });
         } else {
             playBtn.disabled = true;
             pauseBtn.disabled = true;
             restartBtn.disabled = true;
         }
+
+        // Remove button: clear the preview and unassign texture.
+        removeBtn.addEventListener('click', () => {
+            sampleMedia[i] = null;
+            previewContainer.innerHTML = '';
+            inputEl.value = '';
+            logMessage(`Texture slot ${i} unassigned.`);
+        });
+
         controlBar.appendChild(playBtn);
         controlBar.appendChild(pauseBtn);
         controlBar.appendChild(restartBtn);
+        controlBar.appendChild(removeBtn);
         previewContainer.appendChild(controlBar);
     });
 }
@@ -223,7 +257,6 @@ let fragmentShaderSource = `
   uniform float u_time;
   uniform vec2 u_resolution;
   // Add sampler for video texture (if used in shader)
-  uniform sampler2D u_videoTexture;
   void main(void) {
     vec2 uv = gl_FragCoord.xy / u_resolution;
     uv = uv - 0.5;
@@ -246,11 +279,9 @@ let timeLocation, resolutionLocation, audioTextureLocation, videoTextureLocation
 function updateUniformLocations() {
     timeLocation = gl.getUniformLocation(shaderProgram, 'u_time');
     resolutionLocation = gl.getUniformLocation(shaderProgram, 'u_resolution');
-    audioTextureLocation = gl.getUniformLocation(shaderProgram, 'u_audioTexture');
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
         sampleTextureLocations[i] = gl.getUniformLocation(shaderProgram, `u_texture${i}`);
     }
-    videoTextureLocation = gl.getUniformLocation(shaderProgram, 'u_videoTexture');
 }
 updateUniformLocations();
 
@@ -585,11 +616,9 @@ function render(time) {
     if (lastFrameTime === 0) lastFrameTime = time;
     const delta = time - lastFrameTime;
     lastFrameTime = time;
-
     if (!isPaused) {
         effectiveTime += delta;
     }
-
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -598,33 +627,20 @@ function render(time) {
     if (timeLocation) gl.uniform1f(timeLocation, effectiveTime * 0.001);
     if (resolutionLocation) gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
 
-    // Update sample textures (for video, update each frame)
-    for (let i = 0; i < 4; i++) {
+    // For each texture slot, if a media is assigned, update the texture.
+    for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
         if (sampleTextures[i] && sampleTextureLocations[i] && sampleMedia[i]) {
-            if (sampleMedia[i].type === "video" && sampleMedia[i].element) {
+            // For video types (and optionally if you add an offscreen canvas for audio), update each frame.
+            if (sampleMedia[i].type === "video") {
                 gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sampleMedia[i].element);
                 gl.bindTexture(gl.TEXTURE_2D, null);
             }
-            gl.activeTexture(gl.TEXTURE2 + i); // TEXTURE2, TEXTURE3, etc.
+            // (For images, the texture is static. Audio could be processed similarly via an offscreen canvas.)
+            gl.activeTexture(gl.TEXTURE2 + i); // Start at TEXTURE2.
             gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
             gl.uniform1i(sampleTextureLocations[i], 2 + i);
-        }
-    }
-
-    // Update the audio texture from the analyser data.
-    if (window.audioAnalyser && window.audioDataArray) {
-        window.audioAnalyser.getByteFrequencyData(window.audioDataArray);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, audioTexture);
-        gl.texImage2D(
-            gl.TEXTURE_2D, 0, gl.LUMINANCE,
-            window.audioDataArray.length, 1,
-            0, gl.LUMINANCE, gl.UNSIGNED_BYTE, window.audioDataArray
-        );
-        if (audioTextureLocation) {
-            gl.uniform1i(audioTextureLocation, 0);
         }
     }
 
