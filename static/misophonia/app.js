@@ -101,118 +101,110 @@ updateCanvasDimensions(); // Initialize on load
 function isPowerOf2(value) {
     return (value & (value - 1)) === 0;
 }
+// Global array for textures and media elements.
 const sampleTextures = [null, null, null, null];
 const sampleTextureLocations = [null, null, null, null];
+const sampleMedia = [null, null, null, null]; // Now each entry will be { type, element }
 
-// Initialize textures
+// For each texture slot, create the texture and attach a unified file input handler.
 for (let i = 0; i < 4; i++) {
     sampleTextures[i] = gl.createTexture();
     const inputEl = document.getElementById(`sample-texture-${i}`);
     if (!inputEl) continue;
 
+    inputEl.setAttribute('accept', 'image/*,video/*');
+
     inputEl.addEventListener('change', (event) => {
         const file = event.target.files[0];
         if (!file) return;
+        const fileType = file.type;
 
-        const img = new Image();
-        img.onload = () => {
-            gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        let mediaObj = { type: null, element: null };
 
-            if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
-                gl.generateMipmap(gl.TEXTURE_2D);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-            } else {
+        if (fileType.startsWith('image/')) {
+            const img = new Image();
+            img.onload = () => {
+                gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
+                    gl.generateMipmap(gl.TEXTURE_2D);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                } else {
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                }
+                gl.bindTexture(gl.TEXTURE_2D, null);
+                logMessage(`Texture ${i} loaded (image).`);
+            };
+            img.src = URL.createObjectURL(file);
+            mediaObj = { type: "image", element: img };
+        } else if (fileType.startsWith('video/')) {
+            const video = document.createElement('video');
+            video.setAttribute('playsinline', '');
+            video.autoplay = true;
+            video.loop = true;
+            video.muted = true;
+            video.src = URL.createObjectURL(file);
+            video.play();
+            video.addEventListener('loadeddata', () => {
+                gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-            }
-            gl.bindTexture(gl.TEXTURE_2D, null);
-            logMessage(`Sample texture ${i} loaded.`);
-        };
-        img.src = URL.createObjectURL(file);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+                logMessage(`Texture ${i} loaded (video).`);
+            });
+            mediaObj = { type: "video", element: video };
+        } else {
+            logMessage("Unsupported file type.");
+            return;
+        }
+
+        sampleMedia[i] = mediaObj;
+
+        // Manage the preview display
+        let previewContainer = document.getElementById(`media-preview-${i}`);
+        if (!previewContainer) {
+            previewContainer = document.createElement('div');
+            previewContainer.id = `media-preview-${i}`;
+            previewContainer.className = 'media-preview';
+            inputEl.parentNode.appendChild(previewContainer);
+        } else {
+            previewContainer.innerHTML = '';
+        }
+        previewContainer.appendChild(mediaObj.element);
+
+        // Create control bar
+        const controlBar = document.createElement('div');
+        controlBar.className = 'media-controls';
+
+        const playBtn = document.createElement('button');
+        playBtn.textContent = 'Play';
+        const pauseBtn = document.createElement('button');
+        pauseBtn.textContent = 'Pause';
+        const restartBtn = document.createElement('button');
+        restartBtn.textContent = 'Restart';
+
+        if (mediaObj.type === "video") {
+            playBtn.addEventListener('click', () => { mediaObj.element.play(); });
+            pauseBtn.addEventListener('click', () => { mediaObj.element.pause(); });
+            restartBtn.addEventListener('click', () => { mediaObj.element.currentTime = 0; mediaObj.element.play(); });
+        } else {
+            playBtn.disabled = true;
+            pauseBtn.disabled = true;
+            restartBtn.disabled = true;
+        }
+        controlBar.appendChild(playBtn);
+        controlBar.appendChild(pauseBtn);
+        controlBar.appendChild(restartBtn);
+        previewContainer.appendChild(controlBar);
     });
 }
 
-/***************************************
- * Video Input Setup & Controller
- ***************************************/
-// Create a video container and preview element with controls.
-const videoContainer = document.createElement('div');
-videoContainer.id = 'video-container';
-videoContainer.style.position = 'relative';
-videoContainer.style.width = '320px';
-videoContainer.style.margin = '10px';
-videoContainer.style.border = '1px solid #ccc';
-videoContainer.style.padding = '5px';
-
-const videoElement = document.createElement('video');
-videoElement.id = 'video-preview';
-videoElement.setAttribute('playsinline', ''); // for mobile compatibility
-videoElement.width = 320;
-videoElement.height = 240;
-videoElement.autoplay = true;
-videoElement.loop = true;
-videoElement.muted = true; // required for autoplay on some browsers
-
-videoContainer.appendChild(videoElement);
-
-// Create rudimentary video controls.
-const videoControls = document.createElement('div');
-videoControls.id = 'video-controls';
-videoControls.style.textAlign = 'center';
-videoControls.style.marginTop = '5px';
-
-const playButton = document.createElement('button');
-playButton.textContent = 'Play';
-playButton.addEventListener('click', () => {
-    videoElement.play();
-});
-videoControls.appendChild(playButton);
-
-const pauseButton = document.createElement('button');
-pauseButton.textContent = 'Pause';
-pauseButton.addEventListener('click', () => {
-    videoElement.pause();
-});
-videoControls.appendChild(pauseButton);
-
-const restartVideoButton = document.createElement('button');
-restartVideoButton.textContent = 'Restart';
-restartVideoButton.addEventListener('click', () => {
-    videoElement.currentTime = 0;
-    videoElement.play();
-});
-videoControls.appendChild(restartVideoButton);
-
-videoContainer.appendChild(videoControls);
-
-// Append the video container to an existing container (e.g., uploads-container)
-const uploadsContainer = document.getElementById('uploads-container');
-uploadsContainer.appendChild(videoContainer);
-
-// Create the video texture from the video element.
-const videoTexture = gl.createTexture();
-document.getElementById('video-upload').addEventListener('change', (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-    videoElement.src = URL.createObjectURL(file);
-    videoElement.play();
-});
-
-function updateVideoTexture() {
-    // Only update if the video has data available
-    if (videoElement.readyState >= videoElement.HAVE_CURRENT_DATA) {
-        gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoElement);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-    }
-}
 
 /***************************************
  * Shader Renderer Setup
@@ -606,18 +598,16 @@ function render(time) {
     if (timeLocation) gl.uniform1f(timeLocation, effectiveTime * 0.001);
     if (resolutionLocation) gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
 
-    // Update and bind the video texture.
-    updateVideoTexture();
-    if (videoTexture && videoTextureLocation) {
-        gl.activeTexture(gl.TEXTURE1); // Use texture unit 1.
-        gl.bindTexture(gl.TEXTURE_2D, videoTexture);
-        gl.uniform1i(videoTextureLocation, 1);
-    }
-
-    // Bind sample textures.
+    // Update sample textures (for video, update each frame)
     for (let i = 0; i < 4; i++) {
-        if (sampleTextures[i] && sampleTextureLocations[i]) {
-            gl.activeTexture(gl.TEXTURE2 + i);
+        if (sampleTextures[i] && sampleTextureLocations[i] && sampleMedia[i]) {
+            if (sampleMedia[i].type === "video" && sampleMedia[i].element) {
+                gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sampleMedia[i].element);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+            }
+            gl.activeTexture(gl.TEXTURE2 + i); // TEXTURE2, TEXTURE3, etc.
             gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
             gl.uniform1i(sampleTextureLocations[i], 2 + i);
         }
