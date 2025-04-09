@@ -140,3 +140,21 @@ body {
     pointer-events: none;
     opacity: 0.9;
 }
+
+/* Video container and preview styles */
+#video-container {
+    width: 320px;
+    margin: 10px;
+    border: 1px solid #ccc;
+    padding: 5px;
+}
+
+#video-preview {
+    width: 100%;
+    height: auto;
+}
+
+#video-controls {
+    text-align: center;
+    margin-top: 5px;
+}

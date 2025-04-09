@@ -135,6 +135,84 @@ for (let i = 0; i < 4; i++) {
     });
 }
 
+/***************************************
+ * Video Input Setup & Controller
+ ***************************************/
+// Create a video container and preview element with controls.
+const videoContainer = document.createElement('div');
+videoContainer.id = 'video-container';
+videoContainer.style.position = 'relative';
+videoContainer.style.width = '320px';
+videoContainer.style.margin = '10px';
+videoContainer.style.border = '1px solid #ccc';
+videoContainer.style.padding = '5px';
+
+const videoElement = document.createElement('video');
+videoElement.id = 'video-preview';
+videoElement.setAttribute('playsinline', ''); // for mobile compatibility
+videoElement.width = 320;
+videoElement.height = 240;
+videoElement.autoplay = true;
+videoElement.loop = true;
+videoElement.muted = true; // required for autoplay on some browsers
+
+videoContainer.appendChild(videoElement);
+
+// Create rudimentary video controls.
+const videoControls = document.createElement('div');
+videoControls.id = 'video-controls';
+videoControls.style.textAlign = 'center';
+videoControls.style.marginTop = '5px';
+
+const playButton = document.createElement('button');
+playButton.textContent = 'Play';
+playButton.addEventListener('click', () => {
+    videoElement.play();
+});
+videoControls.appendChild(playButton);
+
+const pauseButton = document.createElement('button');
+pauseButton.textContent = 'Pause';
+pauseButton.addEventListener('click', () => {
+    videoElement.pause();
+});
+videoControls.appendChild(pauseButton);
+
+const restartVideoButton = document.createElement('button');
+restartVideoButton.textContent = 'Restart';
+restartVideoButton.addEventListener('click', () => {
+    videoElement.currentTime = 0;
+    videoElement.play();
+});
+videoControls.appendChild(restartVideoButton);
+
+videoContainer.appendChild(videoControls);
+
+// Append the video container to an existing container (e.g., uploads-container)
+const uploadsContainer = document.getElementById('uploads-container');
+uploadsContainer.appendChild(videoContainer);
+
+// Create the video texture from the video element.
+const videoTexture = gl.createTexture();
+document.getElementById('video-upload').addEventListener('change', (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    videoElement.src = URL.createObjectURL(file);
+    videoElement.play();
+});
+
+function updateVideoTexture() {
+    // Only update if the video has data available
+    if (videoElement.readyState >= videoElement.HAVE_CURRENT_DATA) {
+        gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, videoElement);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+}
 
 /***************************************
  * Shader Renderer Setup
@@ -152,6 +230,8 @@ let fragmentShaderSource = `
   #endif
   uniform float u_time;
   uniform vec2 u_resolution;
+  // Add sampler for video texture (if used in shader)
+  uniform sampler2D u_videoTexture;
   void main(void) {
     vec2 uv = gl_FragCoord.xy / u_resolution;
     uv = uv - 0.5;
@@ -160,6 +240,7 @@ let fragmentShaderSource = `
     float wave = sin(dist * 10.0 - u_time * 3.0);
     float intensity = smoothstep(0.3, 0.0, abs(wave));
     vec3 color = mix(vec3(0.2, 0.1, 0.5), vec3(1.0, 0.8, 0.3), intensity);
+    // Optionally mix in the video texture color (this example does not use it directly)
     gl_FragColor = vec4(color, 1.0);
   }
 `;
@@ -169,7 +250,7 @@ if (!shaderProgram) {
     console.error("Failed to initialize the shader program.");
 }
 
-let timeLocation, resolutionLocation, audioTextureLocation;
+let timeLocation, resolutionLocation, audioTextureLocation, videoTextureLocation;
 function updateUniformLocations() {
     timeLocation = gl.getUniformLocation(shaderProgram, 'u_time');
     resolutionLocation = gl.getUniformLocation(shaderProgram, 'u_resolution');
@@ -177,6 +258,7 @@ function updateUniformLocations() {
     for (let i = 0; i < 4; i++) {
         sampleTextureLocations[i] = gl.getUniformLocation(shaderProgram, `u_texture${i}`);
     }
+    videoTextureLocation = gl.getUniformLocation(shaderProgram, 'u_videoTexture');
 }
 updateUniformLocations();
 
@@ -350,9 +432,7 @@ function renderControls(schema) {
                     indicator.style.top = clampedY + 'px';
 
                     // Map raw values to the control's min/max range.
-                    // For x: left (0) -> min.x and right (rect.width) -> max.x.
                     let x = mix(control.min.x, control.max.x, clampedX / rect.width);
-                    // For y: bottom (rect.height) -> min.y and top (0) -> max.y.
                     let y = mix(control.min.y, control.max.y, 1 - (clampedY / rect.height));
 
                     LOG("x,y=", x, y);
@@ -360,13 +440,11 @@ function renderControls(schema) {
 
                     // Update the info bubble's text and position.
                     infoBubble.innerText = `(${x.toFixed(2)}, ${y.toFixed(2)})`;
-                    // Position the bubble to the right of the indicator and slightly above.
                     infoBubble.style.left = (clampedX + 50) + 'px';
                     infoBubble.style.top = (clampedY - 25) + 'px';
                 }
 
                 inputElement.addEventListener('mousedown', e => {
-                    // Show the info bubble when the user begins interaction.
                     infoBubble.style.display = 'block';
                     updateXY(e);
 
@@ -378,7 +456,6 @@ function renderControls(schema) {
                     document.addEventListener('mouseup', function onMouseUp() {
                         document.removeEventListener('mousemove', onMouseMove);
                         document.removeEventListener('mouseup', onMouseUp);
-                        // Hide the bubble when the user releases the mouse.
                         infoBubble.style.display = 'none';
                     });
                 });
@@ -517,7 +594,6 @@ function render(time) {
     const delta = time - lastFrameTime;
     lastFrameTime = time;
 
-    // Only update effectiveTime if not paused.
     if (!isPaused) {
         effectiveTime += delta;
     }
@@ -530,16 +606,24 @@ function render(time) {
     if (timeLocation) gl.uniform1f(timeLocation, effectiveTime * 0.001);
     if (resolutionLocation) gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
 
-    // Bind and set each sample texture
+    // Update and bind the video texture.
+    updateVideoTexture();
+    if (videoTexture && videoTextureLocation) {
+        gl.activeTexture(gl.TEXTURE1); // Use texture unit 1.
+        gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+        gl.uniform1i(videoTextureLocation, 1);
+    }
+
+    // Bind sample textures.
     for (let i = 0; i < 4; i++) {
         if (sampleTextures[i] && sampleTextureLocations[i]) {
-            gl.activeTexture(gl.TEXTURE2 + i); // TEXTURE2, TEXTURE3, TEXTURE4, TEXTURE5
+            gl.activeTexture(gl.TEXTURE2 + i);
             gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
             gl.uniform1i(sampleTextureLocations[i], 2 + i);
         }
     }
 
-    // Update the audio texture from the analyser data
+    // Update the audio texture from the analyser data.
     if (window.audioAnalyser && window.audioDataArray) {
         window.audioAnalyser.getByteFrequencyData(window.audioDataArray);
         gl.activeTexture(gl.TEXTURE0);
@@ -563,42 +647,44 @@ function render(time) {
 }
 requestAnimationFrame(render);
 
-// Add event listeners for the new buttons.
+// Main controls: Play/Pause and Restart.
 document.getElementById('play-pause').addEventListener('click', function () {
     isPaused = !isPaused;
-    // Update button text: when paused, button shows "Play"
     this.textContent = isPaused ? 'Play' : 'Pause';
 });
 
 document.getElementById('restart').addEventListener('click', function () {
     effectiveTime = 0; // Reset animation time
+    // Restart video input.
+    if (videoElement) {
+        videoElement.currentTime = 0;
+        videoElement.play();
+    }
+    // Restart audio input by reinitializing the microphone.
+    if (window.audioAnalyser) {
+        loadMicrophone();
+    }
 });
 
 // Create a stream from the canvas at 30 fps.
 const canvasStream = canvas.captureStream(30);
 
-// Variables to manage recording.
 let mediaRecorder;
 let recordedChunks = [];
 
-// Start recording function.
 function startRecording() {
     recordedChunks = [];
-    // Create a MediaRecorder instance with the canvas stream.
     mediaRecorder = new MediaRecorder(canvasStream, {
         mimeType: 'video/webm'
     });
-    // When data is available, push it into the recordedChunks array.
     mediaRecorder.ondataavailable = event => {
         if (event.data.size > 0) {
             recordedChunks.push(event.data);
         }
     };
-    // When recording stops, create a Blob from the chunks.
     mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: 'video/webm' });
         const url = URL.createObjectURL(blob);
-        // Create a download link for the video.
         const a = document.createElement('a');
         a.style.display = 'none';
         a.href = url;
@@ -611,7 +697,6 @@ function startRecording() {
     logMessage("Recording started.");
 }
 
-// Stop recording function.
 function stopRecording() {
     if (mediaRecorder && mediaRecorder.state !== 'inactive') {
         mediaRecorder.stop();
@@ -624,23 +709,16 @@ function stopRecording() {
 document.getElementById('start-record').addEventListener('click', startRecording);
 document.getElementById('stop-record').addEventListener('click', stopRecording);
 document.getElementById('save-image').addEventListener('click', () => {
-    // Pause the render loop temporarily (if applicable)
     isPaused = true;
-
-    // Wait for the current frame to complete.
     requestAnimationFrame(() => {
-        gl.finish(); // Ensure all GL commands are done
+        gl.finish();
         const dataURL = canvas.toDataURL("image/png");
-
-        // For download:
         const a = document.createElement('a');
         a.href = dataURL;
         a.download = 'shader_snapshot.png';
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-
-        // Optionally resume rendering:
         isPaused = false;
     });
 });
