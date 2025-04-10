@@ -857,69 +857,98 @@ function updateCustomUniforms(shaderBuffer) {
     }
 }
 
+// TODO: only update shaders either in use or sampled by other shaders
+function updateAllShaderBuffers() {
+    // Loop through each shader buffer and update its offscreen texture.
+    shaderBuffers.forEach((shaderBuffer, idx) => {
+        // Bind the offscreen framebuffer of the shader buffer.
+        gl.bindFramebuffer(gl.FRAMEBUFFER, shaderBuffer.offscreenFramebuffer);
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.clearColor(0, 0, 0, 1);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        // Use the shader's program and update its uniforms.
+        gl.useProgram(shaderBuffer.shaderProgram);
+        if (shaderBuffer.timeLocation)
+            gl.uniform1f(shaderBuffer.timeLocation, effectiveTime * 0.001);
+        if (shaderBuffer.resolutionLocation)
+            gl.uniform2f(shaderBuffer.resolutionLocation, canvas.width, canvas.height);
+        updateCustomUniforms(shaderBuffer);
+
+        // Bind the sample media textures.
+        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+            if (!shaderBuffer.sampleTextures[i] || !shaderBuffer.sampleTextureLocations[i])
+                continue;
+            const textureLocation = shaderBuffer.sampleTextureLocations[i];
+            const media = shaderBuffer.sampleMedia[i];
+            gl.activeTexture(gl.TEXTURE2 + i);
+            if (!media) {
+                // No media: use a fallback texture.
+                gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
+                gl.uniform1i(textureLocation, 2 + i);
+            } else if (media.type === "tab") {
+                // For tab-sampled shaders, bind the target shader's offscreen texture.
+                const targetShader = shaderBuffers[media.tabIndex];
+                gl.bindTexture(gl.TEXTURE_2D, targetShader.offscreenTexture);
+                gl.uniform1i(textureLocation, 2 + i);
+            } else if (media.type === "video") {
+                gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texImage2D(
+                    gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media.element
+                );
+                gl.uniform1i(textureLocation, 2 + i);
+            } else if (media.type === "audio") {
+                const { analyser, dataArray } = media;
+                analyser.getByteFrequencyData(dataArray);
+                gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texImage2D(
+                    gl.TEXTURE_2D, 0, gl.LUMINANCE, dataArray.length, 1, 0,
+                    gl.LUMINANCE, gl.UNSIGNED_BYTE, dataArray
+                );
+                gl.uniform1i(textureLocation, 2 + i);
+            } else if (media.type === "image") {
+                gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texImage2D(
+                    gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media.element
+                );
+                if (isPowerOf2(media.element.width) && isPowerOf2(media.element.height)) {
+                    gl.generateMipmap(gl.TEXTURE_2D);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                } else {
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                }
+                gl.uniform1i(textureLocation, 2 + i);
+            }
+        }
+
+        // Draw the full-screen quad to update the offscreen texture.
+        const posLoc = gl.getAttribLocation(shaderBuffer.shaderProgram, "a_position");
+        gl.enableVertexAttribArray(posLoc);
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+    });
+}
+
 function render(time) {
     if (lastFrameTime === 0) lastFrameTime = time;
     const delta = time - lastFrameTime;
     lastFrameTime = time;
     if (!isPaused) effectiveTime += delta;
 
-    const currentShader = shaderBuffers[currentShaderIndex];
+    // --- Update All Shader Buffers ---
+    // This function call makes sure that every shader’s offscreen texture is updated,
+    // even if its corresponding tab is not active.
+    updateAllShaderBuffers();
 
-    // First Pass: Render scene into offscreen framebuffer
-    gl.bindFramebuffer(gl.FRAMEBUFFER, currentShader.offscreenFramebuffer);
-    gl.viewport(0, 0, canvas.width, canvas.height);
-    gl.clearColor(0, 0, 0, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-
-    gl.useProgram(currentShader.shaderProgram);
-    if (currentShader.timeLocation) gl.uniform1f(currentShader.timeLocation, effectiveTime * 0.001);
-    if (currentShader.resolutionLocation) gl.uniform2f(currentShader.resolutionLocation, canvas.width, canvas.height);
-    // Update custom uniforms for the active shader buffer.
-    updateCustomUniforms(currentShader);
-
-    // Bind sample media textures (video and audio updating)
-    for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-        if (currentShader.sampleTextures[i] && currentShader.sampleTextureLocations[i]) {
-            const media = currentShader.sampleMedia[i];
-            if (media) {
-                if (media.type === "tab") {
-                    const targetShader = shaderBuffers[media.tabIndex];
-                    gl.activeTexture(gl.TEXTURE2 + i);
-                    gl.bindTexture(gl.TEXTURE_2D, targetShader.offscreenTexture);
-                    gl.uniform1i(currentShader.sampleTextureLocations[i], 2 + i);
-                    LOG(`rendering texture ${media.tabIndex}; offscreenTexture ${targetShader.offscreenTexture}`);
-                } else if (media.type === "video") {
-                    gl.bindTexture(gl.TEXTURE_2D, currentShader.sampleTextures[i]);
-                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA,
-                        gl.UNSIGNED_BYTE, media.element);
-                    gl.bindTexture(gl.TEXTURE_2D, null);
-                } else if (media.type === "audio") {
-                    const { analyser, dataArray } = media;
-                    analyser.getByteFrequencyData(dataArray);
-                    gl.bindTexture(gl.TEXTURE_2D, currentShader.sampleTextures[i]);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, dataArray.length,
-                        1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, dataArray);
-                    gl.bindTexture(gl.TEXTURE_2D, null);
-                }
-            }
-            // Always bind the texture to the appropriate texture unit.
-            gl.activeTexture(gl.TEXTURE2 + i);
-            gl.bindTexture(gl.TEXTURE_2D, currentShader.sampleTextures[i]);
-            gl.uniform1i(currentShader.sampleTextureLocations[i], 2 + i);
-        }
-    }
-
-    const positionLocation = gl.getAttribLocation(currentShader.shaderProgram, "a_position");
-    gl.enableVertexAttribArray(positionLocation);
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-    // Second Pass: Blit offscreen texture to the canvas
+    // --- Final Pass: Blit the active shader's offscreen texture to the canvas ---
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -930,7 +959,8 @@ function render(time) {
     gl.vertexAttribPointer(quadPosLocation, 2, gl.FLOAT, false, 0, 0);
     const quadTextureLocation = gl.getUniformLocation(quadProgram, "u_texture");
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, currentShader.offscreenTexture);
+    // Use the currently active shader buffer’s updated offscreen texture.
+    gl.bindTexture(gl.TEXTURE_2D, shaderBuffers[currentShaderIndex].offscreenTexture);
     gl.uniform1i(quadTextureLocation, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
