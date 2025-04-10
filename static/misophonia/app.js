@@ -80,12 +80,41 @@ updateCanvasDimensions();
 const MAX_TEXTURE_SLOTS = 4;
 const sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
 const sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
-// Each entry is an object: { type: "image"|"video"|"audio", element: MediaElement, (optional) analyser, dataArray }
+// Each entry is an object: { type: "image"|"video"|"audio", element: MediaElement, (optional) analyser, dataArray, outputGain }
 const sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
+
+/* Helper: Create audio processing chain.
+   Sets up an AudioContext, a MediaElementSource, an AnalyserNode (for shader input)
+   and an output branch via a Gain node (for audible playback) */
+function createAudioSource(src) {
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.src = src;
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaElementSource(audio);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+    // Create gain node for audible playback
+    const outputGain = audioContext.createGain();
+    outputGain.gain.value = 1; // 1 = full volume, 0 = muted.
+    source.connect(outputGain);
+    outputGain.connect(audioContext.destination);
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    return { audio, analyser, dataArray, outputGain };
+}
+
+/* Helper: Toggle mute without affecting the analyser signal.
+   This adjusts the outputGain value. */
+function toggleMute(mediaObj, mute) {
+    if (mediaObj.outputGain) {
+        mediaObj.outputGain.gain.value = mute ? 0 : 1;
+    }
+}
 
 /* Advanced Media Input Component for each texture slot.
    Provides a dropdown to select source type (None, File, URL, or Microphone),
-   and then displays related controls. */
+   and displays controls accordingly. */
 function createAdvancedMediaInput(slotIndex) {
     const container = document.createElement('div');
     container.className = 'advanced-media-input';
@@ -117,15 +146,16 @@ function createAdvancedMediaInput(slotIndex) {
     sourceSelect.addEventListener('change', () => {
         clearInputs();
         const val = sourceSelect.value;
+        let mediaObj = null;
         if (val === 'file') {
             const fileInput = document.createElement('input');
             fileInput.type = 'file';
             fileInput.accept = 'image/*,video/*,audio/*';
             fileInput.addEventListener('change', (event) => {
+                clearInputs();
                 const file = event.target.files[0];
                 if (!file) return;
                 const fileType = file.type;
-                let mediaObj = { type: null, element: null };
                 if (fileType.startsWith('image/')) {
                     const img = new Image();
                     img.onload = () => {
@@ -164,34 +194,36 @@ function createAdvancedMediaInput(slotIndex) {
                         logMessage(`Slot ${slotIndex} loaded (video file).`);
                     });
                     mediaObj = { type: "video", element: video };
-                    // In your "file" branch for audio files:
                 } else if (fileType.startsWith('audio/')) {
-                    const audio = document.createElement('audio');
-                    audio.controls = true;
-                    audio.src = URL.createObjectURL(file);
-
-                    // Create a separate AudioContext for this source or reuse a shared one.
-                    const audioContext = new AudioContext();
-                    const sourceNode = audioContext.createMediaElementSource(audio);
-                    const analyser = audioContext.createAnalyser();
-                    analyser.fftSize = 256; // Choose an appropriate size.
-                    sourceNode.connect(analyser);
-                    // Optionally, connect the analyser to the destination if you want playback.
-                    analyser.connect(audioContext.destination);
-
-                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-                    // Store the analyser and data array along with the audio element.
-                    mediaObj = { type: "audio", element: audio, analyser, dataArray };
+                    const src = URL.createObjectURL(file);
+                    const audioSource = createAudioSource(src);
+                    mediaObj = {
+                        type: "audio",
+                        element: audioSource.audio,
+                        analyser: audioSource.analyser,
+                        dataArray: audioSource.dataArray,
+                        outputGain: audioSource.outputGain
+                    };
                 } else {
                     logMessage("Unsupported file type.");
                     return;
                 }
                 sampleMedia[slotIndex] = mediaObj;
                 previewContainer.appendChild(mediaObj.element);
+                // If this is an audio source, add a mute button.
+                if (mediaObj.type === "audio") {
+                    const muteBtn = document.createElement('button');
+                    muteBtn.textContent = "Mute";
+                    let muted = false;
+                    muteBtn.addEventListener('click', () => {
+                        muted = !muted;
+                        toggleMute(mediaObj, muted);
+                        muteBtn.textContent = muted ? "Unmute" : "Mute";
+                    });
+                    previewContainer.appendChild(muteBtn);
+                }
             });
             inputContainer.appendChild(fileInput);
-
         } else if (val === 'url') {
             const urlInput = document.createElement('input');
             urlInput.type = 'text';
@@ -201,7 +233,6 @@ function createAdvancedMediaInput(slotIndex) {
             loadBtn.addEventListener('click', () => {
                 const url = urlInput.value;
                 if (!url) return;
-                let mediaObj = { type: null, element: null };
                 if (url.match(/\.(jpg|jpeg|png|gif)$/i)) {
                     const img = new Image();
                     img.crossOrigin = "anonymous";
@@ -243,24 +274,34 @@ function createAdvancedMediaInput(slotIndex) {
                     });
                     mediaObj = { type: "video", element: video };
                 } else if (url.match(/\.(mp3|wav|ogg)$/i)) {
-                    const audio = document.createElement('audio');
-                    audio.controls = true;
-                    audio.crossOrigin = "anonymous";
-                    audio.src = url;
-                    audio.addEventListener('loadeddata', () => {
-                        logMessage(`Slot ${slotIndex} loaded (audio URL).`);
-                    });
-                    mediaObj = { type: "audio", element: audio };
+                    const audioSource = createAudioSource(url);
+                    mediaObj = {
+                        type: "audio",
+                        element: audioSource.audio,
+                        analyser: audioSource.analyser,
+                        dataArray: audioSource.dataArray,
+                        outputGain: audioSource.outputGain
+                    };
                 } else {
                     logMessage(`Cannot determine media type for URL: ${url}`);
                     return;
                 }
                 sampleMedia[slotIndex] = mediaObj;
                 previewContainer.appendChild(mediaObj.element);
+                if (mediaObj.type === "audio") {
+                    const muteBtn = document.createElement('button');
+                    muteBtn.textContent = "Mute";
+                    let muted = false;
+                    muteBtn.addEventListener('click', () => {
+                        muted = !muted;
+                        toggleMute(mediaObj, muted);
+                        muteBtn.textContent = muted ? "Unmute" : "Mute";
+                    });
+                    previewContainer.appendChild(muteBtn);
+                }
             });
             inputContainer.appendChild(urlInput);
             inputContainer.appendChild(loadBtn);
-
         } else if (val === 'mic') {
             const micBtn = document.createElement('button');
             micBtn.textContent = 'Enable Microphone';
@@ -273,6 +314,7 @@ function createAdvancedMediaInput(slotIndex) {
                         analyser.fftSize = 256;
                         source.connect(analyser);
                         const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                        // For microphone input, we may not route to speakers.
                         sampleMedia[slotIndex] = { type: "audio", element: null, analyser, dataArray };
                         logMessage(`Slot ${slotIndex} using microphone input.`);
                         previewContainer.innerHTML = 'Microphone Enabled';
@@ -644,20 +686,12 @@ function render(time) {
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sampleMedia[i].element);
                 gl.bindTexture(gl.TEXTURE_2D, null);
             } else if (sampleMedia[i].type === "audio") {
-                // For file-uploaded audio or microphone, get the frequency data
-                let dataArray;
-                if (sampleMedia[i].analyser && sampleMedia[i].dataArray) {
-                    sampleMedia[i].analyser.getByteFrequencyData(sampleMedia[i].dataArray);
-                    dataArray = sampleMedia[i].dataArray;
-                } else if (window.audioDataArray) {
-                    dataArray = window.audioDataArray;
-                }
+                const { analyser, dataArray } = sampleMedia[i];
+                analyser.getByteFrequencyData(dataArray);
                 gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
-                // Set texture parameters for non-power-of-2 texture (no mipmaps)
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                // Upload the audio frequency data as a 1xN texture.
                 gl.texImage2D(
                     gl.TEXTURE_2D,
                     0,
@@ -715,17 +749,13 @@ document.getElementById('play-pause').addEventListener('click', function () {
     isPaused = !isPaused;
     this.textContent = isPaused ? 'Play' : 'Pause';
 });
-
 document.getElementById('restart').addEventListener('click', function () {
     effectiveTime = 0;
-    // If you use dedicated video elements, reset here.
     if (window.audioAnalyser) loadMicrophone();
 });
-
 const canvasStream = canvas.captureStream(30);
 let mediaRecorder;
 let recordedChunks = [];
-
 function startRecording() {
     recordedChunks = [];
     mediaRecorder = new MediaRecorder(canvasStream, { mimeType: 'video/webm' });
