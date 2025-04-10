@@ -325,12 +325,17 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
                 mediaObj = { type: "image", element: img };
             } else if (fileType.startsWith('video/')) {
                 const video = document.createElement('video');
+                video.controls = true;
                 video.setAttribute('playsinline', '');
-                video.autoplay = true;
                 video.loop = true;
-                video.muted = true;
+                video.muted = true;    // Mute by default (see next section for audio)
                 video.src = URL.createObjectURL(file);
-                video.play();
+                // Match the shader's pause state:
+                if (!isPaused) {
+                    video.play();
+                } else {
+                    video.pause();
+                }
                 video.addEventListener('loadeddata', () => {
                     gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[slotIndex]);
                     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -346,9 +351,15 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
                     clampPreviewSize(video);
                 });
                 mediaObj = { type: "video", element: video };
+
             } else if (fileType.startsWith('audio/')) {
                 const src = URL.createObjectURL(file);
                 const audioSource = createAudioSource(src);
+                if (!isPaused && typeof audioSource.audio.play === 'function') {
+                    audioSource.audio.play();
+                } else {
+                    audioSource.audio.pause();
+                }
                 mediaObj = {
                     type: "audio",
                     element: audioSource.audio,
@@ -356,7 +367,7 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
                     dataArray: audioSource.dataArray,
                     outputGain: audioSource.outputGain
                 };
-                mediaObj.element.style.maxWidth = "300px";
+                audioSource.audio.style.maxWidth = "300px";
             } else {
                 logMessage("Unsupported file type.");
                 return;
@@ -366,8 +377,9 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
             previewContainer.appendChild(mediaObj.element);
             if (mediaObj && mediaObj.type === "audio") {
                 const muteBtn = document.createElement('button');
-                muteBtn.textContent = "Mute";
-                let muted = false;
+                let muted = true;
+                muteBtn.textContent = muted ? "Unmute" : "Mute";
+                toggleMute(mediaObj, muted);
                 muteBtn.addEventListener('click', () => {
                     muted = !muted;
                     toggleMute(mediaObj, muted);
@@ -459,7 +471,8 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
             if (mediaObj && mediaObj.type === "audio") {
                 const muteBtn = document.createElement('button');
                 muteBtn.textContent = "Mute";
-                let muted = false;
+                let muted = true;
+                toggleMute(mediaObj, muted);
                 muteBtn.addEventListener('click', () => {
                     muted = !muted;
                     toggleMute(mediaObj, muted);
@@ -927,9 +940,35 @@ requestAnimationFrame(render);
 document.getElementById('play-pause').addEventListener('click', function () {
     isPaused = !isPaused;
     this.textContent = isPaused ? 'Play' : 'Pause';
+
+    // For the active shader, pause/resume attached media
+    const currentShader = shaderBuffers[currentShaderIndex];
+    currentShader.sampleMedia.forEach(media => {
+        if (media && media.element) {
+            if (isPaused && typeof media.element.pause === 'function') {
+                media.element.pause();
+            } else if (!isPaused && typeof media.element.play === 'function') {
+                media.element.play();
+            }
+        }
+    });
 });
 document.getElementById('restart').addEventListener('click', function () {
     effectiveTime = 0;
+
+    // For the active shader, reset attached media
+    const currentShader = shaderBuffers[currentShaderIndex];
+    currentShader.sampleMedia.forEach(media => {
+        if (media && media.element) {
+            // Reset time to zero for video/audio elements
+            media.element.currentTime = 0;
+            if (!isPaused && typeof media.element.play === 'function') {
+                media.element.play();
+            }
+        }
+    });
+
+    // Restart microphone capture if applicable.
     if (window.audioAnalyser) loadMicrophone();
 });
 const canvasStream = canvas.captureStream(30);
