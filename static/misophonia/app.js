@@ -130,6 +130,7 @@ updateCanvasDimensions();
 function createAudioSource(src) {
     const audio = document.createElement('audio');
     audio.controls = true;
+    audio.loop = true;
     audio.src = src;
     const audioContext = new AudioContext();
     const source = audioContext.createMediaElementSource(audio);
@@ -255,6 +256,109 @@ initShaderBuffers();
 /***************************************
  * Advanced Media Input (Per Shader)
  ***************************************/
+// Helper to update the sample texture for a given media element.
+function updateTextureForMedia(shaderBuffer, slotIndex, mediaElement) {
+    gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[slotIndex]);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, mediaElement);
+    if (mediaElement.tagName === 'IMG') {
+        if (isPowerOf2(mediaElement.width) && isPowerOf2(mediaElement.height)) {
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        } else {
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, null);
+}
+
+// Helper to load an image from a source URL.
+function loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer) {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+        updateTextureForMedia(shaderBuffer, slotIndex, img);
+        logMessage(`Slot ${slotIndex} loaded (image).`);
+        clampPreviewSize(img);
+        shaderBuffer.sampleMedia[slotIndex] = { type: 'image', element: img };
+        previewContainer.innerHTML = '';
+        previewContainer.appendChild(img);
+    };
+    img.src = src;
+}
+
+// Helper to load a video from a source URL.
+function loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer) {
+    const video = document.createElement('video');
+    video.controls = true;
+    video.setAttribute('playsinline', '');
+    video.loop = true;
+    video.muted = true;
+    video.src = src;
+    // Match the shader's pause state.
+    if (!isPaused) { video.play(); } else { video.pause(); }
+    video.addEventListener('loadeddata', () => {
+        updateTextureForMedia(shaderBuffer, slotIndex, video);
+        logMessage(`Slot ${slotIndex} loaded (video).`);
+        clampPreviewSize(video);
+    });
+    shaderBuffer.sampleMedia[slotIndex] = { type: 'video', element: video };
+    previewContainer.innerHTML = '';
+    previewContainer.appendChild(video);
+}
+
+// Helper to load audio from a source URL.
+function loadAudioFromSource(src, shaderBuffer, slotIndex, previewContainer) {
+    const audioSource = createAudioSource(src);
+    if (!isPaused && typeof audioSource.audio.play === 'function') {
+        audioSource.audio.play();
+    } else {
+        audioSource.audio.pause();
+    }
+    shaderBuffer.sampleMedia[slotIndex] = {
+        type: 'audio',
+        element: audioSource.audio,
+        analyser: audioSource.analyser,
+        dataArray: audioSource.dataArray,
+        outputGain: audioSource.outputGain
+    };
+    audioSource.audio.style.maxWidth = "300px";
+    previewContainer.innerHTML = '';
+    previewContainer.appendChild(audioSource.audio);
+
+    // Add a mute/unmute button.
+    const muteBtn = document.createElement('button');
+    let muted = true;
+    muteBtn.textContent = "Unmute";
+    toggleMute(shaderBuffer.sampleMedia[slotIndex], muted);
+    muteBtn.addEventListener('click', () => {
+        muted = !muted;
+        toggleMute(shaderBuffer.sampleMedia[slotIndex], muted);
+        muteBtn.textContent = muted ? "Unmute" : "Mute";
+    });
+    previewContainer.appendChild(muteBtn);
+}
+
+// Helper to create a URL form that triggers on Enter.
+function createUrlForm(callback) {
+    const form = document.createElement('form');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Enter media URL...';
+    form.appendChild(input);
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const url = input.value.trim();
+        if (url) {
+            callback(url);
+        }
+    });
+    return form;
+}
+
+// Main function to create the advanced media input interface.
 function createAdvancedMediaInput(shaderBuffer, slotIndex) {
     const container = document.createElement('div');
     container.className = 'advanced-media-input';
@@ -298,94 +402,16 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
             resetMedia();
             const file = event.target.files[0];
             if (!file) return;
+            const src = URL.createObjectURL(file);
             const fileType = file.type;
-            let mediaObj = null;
             if (fileType.startsWith('image/')) {
-                const img = new Image();
-                img.onload = () => {
-                    gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[slotIndex]);
-                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                    gl.texImage2D(
-                        gl.TEXTURE_2D, 0, gl.RGBA,
-                        gl.RGBA, gl.UNSIGNED_BYTE, img
-                    );
-                    if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
-                        gl.generateMipmap(gl.TEXTURE_2D);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-                    } else {
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                    }
-                    gl.bindTexture(gl.TEXTURE_2D, null);
-                    logMessage(`Slot ${slotIndex} loaded (image file).`);
-                    clampPreviewSize(img);
-                };
-                img.src = URL.createObjectURL(file);
-                mediaObj = { type: "image", element: img };
+                loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer);
             } else if (fileType.startsWith('video/')) {
-                const video = document.createElement('video');
-                video.controls = true;
-                video.setAttribute('playsinline', '');
-                video.loop = true;
-                video.muted = true;    // Mute by default (see next section for audio)
-                video.src = URL.createObjectURL(file);
-                // Match the shader's pause state:
-                if (!isPaused) {
-                    video.play();
-                } else {
-                    video.pause();
-                }
-                video.addEventListener('loadeddata', () => {
-                    gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[slotIndex]);
-                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                    gl.texImage2D(
-                        gl.TEXTURE_2D, 0, gl.RGBA,
-                        gl.RGBA, gl.UNSIGNED_BYTE, video
-                    );
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                    gl.bindTexture(gl.TEXTURE_2D, null);
-                    logMessage(`Slot ${slotIndex} loaded (video file).`);
-                    clampPreviewSize(video);
-                });
-                mediaObj = { type: "video", element: video };
-
+                loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer);
             } else if (fileType.startsWith('audio/')) {
-                const src = URL.createObjectURL(file);
-                const audioSource = createAudioSource(src);
-                if (!isPaused && typeof audioSource.audio.play === 'function') {
-                    audioSource.audio.play();
-                } else {
-                    audioSource.audio.pause();
-                }
-                mediaObj = {
-                    type: "audio",
-                    element: audioSource.audio,
-                    analyser: audioSource.analyser,
-                    dataArray: audioSource.dataArray,
-                    outputGain: audioSource.outputGain
-                };
-                audioSource.audio.style.maxWidth = "300px";
+                loadAudioFromSource(src, shaderBuffer, slotIndex, previewContainer);
             } else {
                 logMessage("Unsupported file type.");
-                return;
-            }
-            shaderBuffer.sampleMedia[slotIndex] = mediaObj;
-            clearPreview();
-            previewContainer.appendChild(mediaObj.element);
-            if (mediaObj && mediaObj.type === "audio") {
-                const muteBtn = document.createElement('button');
-                let muted = true;
-                muteBtn.textContent = muted ? "Unmute" : "Mute";
-                toggleMute(mediaObj, muted);
-                muteBtn.addEventListener('click', () => {
-                    muted = !muted;
-                    toggleMute(mediaObj, muted);
-                    muteBtn.textContent = muted ? "Unmute" : "Mute";
-                });
-                previewContainer.appendChild(muteBtn);
             }
         });
         inputControlsContainer.appendChild(fileInput);
@@ -393,96 +419,20 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
 
     function setupUrlInput() {
         inputControlsContainer.innerHTML = '';
-        const urlInput = document.createElement('input');
-        urlInput.type = 'text';
-        urlInput.placeholder = 'Enter media URL...';
-        const loadBtn = document.createElement('button');
-        loadBtn.textContent = 'Load';
-        loadBtn.addEventListener('click', () => {
+        const form = createUrlForm((url) => {
             resetMedia();
-            const url = urlInput.value;
-            if (!url) return;
-            let mediaObj = null;
-            if (url.match(/\.(jpg|jpeg|png|gif)$/i)) {
-                const img = new Image();
-                img.crossOrigin = "anonymous";
-                img.onload = () => {
-                    gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[slotIndex]);
-                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                    gl.texImage2D(
-                        gl.TEXTURE_2D, 0, gl.RGBA,
-                        gl.RGBA, gl.UNSIGNED_BYTE, img
-                    );
-                    if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
-                        gl.generateMipmap(gl.TEXTURE_2D);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-                    } else {
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                    }
-                    gl.bindTexture(gl.TEXTURE_2D, null);
-                    logMessage(`Slot ${slotIndex} loaded (image URL).`);
-                    clampPreviewSize(img);
-                };
-                img.src = url;
-                mediaObj = { type: "image", element: img };
-            } else if (url.match(/\.(mp4|webm|ogg)$/i)) {
-                const video = document.createElement('video');
-                video.setAttribute('playsinline', '');
-                video.autoplay = true;
-                video.loop = true;
-                video.muted = true;
-                video.crossOrigin = "anonymous";
-                video.src = url;
-                video.play();
-                video.addEventListener('loadeddata', () => {
-                    gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[slotIndex]);
-                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                    gl.texImage2D(
-                        gl.TEXTURE_2D, 0, gl.RGBA,
-                        gl.RGBA, gl.UNSIGNED_BYTE, video
-                    );
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                    gl.bindTexture(gl.TEXTURE_2D, null);
-                    logMessage(`Slot ${slotIndex} loaded (video URL).`);
-                    clampPreviewSize(video);
-                });
-                mediaObj = { type: "video", element: video };
-            } else if (url.match(/\.(mp3|wav|ogg)$/i)) {
-                const audioSource = createAudioSource(url);
-                mediaObj = {
-                    type: "audio",
-                    element: audioSource.audio,
-                    analyser: audioSource.analyser,
-                    dataArray: audioSource.dataArray,
-                    outputGain: audioSource.outputGain
-                };
-                mediaObj.element.style.maxWidth = "300px";
+            const lowerUrl = url.toLowerCase();
+            if (lowerUrl.match(/\.(jpg|jpeg|png|gif)$/)) {
+                loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer);
+            } else if (lowerUrl.match(/\.(mp4|webm|ogg)$/)) {
+                loadVideoFromSource(url, shaderBuffer, slotIndex, previewContainer);
+            } else if (lowerUrl.match(/\.(mp3|wav|ogg)$/)) {
+                loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer);
             } else {
                 logMessage(`Cannot determine media type for URL: ${url}`);
-                return;
-            }
-            shaderBuffer.sampleMedia[slotIndex] = mediaObj;
-            clearPreview();
-            previewContainer.appendChild(mediaObj.element);
-            if (mediaObj && mediaObj.type === "audio") {
-                const muteBtn = document.createElement('button');
-                muteBtn.textContent = "Mute";
-                let muted = true;
-                toggleMute(mediaObj, muted);
-                muteBtn.addEventListener('click', () => {
-                    muted = !muted;
-                    toggleMute(mediaObj, muted);
-                    muteBtn.textContent = muted ? "Unmute" : "Mute";
-                });
-                previewContainer.appendChild(muteBtn);
             }
         });
-        inputControlsContainer.appendChild(urlInput);
-        inputControlsContainer.appendChild(loadBtn);
+        inputControlsContainer.appendChild(form);
     }
 
     function setupMicInput() {
@@ -509,8 +459,6 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
     }
 
     sourceSelect.addEventListener('change', () => {
-        // Do not clear previous media state if you wish to persist textures;
-        // you could add a confirmation here if needed.
         shaderBuffer.sampleMedia[slotIndex] = null;
         clearPreview();
         const val = sourceSelect.value;
@@ -522,6 +470,7 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
 
     return container;
 }
+
 
 /***************************************
  * Quad & Geometry Setup for Post‑Processing
