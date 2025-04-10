@@ -116,9 +116,11 @@ function toggleMute(mediaObj, mute) {
    Provides a dropdown to select source type (None, File, URL, or Microphone),
    and displays controls accordingly. */
 function createAdvancedMediaInput(slotIndex) {
+    // Main container for this slot's advanced media input.
     const container = document.createElement('div');
     container.className = 'advanced-media-input';
 
+    // Dropdown to select source type.
     const sourceSelect = document.createElement('select');
     sourceSelect.innerHTML = `
         <option value="none">None</option>
@@ -128,212 +130,244 @@ function createAdvancedMediaInput(slotIndex) {
     `;
     container.appendChild(sourceSelect);
 
-    const inputContainer = document.createElement('div');
-    inputContainer.className = 'media-input-controls';
-    container.appendChild(inputContainer);
+    // The Remove button now clears only the media preview and resets the state.
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', () => {
+        // Do not clear the input controls so the user can re-upload
+        sampleMedia[slotIndex] = null;
+        clearPreview();
+        logMessage(`Slot ${slotIndex} unassigned.`);
+    });
+    container.appendChild(removeBtn);
 
+    // Container for input controls (file input, URL input, or mic button).
+    const inputControlsContainer = document.createElement('div');
+    inputControlsContainer.className = 'media-input-controls';
+    container.appendChild(inputControlsContainer);
+
+    // Container for displaying a media preview (and extra controls such as mute button).
     const previewContainer = document.createElement('div');
     previewContainer.id = `media-preview-${slotIndex}`;
     previewContainer.className = 'media-preview';
     container.appendChild(previewContainer);
 
-    function clearInputs() {
-        inputContainer.innerHTML = '';
+    // Clear just the preview container.
+    function clearPreview() {
         previewContainer.innerHTML = '';
+    }
+    // Reset the media state (do not clear the input controls).
+    function resetMedia() {
         sampleMedia[slotIndex] = null;
+        clearPreview();
     }
 
+    // --- Setup functions for each type ---
+    function setupFileInput() {
+        inputControlsContainer.innerHTML = ''; // Clear previous input controls.
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*,video/*,audio/*';
+        fileInput.addEventListener('change', (event) => {
+            resetMedia(); // Clear any previous media preview and state.
+            const file = event.target.files[0];
+            if (!file) return;
+            const fileType = file.type;
+            let mediaObj = null;
+            if (fileType.startsWith('image/')) {
+                const img = new Image();
+                img.onload = () => {
+                    gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
+                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                    if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
+                        gl.generateMipmap(gl.TEXTURE_2D);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                    } else {
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    }
+                    gl.bindTexture(gl.TEXTURE_2D, null);
+                    logMessage(`Slot ${slotIndex} loaded (image file).`);
+                };
+                img.src = URL.createObjectURL(file);
+                mediaObj = { type: "image", element: img };
+            } else if (fileType.startsWith('video/')) {
+                const video = document.createElement('video');
+                video.setAttribute('playsinline', '');
+                video.autoplay = true;
+                video.loop = true;
+                video.muted = true;
+                video.src = URL.createObjectURL(file);
+                video.play();
+                video.addEventListener('loadeddata', () => {
+                    gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
+                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    gl.bindTexture(gl.TEXTURE_2D, null);
+                    logMessage(`Slot ${slotIndex} loaded (video file).`);
+                });
+                mediaObj = { type: "video", element: video };
+            } else if (fileType.startsWith('audio/')) {
+                const src = URL.createObjectURL(file);
+                const audioSource = createAudioSource(src);
+                mediaObj = {
+                    type: "audio",
+                    element: audioSource.audio,
+                    analyser: audioSource.analyser,
+                    dataArray: audioSource.dataArray,
+                    outputGain: audioSource.outputGain
+                };
+            } else {
+                logMessage("Unsupported file type.");
+                return;
+            }
+            sampleMedia[slotIndex] = mediaObj;
+            clearPreview();
+            previewContainer.appendChild(mediaObj.element);
+            if (mediaObj && mediaObj.type === "audio") {
+                const muteBtn = document.createElement('button');
+                muteBtn.textContent = "Mute";
+                let muted = false;
+                muteBtn.addEventListener('click', () => {
+                    muted = !muted;
+                    toggleMute(mediaObj, muted);
+                    muteBtn.textContent = muted ? "Unmute" : "Mute";
+                });
+                previewContainer.appendChild(muteBtn);
+            }
+        });
+        inputControlsContainer.appendChild(fileInput);
+    }
+
+    function setupUrlInput() {
+        inputControlsContainer.innerHTML = '';
+        const urlInput = document.createElement('input');
+        urlInput.type = 'text';
+        urlInput.placeholder = 'Enter media URL...';
+        const loadBtn = document.createElement('button');
+        loadBtn.textContent = 'Load';
+        loadBtn.addEventListener('click', () => {
+            resetMedia();
+            const url = urlInput.value;
+            if (!url) return;
+            let mediaObj = null;
+            if (url.match(/\.(jpg|jpeg|png|gif)$/i)) {
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.onload = () => {
+                    gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
+                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+                    if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
+                        gl.generateMipmap(gl.TEXTURE_2D);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                    } else {
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    }
+                    gl.bindTexture(gl.TEXTURE_2D, null);
+                    logMessage(`Slot ${slotIndex} loaded (image URL).`);
+                };
+                img.src = url;
+                mediaObj = { type: "image", element: img };
+            } else if (url.match(/\.(mp4|webm|ogg)$/i)) {
+                const video = document.createElement('video');
+                video.setAttribute('playsinline', '');
+                video.autoplay = true;
+                video.loop = true;
+                video.muted = true;
+                video.crossOrigin = "anonymous";
+                video.src = url;
+                video.play();
+                video.addEventListener('loadeddata', () => {
+                    gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
+                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    gl.bindTexture(gl.TEXTURE_2D, null);
+                    logMessage(`Slot ${slotIndex} loaded (video URL).`);
+                });
+                mediaObj = { type: "video", element: video };
+            } else if (url.match(/\.(mp3|wav|ogg)$/i)) {
+                const audioSource = createAudioSource(url);
+                mediaObj = {
+                    type: "audio",
+                    element: audioSource.audio,
+                    analyser: audioSource.analyser,
+                    dataArray: audioSource.dataArray,
+                    outputGain: audioSource.outputGain
+                };
+            } else {
+                logMessage(`Cannot determine media type for URL: ${url}`);
+                return;
+            }
+            sampleMedia[slotIndex] = mediaObj;
+            clearPreview();
+            previewContainer.appendChild(mediaObj.element);
+            if (mediaObj && mediaObj.type === "audio") {
+                const muteBtn = document.createElement('button');
+                muteBtn.textContent = "Mute";
+                let muted = false;
+                muteBtn.addEventListener('click', () => {
+                    muted = !muted;
+                    toggleMute(mediaObj, muted);
+                    muteBtn.textContent = muted ? "Unmute" : "Mute";
+                });
+                previewContainer.appendChild(muteBtn);
+            }
+        });
+        inputControlsContainer.appendChild(urlInput);
+        inputControlsContainer.appendChild(loadBtn);
+    }
+
+    function setupMicInput() {
+        inputControlsContainer.innerHTML = '';
+        const micBtn = document.createElement('button');
+        micBtn.textContent = 'Enable Microphone';
+        micBtn.addEventListener('click', () => {
+            resetMedia();
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    const audioContext = new AudioContext();
+                    const source = audioContext.createMediaStreamSource(stream);
+                    const analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    source.connect(analyser);
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    sampleMedia[slotIndex] = { type: "audio", element: null, analyser, dataArray };
+                    clearPreview();
+                    previewContainer.innerHTML = 'Microphone Enabled';
+                })
+                .catch(err => {
+                    logMessageErr("Error accessing microphone:", err);
+                });
+        });
+        inputControlsContainer.appendChild(micBtn);
+    }
+
+    // On dropdown change, set up controls for the chosen source.
     sourceSelect.addEventListener('change', () => {
-        clearInputs();
+        sampleMedia[slotIndex] = null;
+        clearPreview();
         const val = sourceSelect.value;
-        let mediaObj = null;
         if (val === 'file') {
-            const fileInput = document.createElement('input');
-            fileInput.type = 'file';
-            fileInput.accept = 'image/*,video/*,audio/*';
-            fileInput.addEventListener('change', (event) => {
-                clearInputs();
-                const file = event.target.files[0];
-                if (!file) return;
-                const fileType = file.type;
-                if (fileType.startsWith('image/')) {
-                    const img = new Image();
-                    img.onload = () => {
-                        gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
-                        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-                        if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
-                            gl.generateMipmap(gl.TEXTURE_2D);
-                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-                        } else {
-                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                        }
-                        gl.bindTexture(gl.TEXTURE_2D, null);
-                        logMessage(`Slot ${slotIndex} loaded (image file).`);
-                    };
-                    img.src = URL.createObjectURL(file);
-                    mediaObj = { type: "image", element: img };
-                } else if (fileType.startsWith('video/')) {
-                    const video = document.createElement('video');
-                    video.setAttribute('playsinline', '');
-                    video.autoplay = true;
-                    video.loop = true;
-                    video.muted = true;
-                    video.src = URL.createObjectURL(file);
-                    video.play();
-                    video.addEventListener('loadeddata', () => {
-                        gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
-                        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                        gl.bindTexture(gl.TEXTURE_2D, null);
-                        logMessage(`Slot ${slotIndex} loaded (video file).`);
-                    });
-                    mediaObj = { type: "video", element: video };
-                } else if (fileType.startsWith('audio/')) {
-                    const src = URL.createObjectURL(file);
-                    const audioSource = createAudioSource(src);
-                    mediaObj = {
-                        type: "audio",
-                        element: audioSource.audio,
-                        analyser: audioSource.analyser,
-                        dataArray: audioSource.dataArray,
-                        outputGain: audioSource.outputGain
-                    };
-                } else {
-                    logMessage("Unsupported file type.");
-                    return;
-                }
-                sampleMedia[slotIndex] = mediaObj;
-                previewContainer.appendChild(mediaObj.element);
-                // If this is an audio source, add a mute button.
-                if (mediaObj.type === "audio") {
-                    const muteBtn = document.createElement('button');
-                    muteBtn.textContent = "Mute";
-                    let muted = false;
-                    muteBtn.addEventListener('click', () => {
-                        muted = !muted;
-                        toggleMute(mediaObj, muted);
-                        muteBtn.textContent = muted ? "Unmute" : "Mute";
-                    });
-                    previewContainer.appendChild(muteBtn);
-                }
-            });
-            inputContainer.appendChild(fileInput);
+            setupFileInput();
         } else if (val === 'url') {
-            const urlInput = document.createElement('input');
-            urlInput.type = 'text';
-            urlInput.placeholder = 'Enter media URL...';
-            const loadBtn = document.createElement('button');
-            loadBtn.textContent = 'Load';
-            loadBtn.addEventListener('click', () => {
-                const url = urlInput.value;
-                if (!url) return;
-                if (url.match(/\.(jpg|jpeg|png|gif)$/i)) {
-                    const img = new Image();
-                    img.crossOrigin = "anonymous";
-                    img.onload = () => {
-                        gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
-                        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-                        if (isPowerOf2(img.width) && isPowerOf2(img.height)) {
-                            gl.generateMipmap(gl.TEXTURE_2D);
-                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-                        } else {
-                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                        }
-                        gl.bindTexture(gl.TEXTURE_2D, null);
-                        logMessage(`Slot ${slotIndex} loaded (image URL).`);
-                    };
-                    img.src = url;
-                    mediaObj = { type: "image", element: img };
-                } else if (url.match(/\.(mp4|webm|ogg)$/i)) {
-                    const video = document.createElement('video');
-                    video.setAttribute('playsinline', '');
-                    video.autoplay = true;
-                    video.loop = true;
-                    video.muted = true;
-                    video.crossOrigin = "anonymous";
-                    video.src = url;
-                    video.play();
-                    video.addEventListener('loadeddata', () => {
-                        gl.bindTexture(gl.TEXTURE_2D, sampleTextures[slotIndex]);
-                        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                        gl.bindTexture(gl.TEXTURE_2D, null);
-                        logMessage(`Slot ${slotIndex} loaded (video URL).`);
-                    });
-                    mediaObj = { type: "video", element: video };
-                } else if (url.match(/\.(mp3|wav|ogg)$/i)) {
-                    const audioSource = createAudioSource(url);
-                    mediaObj = {
-                        type: "audio",
-                        element: audioSource.audio,
-                        analyser: audioSource.analyser,
-                        dataArray: audioSource.dataArray,
-                        outputGain: audioSource.outputGain
-                    };
-                } else {
-                    logMessage(`Cannot determine media type for URL: ${url}`);
-                    return;
-                }
-                sampleMedia[slotIndex] = mediaObj;
-                previewContainer.appendChild(mediaObj.element);
-                if (mediaObj.type === "audio") {
-                    const muteBtn = document.createElement('button');
-                    muteBtn.textContent = "Mute";
-                    let muted = false;
-                    muteBtn.addEventListener('click', () => {
-                        muted = !muted;
-                        toggleMute(mediaObj, muted);
-                        muteBtn.textContent = muted ? "Unmute" : "Mute";
-                    });
-                    previewContainer.appendChild(muteBtn);
-                }
-            });
-            inputContainer.appendChild(urlInput);
-            inputContainer.appendChild(loadBtn);
+            setupUrlInput();
         } else if (val === 'mic') {
-            const micBtn = document.createElement('button');
-            micBtn.textContent = 'Enable Microphone';
-            micBtn.addEventListener('click', () => {
-                navigator.mediaDevices.getUserMedia({ audio: true })
-                    .then(stream => {
-                        const audioContext = new AudioContext();
-                        const source = audioContext.createMediaStreamSource(stream);
-                        const analyser = audioContext.createAnalyser();
-                        analyser.fftSize = 256;
-                        source.connect(analyser);
-                        const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                        // For microphone input, we may not route to speakers.
-                        sampleMedia[slotIndex] = { type: "audio", element: null, analyser, dataArray };
-                        logMessage(`Slot ${slotIndex} using microphone input.`);
-                        previewContainer.innerHTML = 'Microphone Enabled';
-                    })
-                    .catch(err => {
-                        logMessageErr("Error accessing microphone:", err);
-                    });
-            });
-            inputContainer.appendChild(micBtn);
+            setupMicInput();
+        } else {
+            inputControlsContainer.innerHTML = '';
         }
     });
-
-    const defaultRemoveBtn = document.createElement('button');
-    defaultRemoveBtn.textContent = 'Remove';
-    defaultRemoveBtn.addEventListener('click', () => {
-        clearInputs();
-        logMessage(`Slot ${slotIndex} unassigned.`);
-    });
-    container.appendChild(defaultRemoveBtn);
 
     return container;
 }
