@@ -365,10 +365,11 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
 
     const sourceSelect = document.createElement('select');
     sourceSelect.innerHTML = `
-      <option value="none">None</option>
-      <option value="file">File Upload</option>
-      <option value="url">URL</option>
-      <option value="mic">Microphone</option>
+    <option value="none">None</option>
+    <option value="file">File Upload</option>
+    <option value="url">URL</option>
+    <option value="mic">Microphone</option>
+    <option value="tab">Tab Sample</option>
     `;
     container.appendChild(sourceSelect);
 
@@ -458,6 +459,44 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
         inputControlsContainer.appendChild(micBtn);
     }
 
+    function setupTabSampleInput() {
+        inputControlsContainer.innerHTML = '';
+        const tabSelect = document.createElement('select');
+        // Add a default placeholder option.
+        const defaultOption = document.createElement('option');
+        defaultOption.value = "";
+        defaultOption.textContent = "-- Select a Shader Tab --";
+        tabSelect.appendChild(defaultOption);
+
+        // List available shader buffers.
+        shaderBuffers.forEach((shaderBuf, idx) => {
+            // Optionally, you might want to prevent sampling yourself.
+            if (idx !== currentShaderIndex) {
+                const opt = document.createElement('option');
+                opt.value = idx;  // use the tab index as the value.
+                opt.textContent = shaderBuf.name;
+                tabSelect.appendChild(opt);
+            }
+        });
+        tabSelect.addEventListener('change', () => {
+            const selectedIndex = tabSelect.value;
+            if (selectedIndex !== "") {
+                // Store a reference to the target tab.
+                shaderBuffer.sampleMedia[slotIndex] = {
+                    type: "tab",
+                    tabIndex: parseInt(selectedIndex)
+                };
+                LOG(`sampling shaderBuffer ${shaderBuffer.sampleMedia[slotIndex].tabIndex}`)
+                clearPreview();
+                // Update preview area with simple text info.
+                const info = document.createElement('div');
+                info.textContent = `Sampling from tab: ${shaderBuffers[selectedIndex].name}`;
+                previewContainer.appendChild(info);
+            }
+        });
+        inputControlsContainer.appendChild(tabSelect);
+    }
+
     sourceSelect.addEventListener('change', () => {
         shaderBuffer.sampleMedia[slotIndex] = null;
         clearPreview();
@@ -465,6 +504,7 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
         if (val === 'file') setupFileInput();
         else if (val === 'url') setupUrlInput();
         else if (val === 'mic') setupMicInput();
+        else if (val === 'tab') setupTabSampleInput();
         else inputControlsContainer.innerHTML = '';
     });
 
@@ -712,13 +752,17 @@ document.addEventListener('DOMContentLoaded', () => {
 function refreshShaderTextures(shaderBuffer) {
     for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
         const media = shaderBuffer.sampleMedia[i];
-        if (media && (media.type === "image" || media.type === "video")) {
-            gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
+        gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
+        if (!media) {
+            // No media assigned: Use a default 1x1 black texture
+            const defaultPixel = new Uint8Array([0, 0, 0, 255]);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0,
+                gl.RGBA, gl.UNSIGNED_BYTE, defaultPixel);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        } else if (media.type === "image" || media.type === "video") {
             gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texImage2D(
-                gl.TEXTURE_2D, 0, gl.RGBA,
-                gl.RGBA, gl.UNSIGNED_BYTE, media.element
-            );
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA,
+                gl.RGBA, gl.UNSIGNED_BYTE, media.element);
             if (media.type === "image") {
                 if (isPowerOf2(media.element.width) && isPowerOf2(media.element.height)) {
                     gl.generateMipmap(gl.TEXTURE_2D);
@@ -729,8 +773,8 @@ function refreshShaderTextures(shaderBuffer) {
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
                 }
             }
-            gl.bindTexture(gl.TEXTURE_2D, null);
         }
+        gl.bindTexture(gl.TEXTURE_2D, null);
     }
 }
 
@@ -835,23 +879,34 @@ function render(time) {
 
     // Bind sample media textures (video and audio updating)
     for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-        if (currentShader.sampleTextures[i] && currentShader.sampleTextureLocations[i] && currentShader.sampleMedia[i]) {
-            if (currentShader.sampleMedia[i].type === "video") {
-                gl.bindTexture(gl.TEXTURE_2D, currentShader.sampleTextures[i]);
-                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, currentShader.sampleMedia[i].element);
-                gl.bindTexture(gl.TEXTURE_2D, null);
-            } else if (currentShader.sampleMedia[i].type === "audio") {
-                const { analyser, dataArray } = currentShader.sampleMedia[i];
-                analyser.getByteFrequencyData(dataArray);
-                gl.bindTexture(gl.TEXTURE_2D, currentShader.sampleTextures[i]);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, dataArray.length, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, dataArray);
-                gl.bindTexture(gl.TEXTURE_2D, null);
+        if (currentShader.sampleTextures[i] && currentShader.sampleTextureLocations[i]) {
+            const media = currentShader.sampleMedia[i];
+            if (media) {
+                if (media.type === "tab") {
+                    const targetShader = shaderBuffers[media.tabIndex];
+                    gl.activeTexture(gl.TEXTURE2 + i);
+                    gl.bindTexture(gl.TEXTURE_2D, targetShader.offscreenTexture);
+                    gl.uniform1i(currentShader.sampleTextureLocations[i], 2 + i);
+                    LOG(`rendering texture ${media.tabIndex}; offscreenTexture ${targetShader.offscreenTexture}`);
+                } else if (media.type === "video") {
+                    gl.bindTexture(gl.TEXTURE_2D, currentShader.sampleTextures[i]);
+                    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA,
+                        gl.UNSIGNED_BYTE, media.element);
+                    gl.bindTexture(gl.TEXTURE_2D, null);
+                } else if (media.type === "audio") {
+                    const { analyser, dataArray } = media;
+                    analyser.getByteFrequencyData(dataArray);
+                    gl.bindTexture(gl.TEXTURE_2D, currentShader.sampleTextures[i]);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, dataArray.length,
+                        1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE, dataArray);
+                    gl.bindTexture(gl.TEXTURE_2D, null);
+                }
             }
-            // Reserve texture unit 2 onwards for sample media to avoid clashing with other textures.
+            // Always bind the texture to the appropriate texture unit.
             gl.activeTexture(gl.TEXTURE2 + i);
             gl.bindTexture(gl.TEXTURE_2D, currentShader.sampleTextures[i]);
             gl.uniform1i(currentShader.sampleTextureLocations[i], 2 + i);
