@@ -58,6 +58,55 @@ function mix(a, b, t) {
 }
 
 /***************************************
+ * Off‑Screen Rendering Setup
+ ***************************************/
+// Global variables for off‑screen framebuffer and texture.
+let offscreenFramebuffer = null;
+let offscreenTexture = null;
+
+/**
+ * Creates a framebuffer with an attached texture.
+ * The texture is initialized as empty, with the given dimensions.
+ * Texture parameters are set to use linear filtering and clamp-to-edge wrapping,
+ * making it safe for non‑power‑of‑2 sizes.
+ *
+ * @param {number} width - The width of the framebuffer/texture.
+ * @param {number} height - The height of the framebuffer/texture.
+ * @returns {object} - An object containing both the framebuffer and texture.
+ */
+function createFramebuffer(width, height) {
+    // Create texture to render into.
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(
+        gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0,
+        gl.RGBA, gl.UNSIGNED_BYTE, null
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    // Create framebuffer and attach the texture as its color attachment.
+    const framebuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+    gl.framebufferTexture2D(
+        gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0
+    );
+
+    // Check framebuffer completeness.
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+        console.warn("Framebuffer is not complete!");
+    }
+
+    // Clean up bindings.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+
+    return { framebuffer, texture };
+}
+
+/***************************************
  * Canvas Dimension Management
  ***************************************/
 function updateCanvasDimensions() {
@@ -69,6 +118,10 @@ function updateCanvasDimensions() {
         canvas.style.width = width + 'px';
         canvas.style.height = height + 'px';
         gl.viewport(0, 0, width, height);
+        // Re-create the offscreen framebuffer with the new dimensions.
+        const fbObj = createFramebuffer(width, height);
+        offscreenFramebuffer = fbObj.framebuffer;
+        offscreenTexture = fbObj.texture;
     }
 }
 document.getElementById('update-canvas-dimensions').addEventListener('click', updateCanvasDimensions);
@@ -115,6 +168,24 @@ function toggleMute(mediaObj, mute) {
 /* Advanced Media Input Component for each texture slot.
    Provides a dropdown to select source type (None, File, URL, or Microphone),
    and displays controls accordingly. */
+// Helper: Clamps the preview size of a media element while preserving aspect ratio.
+function clampPreviewSize(mediaElement, maxWidth = 300, maxHeight = 300) {
+    // For images and video, use natural dimensions (or videoWidth/Height)
+    const tag = mediaElement.tagName.toLowerCase();
+    if (tag === 'img' || tag === 'video') {
+        const intrinsicWidth = mediaElement.naturalWidth || mediaElement.videoWidth;
+        const intrinsicHeight = mediaElement.naturalHeight || mediaElement.videoHeight;
+        if (intrinsicWidth && intrinsicHeight) {
+            const scale = Math.min(maxWidth / intrinsicWidth, maxHeight / intrinsicHeight, 1);
+            mediaElement.style.width = (intrinsicWidth * scale) + "px";
+            mediaElement.style.height = (intrinsicHeight * scale) + "px";
+        }
+    } else if (tag === 'audio') {
+        // For audio elements, we can apply a fixed max width via CSS
+        mediaElement.style.maxWidth = maxWidth + "px";
+    }
+}
+
 function createAdvancedMediaInput(slotIndex) {
     // Main container for this slot's advanced media input.
     const container = document.createElement('div');
@@ -134,7 +205,7 @@ function createAdvancedMediaInput(slotIndex) {
     const removeBtn = document.createElement('button');
     removeBtn.textContent = 'Remove';
     removeBtn.addEventListener('click', () => {
-        // Do not clear the input controls so the user can re-upload
+        // Do not clear the input controls so the user can re-upload.
         sampleMedia[slotIndex] = null;
         clearPreview();
         logMessage(`Slot ${slotIndex} unassigned.`);
@@ -190,6 +261,7 @@ function createAdvancedMediaInput(slotIndex) {
                     }
                     gl.bindTexture(gl.TEXTURE_2D, null);
                     logMessage(`Slot ${slotIndex} loaded (image file).`);
+                    clampPreviewSize(img);  // Clamp preview size.
                 };
                 img.src = URL.createObjectURL(file);
                 mediaObj = { type: "image", element: img };
@@ -210,6 +282,7 @@ function createAdvancedMediaInput(slotIndex) {
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
                     gl.bindTexture(gl.TEXTURE_2D, null);
                     logMessage(`Slot ${slotIndex} loaded (video file).`);
+                    clampPreviewSize(video);  // Clamp video preview.
                 });
                 mediaObj = { type: "video", element: video };
             } else if (fileType.startsWith('audio/')) {
@@ -222,6 +295,8 @@ function createAdvancedMediaInput(slotIndex) {
                     dataArray: audioSource.dataArray,
                     outputGain: audioSource.outputGain
                 };
+                // For audio, clamp a max width via CSS
+                mediaObj.element.style.maxWidth = "300px";
             } else {
                 logMessage("Unsupported file type.");
                 return;
@@ -229,6 +304,7 @@ function createAdvancedMediaInput(slotIndex) {
             sampleMedia[slotIndex] = mediaObj;
             clearPreview();
             previewContainer.appendChild(mediaObj.element);
+            // If this is an audio source, add a mute button.
             if (mediaObj && mediaObj.type === "audio") {
                 const muteBtn = document.createElement('button');
                 muteBtn.textContent = "Mute";
@@ -273,6 +349,7 @@ function createAdvancedMediaInput(slotIndex) {
                     }
                     gl.bindTexture(gl.TEXTURE_2D, null);
                     logMessage(`Slot ${slotIndex} loaded (image URL).`);
+                    clampPreviewSize(img);
                 };
                 img.src = url;
                 mediaObj = { type: "image", element: img };
@@ -294,6 +371,7 @@ function createAdvancedMediaInput(slotIndex) {
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
                     gl.bindTexture(gl.TEXTURE_2D, null);
                     logMessage(`Slot ${slotIndex} loaded (video URL).`);
+                    clampPreviewSize(video);
                 });
                 mediaObj = { type: "video", element: video };
             } else if (url.match(/\.(mp3|wav|ogg)$/i)) {
@@ -305,6 +383,7 @@ function createAdvancedMediaInput(slotIndex) {
                     dataArray: audioSource.dataArray,
                     outputGain: audioSource.outputGain
                 };
+                mediaObj.element.style.maxWidth = "300px";
             } else {
                 logMessage(`Cannot determine media type for URL: ${url}`);
                 return;
@@ -462,7 +541,34 @@ function createProgram(gl, vertexSource, fragmentSource) {
     return program;
 }
 
-// Setup full-screen quad geometry
+/***************************************
+ * Setup Quad for Post‑Processing
+ ***************************************/
+const quadVertexShaderSource = `
+  attribute vec2 a_position;
+  varying vec2 v_texCoord;
+  void main() {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+    // Map from clip-space (-1 to 1) to texture coordinates (0 to 1)
+    v_texCoord = a_position * 0.5 + 0.5;
+  }
+`;
+
+const quadFragmentShaderSource = `
+  precision mediump float;
+  uniform sampler2D u_texture;
+  varying vec2 v_texCoord;
+  void main(void) {
+    gl_FragColor = texture2D(u_texture, v_texCoord);
+  }
+`;
+
+// Create the quad shader program.
+const quadProgram = createProgram(gl, quadVertexShaderSource, quadFragmentShaderSource);
+
+/***************************************
+ * Full‑Screen Quad Geometry Setup
+ ***************************************/
 const positionBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 const positions = [
@@ -693,7 +799,9 @@ function handleFolderUpload(event) {
 
 /***************************************
  * Main Render Loop
- * renderloop
+ * Two‑Pass Rendering:
+ *  - First pass renders the scene into the offscreen framebuffer.
+ *  - Second pass draws the offscreen texture to the canvas.
  ***************************************/
 let isPaused = false;
 let lastFrameTime = 0;
@@ -704,6 +812,8 @@ function render(time) {
     lastFrameTime = time;
     if (!isPaused) effectiveTime += delta;
 
+    // --- First Pass: Render Scene offscreen ---
+    gl.bindFramebuffer(gl.FRAMEBUFFER, offscreenFramebuffer);
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -712,6 +822,7 @@ function render(time) {
     if (timeLocation) gl.uniform1f(timeLocation, effectiveTime * 0.001);
     if (resolutionLocation) gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
 
+    // Update dynamic textures for video/audio
     for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
         if (sampleTextures[i] && sampleTextureLocations[i] && sampleMedia[i]) {
             if (sampleMedia[i].type === "video") {
@@ -750,6 +861,22 @@ function render(time) {
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
     gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    // --- Second Pass: Blit offscreen texture to canvas ---
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.useProgram(quadProgram);
+    const quadPosLocation = gl.getAttribLocation(quadProgram, "a_position");
+    gl.enableVertexAttribArray(quadPosLocation);
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.vertexAttribPointer(quadPosLocation, 2, gl.FLOAT, false, 0, 0);
+    const quadTextureLocation = gl.getUniformLocation(quadProgram, "u_texture");
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, offscreenTexture);
+    gl.uniform1i(quadTextureLocation, 0);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
     requestAnimationFrame(render);
 }
 requestAnimationFrame(render);
@@ -823,6 +950,7 @@ function stopRecording() {
 document.getElementById('start-record').addEventListener('click', startRecording);
 document.getElementById('stop-record').addEventListener('click', stopRecording);
 document.getElementById('save-image').addEventListener('click', () => {
+    let pv = isPaused;
     isPaused = true;
     requestAnimationFrame(() => {
         gl.finish();
@@ -833,6 +961,6 @@ document.getElementById('save-image').addEventListener('click', () => {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        isPaused = false;
+        isPaused = pv;
     });
 });
