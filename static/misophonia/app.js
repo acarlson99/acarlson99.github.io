@@ -164,14 +164,25 @@ function createAdvancedMediaInput(slotIndex) {
                         logMessage(`Slot ${slotIndex} loaded (video file).`);
                     });
                     mediaObj = { type: "video", element: video };
+                    // In your "file" branch for audio files:
                 } else if (fileType.startsWith('audio/')) {
                     const audio = document.createElement('audio');
                     audio.controls = true;
                     audio.src = URL.createObjectURL(file);
-                    audio.addEventListener('loadeddata', () => {
-                        logMessage(`Slot ${slotIndex} loaded (audio file).`);
-                    });
-                    mediaObj = { type: "audio", element: audio };
+
+                    // Create a separate AudioContext for this source or reuse a shared one.
+                    const audioContext = new AudioContext();
+                    const sourceNode = audioContext.createMediaElementSource(audio);
+                    const analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 256; // Choose an appropriate size.
+                    sourceNode.connect(analyser);
+                    // Optionally, connect the analyser to the destination if you want playback.
+                    analyser.connect(audioContext.destination);
+
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                    // Store the analyser and data array along with the audio element.
+                    mediaObj = { type: "audio", element: audio, analyser, dataArray };
                 } else {
                     logMessage("Unsupported file type.");
                     return;
@@ -606,6 +617,7 @@ function handleFolderUpload(event) {
 
 /***************************************
  * Main Render Loop
+ * renderloop
  ***************************************/
 let isPaused = false;
 let lastFrameTime = 0;
@@ -630,6 +642,33 @@ function render(time) {
                 gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, sampleMedia[i].element);
+                gl.bindTexture(gl.TEXTURE_2D, null);
+            } else if (sampleMedia[i].type === "audio") {
+                // For file-uploaded audio or microphone, get the frequency data
+                let dataArray;
+                if (sampleMedia[i].analyser && sampleMedia[i].dataArray) {
+                    sampleMedia[i].analyser.getByteFrequencyData(sampleMedia[i].dataArray);
+                    dataArray = sampleMedia[i].dataArray;
+                } else if (window.audioDataArray) {
+                    dataArray = window.audioDataArray;
+                }
+                gl.bindTexture(gl.TEXTURE_2D, sampleTextures[i]);
+                // Set texture parameters for non-power-of-2 texture (no mipmaps)
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                // Upload the audio frequency data as a 1xN texture.
+                gl.texImage2D(
+                    gl.TEXTURE_2D,
+                    0,
+                    gl.LUMINANCE,
+                    dataArray.length,
+                    1,
+                    0,
+                    gl.LUMINANCE,
+                    gl.UNSIGNED_BYTE,
+                    dataArray
+                );
                 gl.bindTexture(gl.TEXTURE_2D, null);
             }
             gl.activeTexture(gl.TEXTURE2 + i);
