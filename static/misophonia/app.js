@@ -3,8 +3,8 @@
  ***************************************/
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById('shader-canvas');
-/** @type {WebGLRenderingContext} */
-const gl = canvas.getContext('webgl', {
+/** @type {WebGL2RenderingContext} */
+const gl = canvas.getContext('webgl2', {
     preserveDrawingBuffer: true,
     premultipliedAlpha: false
 });
@@ -42,9 +42,9 @@ function mix(a, b, t) { return a * (1 - t) + b * t; }
 function isPowerOf2(value) { return (value & (value - 1)) === 0; }
 
 // Helper function to clamp preview media dimensions
-function clampPreviewSize(element) {
-    element.style.maxWidth = "300px";
-    element.style.maxHeight = "300px";
+function clampPreviewSize(element, mw = 300, mh = 300) {
+    element.style.maxWidth = parseInt(mw) + "px";
+    element.style.maxHeight = parseInt(mh) + "px";
 }
 
 // Global array of shader buffers (each representing a tab)
@@ -114,19 +114,21 @@ function createFramebuffer(width, height) {
 function updateCanvasDimensions() {
     const width = parseInt(document.getElementById('canvas-width').value, 10);
     const height = parseInt(document.getElementById('canvas-height').value, 10);
-    if (!isNaN(width) && !isNaN(height)) {
-        canvas.width = width;
-        canvas.height = height;
-        canvas.style.width = width + 'px';
-        canvas.style.height = height + 'px';
-        gl.viewport(0, 0, width, height);
-        // Update only the offscreen framebuffer (sample textures persist)
-        shaderBuffers.forEach(sb => {
-            const fbObj = createFramebuffer(width, height);
-            sb.offscreenFramebuffer = fbObj.framebuffer;
-            sb.offscreenTexture = fbObj.texture;
-        });
+    if (isNaN(width) || isNaN(height)) {
+        logMessageErr(`Invalid width/height (should be integers) ${width}/${height}`);
+        return;
     }
+    canvas.width = width;
+    canvas.height = height;
+    clampPreviewSize(canvas, 1000, 1000);
+    LOG(`setting canvas w/h to ${width}/${height} `);
+    gl.viewport(0, 0, width, height);
+    // Update only the offscreen framebuffer (sample textures persist)
+    shaderBuffers.forEach(sb => {
+        const fbObj = createFramebuffer(width, height);
+        sb.offscreenFramebuffer = fbObj.framebuffer;
+        sb.offscreenTexture = fbObj.texture;
+    });
 }
 
 /***************************************
@@ -1055,7 +1057,10 @@ let mediaRecorder;
 let recordedChunks = [];
 function startRecording() {
     recordedChunks = [];
-    mediaRecorder = new MediaRecorder(canvasStream, { mimeType: 'video/webm' });
+    mediaRecorder = new MediaRecorder(canvasStream, {
+        mimeType: 'video/webm',
+        videoBitsPerSecond: 50_000_000
+    });
     mediaRecorder.ondataavailable = event => { if (event.data.size > 0) recordedChunks.push(event.data); };
     mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: 'video/webm' });
