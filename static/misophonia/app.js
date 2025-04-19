@@ -164,8 +164,8 @@ function toggleMute(mediaObj, mute) {
 const MAX_TEXTURE_SLOTS = 4;
 const defaultControlSchema = {
     controls: [
-        { type: 'slider', label: 'Test Slider', uniform: 'u_test', default: 0.5, min: 0, max: 1, step: 0.01 },
-        { type: 'slider', label: 'Test Slider', uniform: 'u_test2', default: 1.0, min: 0, max: 6, step: 0.25 }
+        { type: 'slider', label: 'Speed', uniform: 'u_test', default: 0.5, min: 0, max: 1, step: 0.01 },
+        { type: 'slider', label: 'Num Rings', uniform: 'u_test2', default: 1.0, min: 0, max: 6, step: 0.25 }
     ]
 };
 
@@ -1141,6 +1141,24 @@ document.addEventListener('DOMContentLoaded', () => {
             document.body.removeChild(a);
             isPaused = false;
         });
+    });
+
+    const fsBtn = document.getElementById('fullscreen-btn');
+
+    fsBtn.addEventListener('click', () => {
+        if (!document.fullscreenElement) {
+            canvas.requestFullscreen()
+                .then(() => {
+                })
+                .catch(err => {
+                    console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+                });
+        } else {
+            // exit fullscreen
+            document.exitFullscreen()
+                .then(() => {
+                });
+        }
     });
 
     // update renderers
