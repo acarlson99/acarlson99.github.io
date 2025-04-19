@@ -270,7 +270,14 @@ function updateTextureForMedia(shaderBuffer, slotIndex, mediaElement) {
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         }
+    } else {
+        // video, webcam, canvas, etc — always clamp & linear
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     }
+
     gl.bindTexture(gl.TEXTURE_2D, null);
 }
 
@@ -369,6 +376,7 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
     <option value="file">File Upload</option>
     <option value="url">URL</option>
     <option value="mic">Microphone</option>
+    <option value="webcam">Webcam</option>
     <option value="tab">Tab Sample</option>
     `;
     container.appendChild(sourceSelect);
@@ -497,6 +505,46 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
         inputControlsContainer.appendChild(tabSelect);
     }
 
+    function setupWebcamInput() {
+        inputControlsContainer.innerHTML = '';
+        const camBtn = document.createElement('button');
+        camBtn.textContent = 'Enable Webcam';
+        camBtn.addEventListener('click', () => {
+            resetMedia();
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    const video = document.createElement('video');
+                    video.autoplay = true;
+                    video.muted = true;               // must be muted for autoplay
+                    video.setAttribute('playsinline', '');
+                    video.srcObject = stream;
+
+                    video.addEventListener('loadeddata', () => {
+                        // first texture upload
+                        updateTextureForMedia(shaderBuffer, slotIndex, video);
+                        clampPreviewSize(video);
+                        logMessage(`Slot ${slotIndex} loaded (webcam).`);
+
+                        // keep updating the texture each frame
+                        function updateLoop() {
+                            if (shaderBuffer.sampleMedia[slotIndex]?.type === 'webcam') {
+                                updateTextureForMedia(shaderBuffer, slotIndex, video);
+                                requestAnimationFrame(updateLoop);
+                            }
+                        }
+                        shaderBuffer.sampleMedia[slotIndex] = { type: 'webcam', element: video };
+                        clearPreview();
+                        previewContainer.appendChild(video);
+                        updateLoop();
+                    });
+                })
+                .catch(err => {
+                    logMessageErr("Error accessing webcam:", err);
+                });
+        });
+        inputControlsContainer.appendChild(camBtn);
+    }
+
     sourceSelect.addEventListener('change', () => {
         shaderBuffer.sampleMedia[slotIndex] = null;
         clearPreview();
@@ -504,6 +552,7 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
         if (val === 'file') setupFileInput();
         else if (val === 'url') setupUrlInput();
         else if (val === 'mic') setupMicInput();
+        else if (val === 'webcam') setupWebcamInput();
         else if (val === 'tab') setupTabSampleInput();
         else inputControlsContainer.innerHTML = '';
     });
@@ -891,7 +940,7 @@ function updateAllShaderBuffers() {
                 const targetShader = shaderBuffers[media.tabIndex];
                 gl.bindTexture(gl.TEXTURE_2D, targetShader.offscreenTexture);
                 gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "video") {
+            } else if (media.type === "video" || media.type === "webcam") {
                 gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
                 gl.texImage2D(
@@ -925,6 +974,8 @@ function updateAllShaderBuffers() {
                     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
                 }
                 gl.uniform1i(textureLocation, 2 + i);
+            } else {
+                LOG(`WARN: uncaught shaderbuffer media.type case: ${media.type}`);
             }
         }
 
