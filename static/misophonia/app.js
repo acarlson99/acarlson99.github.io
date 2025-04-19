@@ -128,8 +128,6 @@ function updateCanvasDimensions() {
         });
     }
 }
-document.getElementById('update-canvas-dimensions').addEventListener('click', updateCanvasDimensions);
-updateCanvasDimensions();
 
 /***************************************
  * Audio Helpers
@@ -260,8 +258,6 @@ let fragmentShaderSource = `
     gl_FragColor = vec4(color, 1.0);
   }
 `;
-
-initShaderBuffers();
 
 /***************************************
  * Advanced Media Input (Per Shader)
@@ -623,7 +619,6 @@ function loadMicrophone() {
         window.audioDataArray ? window.audioDataArray.length : 128, 1,
         0, gl.LUMINANCE, gl.UNSIGNED_BYTE, null);
 }
-document.getElementById('enable-mic').addEventListener('click', loadMicrophone);
 
 /***************************************
  * UI: Shader Buffer Tabs & Control Panels
@@ -658,8 +653,6 @@ function createShaderTabs() {
         tabContainer.appendChild(tabButton);
     });
 }
-createShaderTabs();
-updateActiveShaderUI();
 
 /***************************************
  * Control Panel Rendering
@@ -831,13 +824,6 @@ function renderControlsForShader(shaderBuffer, schema) {
     });
 }
 
-// On page load, render controls for each shader.
-document.addEventListener('DOMContentLoaded', () => {
-    shaderBuffers.forEach(shaderBuffer => {
-        renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
-    });
-});
-
 /***************************************
  * Refresh Uploaded Textures
  ***************************************/
@@ -919,7 +905,6 @@ function handleFolderUpload(event) {
         renderControlsForShader(activeShader, newSchemaData);
     }
 }
-document.getElementById('folder-upload').addEventListener('change', handleFolderUpload);
 
 /***************************************
  * Main Render Loop (Two‑Pass Rendering)
@@ -1061,46 +1046,11 @@ function render(time) {
 
     requestAnimationFrame(render);
 }
-requestAnimationFrame(render);
 
 /***************************************
  * Main Controls & Recording
  ***************************************/
-document.getElementById('play-pause').addEventListener('click', function () {
-    isPaused = !isPaused;
-    this.textContent = isPaused ? 'Play' : 'Pause';
-
-    // For the active shader, pause/resume attached media
-    const currentShader = shaderBuffers[currentShaderIndex];
-    currentShader.sampleMedia.forEach(media => {
-        if (media && media.element) {
-            if (isPaused && typeof media.element.pause === 'function') {
-                media.element.pause();
-            } else if (!isPaused && typeof media.element.play === 'function') {
-                media.element.play();
-            }
-        }
-    });
-});
-document.getElementById('restart').addEventListener('click', function () {
-    effectiveTime = 0;
-
-    // For the active shader, reset attached media
-    const currentShader = shaderBuffers[currentShaderIndex];
-    currentShader.sampleMedia.forEach(media => {
-        if (media && media.element) {
-            // Reset time to zero for video/audio elements
-            media.element.currentTime = 0;
-            if (!isPaused && typeof media.element.play === 'function') {
-                media.element.play();
-            }
-        }
-    });
-
-    // Restart microphone capture if applicable.
-    if (window.audioAnalyser) loadMicrophone();
-});
-const canvasStream = canvas.captureStream(30);
+const canvasStream = canvas.captureStream(60);
 let mediaRecorder;
 let recordedChunks = [];
 function startRecording() {
@@ -1130,19 +1080,71 @@ function stopRecording() {
         logMessage("No recording active.");
     }
 }
-document.getElementById('start-record').addEventListener('click', startRecording);
-document.getElementById('stop-record').addEventListener('click', stopRecording);
-document.getElementById('save-image').addEventListener('click', () => {
-    isPaused = true;
-    requestAnimationFrame(() => {
-        gl.finish();
-        const dataURL = canvas.toDataURL("image/png");
-        const a = document.createElement('a');
-        a.href = dataURL;
-        a.download = 'shader_snapshot.png';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        isPaused = false;
+
+// load/render/update things when page loaded
+document.addEventListener('DOMContentLoaded', () => {
+    // bind buttons
+    document.getElementById('update-canvas-dimensions').addEventListener('click', updateCanvasDimensions);
+    document.getElementById('enable-mic').addEventListener('click', loadMicrophone);
+    document.getElementById('folder-upload').addEventListener('change', handleFolderUpload);
+    document.getElementById('play-pause').addEventListener('click', function () {
+        isPaused = !isPaused;
+        this.textContent = isPaused ? 'Play' : 'Pause';
+
+        // For the active shader, pause/resume attached media
+        const currentShader = shaderBuffers[currentShaderIndex];
+        currentShader.sampleMedia.forEach(media => {
+            if (media && media.element) {
+                if (isPaused && typeof media.element.pause === 'function') {
+                    media.element.pause();
+                } else if (!isPaused && typeof media.element.play === 'function') {
+                    media.element.play();
+                }
+            }
+        });
+    });
+    document.getElementById('restart').addEventListener('click', function () {
+        effectiveTime = 0;
+
+        // For the active shader, reset attached media
+        const currentShader = shaderBuffers[currentShaderIndex];
+        currentShader.sampleMedia.forEach(media => {
+            if (media && media.element) {
+                // Reset time to zero for video/audio elements
+                media.element.currentTime = 0;
+                if (!isPaused && typeof media.element.play === 'function') {
+                    media.element.play();
+                }
+            }
+        });
+
+        // Restart microphone capture if applicable.
+        if (window.audioAnalyser) loadMicrophone();
+    });
+    document.getElementById('start-record').addEventListener('click', startRecording);
+    document.getElementById('stop-record').addEventListener('click', stopRecording);
+    document.getElementById('save-image').addEventListener('click', () => {
+        isPaused = true;
+        requestAnimationFrame(() => {
+            gl.finish();
+            const dataURL = canvas.toDataURL("image/png");
+            const a = document.createElement('a');
+            a.href = dataURL;
+            a.download = 'shader_snapshot.png';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            isPaused = false;
+        });
+    });
+
+    // update renderers
+    updateCanvasDimensions();
+    initShaderBuffers();
+    createShaderTabs();
+    updateActiveShaderUI();
+    requestAnimationFrame(render);
+    shaderBuffers.forEach(shaderBuffer => {
+        renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
     });
 });
