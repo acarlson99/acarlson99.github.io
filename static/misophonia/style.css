@@ -117,6 +117,7 @@ body {
     right: 0;
 }
 
+.slider-info-bubble,
 .xy-info-bubble {
     position: absolute;
     padding: 4px 8px;

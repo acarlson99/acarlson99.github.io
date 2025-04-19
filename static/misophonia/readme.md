@@ -10,6 +10,7 @@ precision mediump float;
 
 uniform float u_time;
 uniform vec2 u_resolution;
+uniform sampler2D u_texture0;
 
 void main() {
     mainImage(gl_FragColor,gl_FragCoord.xy);
