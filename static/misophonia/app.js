@@ -1,11 +1,18 @@
 /***************************************
  * Global Setup & Utility Functions
  ***************************************/
+/** @type {HTMLCanvasElement} */
 const canvas = document.getElementById('shader-canvas');
-const gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
+/** @type {WebGLRenderingContext} */
+const gl = canvas.getContext('webgl', {
+    preserveDrawingBuffer: true,
+    premultipliedAlpha: false
+});
 if (!gl) {
     alert("WebGL is not supported by your browser.");
 }
+gl.enable(gl.DITHER);
+
 const devMode = document.URL.startsWith("http://localhost");
 
 function LOG(...args) {
