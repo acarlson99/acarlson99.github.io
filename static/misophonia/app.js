@@ -157,7 +157,8 @@ function toggleMute(mediaObj, mute) {
 const MAX_TEXTURE_SLOTS = 4;
 const defaultControlSchema = {
     controls: [
-        { type: 'slider', label: 'Test Slider', uniform: 'u_test', default: 0.5, min: 0, max: 1, step: 0.01 }
+        { type: 'slider', label: 'Test Slider', uniform: 'u_test', default: 0.5, min: 0, max: 1, step: 0.01 },
+        { type: 'slider', label: 'Test Slider', uniform: 'u_test2', default: 1.0, min: 0, max: 6, step: 0.25 }
     ]
 };
 
@@ -239,12 +240,14 @@ let fragmentShaderSource = `
   uniform sampler2D u_texture1;
   uniform sampler2D u_texture2;
   uniform sampler2D u_texture3;
+  uniform float u_test;
+  uniform float u_test2;
   void main(void) {
     vec2 uv = gl_FragCoord.xy / u_resolution;
     uv = uv - 0.5;
     uv.x *= u_resolution.x / u_resolution.y;
     float dist = length(uv);
-    float wave = sin(dist * 10.0 - u_time * 3.0);
+    float wave = sin(dist * 10.0 * u_test2 - u_time * 3.0 * u_test);
     float intensity = smoothstep(0.3, 0.0, abs(wave));
     vec3 color = mix(vec3(0.2, 0.1, 0.5), vec3(1.0, 0.8, 0.3), intensity);
     gl_FragColor = vec4(color, 1.0);
@@ -670,6 +673,7 @@ function renderControlsForShader(shaderBuffer, schema) {
         switch (control.type) {
             case 'knob':
             case 'slider':
+                // Create the slider input
                 inputElement = document.createElement('input');
                 inputElement.type = 'range';
                 inputElement.min = control.min;
@@ -677,8 +681,38 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement.step = control.step;
                 inputElement.value = initialValue;
                 inputElement.setAttribute('data-uniform', control.uniform);
+
+                // Create an info bubble for displaying the current value
+                const infoBubble = document.createElement('div');
+                infoBubble.className = 'slider-info-bubble';
+                infoBubble.style.display = 'none';
+                controlDiv.style.position = 'relative';
+                controlDiv.appendChild(infoBubble);
+
+                // Function to update bubble content and position
+                function updateSliderBubble(e) {
+                    const rect = inputElement.getBoundingClientRect();
+                    const pct = (parseFloat(inputElement.value) - control.min) / (control.max - control.min);
+                    const bubbleX = pct * rect.width;
+                    infoBubble.innerText = parseFloat(inputElement.value).toFixed(2);
+                    infoBubble.style.left = `${bubbleX}px`;
+                    infoBubble.style.top = `-1.5em`;
+                }
+
+                // Update uniform and bubble on input
                 inputElement.addEventListener('input', e => {
-                    shaderBuffer.customUniforms[control.uniform] = parseFloat(e.target.value);
+                    const val = parseFloat(e.target.value);
+                    shaderBuffer.customUniforms[control.uniform] = val;
+                    updateSliderBubble(e);
+                });
+
+                // Show bubble on interaction
+                inputElement.addEventListener('mousedown', e => {
+                    infoBubble.style.display = 'block';
+                    updateSliderBubble(e);
+                });
+                document.addEventListener('mouseup', () => {
+                    infoBubble.style.display = 'none';
                 });
                 break;
             case 'button':
@@ -719,10 +753,10 @@ function renderControlsForShader(shaderBuffer, schema) {
                 maxLabel.className = 'xy-label xy-label-max';
                 maxLabel.innerText = `Max: ${control.max.x}, ${control.max.y}`;
                 inputElement.appendChild(maxLabel);
-                const infoBubble = document.createElement('div');
-                infoBubble.className = 'xy-info-bubble';
-                infoBubble.style.display = 'none';
-                inputElement.appendChild(infoBubble);
+                const xyInfo = document.createElement('div');
+                xyInfo.className = 'xy-info-bubble';
+                xyInfo.style.display = 'none';
+                inputElement.appendChild(xyInfo);
                 function updateXY(e) {
                     const rect = inputElement.getBoundingClientRect();
                     const rawX = e.clientX - rect.left;
@@ -735,19 +769,19 @@ function renderControlsForShader(shaderBuffer, schema) {
                     let y = mix(control.min.y, control.max.y, 1 - (clampedY / rect.height));
                     LOG("x,y=", x, y);
                     shaderBuffer.customUniforms[control.uniform] = { x, y };
-                    infoBubble.innerText = `(${x.toFixed(2)}, ${y.toFixed(2)})`;
-                    infoBubble.style.left = (clampedX + 50) + 'px';
-                    infoBubble.style.top = (clampedY - 25) + 'px';
+                    xyInfo.innerText = `(${x.toFixed(2)}, ${y.toFixed(2)})`;
+                    xyInfo.style.left = (clampedX + 50) + 'px';
+                    xyInfo.style.top = (clampedY - 25) + 'px';
                 }
                 inputElement.addEventListener('mousedown', e => {
-                    infoBubble.style.display = 'block';
+                    xyInfo.style.display = 'block';
                     updateXY(e);
                     function onMouseMove(e) { updateXY(e); }
                     document.addEventListener('mousemove', onMouseMove);
                     document.addEventListener('mouseup', function onMouseUp() {
                         document.removeEventListener('mousemove', onMouseMove);
                         document.removeEventListener('mouseup', onMouseUp);
-                        infoBubble.style.display = 'none';
+                        xyInfo.style.display = 'none';
                     });
                 });
                 break;
@@ -783,7 +817,9 @@ function renderControlsForShader(shaderBuffer, schema) {
             default:
                 console.warn(`Unknown control type: ${control.type}`);
         }
-        if (inputElement) controlDiv.appendChild(inputElement);
+        if (inputElement) {
+            controlDiv.appendChild(inputElement);
+        }
         shaderBuffer.controlContainer.appendChild(controlDiv);
     });
 }
@@ -858,6 +894,7 @@ function handleFolderUpload(event) {
     };
     shaderReader.readAsText(shaderFile);
     function checkAndApply() {
+        if (!newShaderSource) return;
         const newProgram = createProgram(gl, vertexShaderSource, newShaderSource);
         const activeShader = shaderBuffers[currentShaderIndex];
         if (newProgram) {
