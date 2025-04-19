@@ -608,7 +608,7 @@ updateActiveShaderUI();
 function renderControlsForShader(shaderBuffer, schema) {
     LOG(`Rendering controls for ${shaderBuffer.name}`);
     shaderBuffer.controlContainer.innerHTML = ''; // Clear previous controls
-    schema.controls.forEach(control => {
+    schema?.controls?.forEach(control => {
         const controlDiv = document.createElement('div');
         controlDiv.className = 'control';
         const label = document.createElement('label');
@@ -790,16 +790,18 @@ function handleFolderUpload(event) {
         if (name.endsWith('.json')) schemaFile = file;
         else if (name.endsWith('.glsl') || name.endsWith('.frag') || name.endsWith('.txt')) shaderFile = file;
     }
-    if (!schemaFile) { logMessage("No JSON schema file found in the directory."); }
     if (!shaderFile) { logMessage("No GLSL shader file found in the directory."); return; }
     let newSchemaData = null, newShaderSource = null;
     const schemaReader = new FileReader();
-    schemaReader.onload = e => {
-        try { newSchemaData = JSON.parse(e.target.result); }
-        catch (err) { logMessage("Error parsing JSON schema:", err); }
-        checkAndApply();
-    };
-    schemaReader.readAsText(schemaFile);
+    if (!schemaFile) { logMessage("No JSON schema file found in the directory."); }
+    else {
+        schemaReader.onload = e => {
+            try { newSchemaData = JSON.parse(e.target.result); }
+            catch (err) { logMessage("Error parsing JSON schema:", err); }
+            checkAndApply();
+        };
+        schemaReader.readAsText(schemaFile);
+    }
     const shaderReader = new FileReader();
     shaderReader.onload = e => {
         newShaderSource = e.target.result;
@@ -807,23 +809,21 @@ function handleFolderUpload(event) {
     };
     shaderReader.readAsText(shaderFile);
     function checkAndApply() {
-        if (newSchemaData && newShaderSource) {
-            const newProgram = createProgram(gl, vertexShaderSource, newShaderSource);
-            const activeShader = shaderBuffers[currentShaderIndex];
-            if (newProgram) {
-                activeShader.shaderProgram = newProgram;
-                activeShader.timeLocation = gl.getUniformLocation(newProgram, 'u_time');
-                activeShader.resolutionLocation = gl.getUniformLocation(newProgram, 'u_resolution');
-                for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-                    activeShader.sampleTextureLocations[i] = gl.getUniformLocation(newProgram, `u_texture${i}`);
-                }
-                logMessage("Shader updated from folder successfully!");
-            } else {
-                logMessageErr("Failed to compile shader from folder.");
+        const newProgram = createProgram(gl, vertexShaderSource, newShaderSource);
+        const activeShader = shaderBuffers[currentShaderIndex];
+        if (newProgram) {
+            activeShader.shaderProgram = newProgram;
+            activeShader.timeLocation = gl.getUniformLocation(newProgram, 'u_time');
+            activeShader.resolutionLocation = gl.getUniformLocation(newProgram, 'u_resolution');
+            for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+                activeShader.sampleTextureLocations[i] = gl.getUniformLocation(newProgram, `u_texture${i}`);
             }
-            activeShader.controlSchema = newSchemaData;
-            renderControlsForShader(activeShader, newSchemaData);
+            logMessage("Shader updated from folder successfully!");
+        } else {
+            logMessageErr("Failed to compile shader from folder.");
         }
+        activeShader.controlSchema = newSchemaData;
+        renderControlsForShader(activeShader, newSchemaData);
     }
 }
 document.getElementById('folder-upload').addEventListener('change', handleFolderUpload);
