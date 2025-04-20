@@ -8,43 +8,43 @@ const gl = canvas.getContext('webgl2', {
     preserveDrawingBuffer: true,
     premultipliedAlpha: false
 });
-if (!gl) {
-    alert("WebGL is not supported by your browser.");
-}
-gl.enable(gl.DITHER);
+if (!gl) alert('WebGL is not supported by your browser.');
 
-const devMode = document.URL.startsWith("http://localhost");
-
-function LOG(...args) {
-    if (devMode) console.log(...args);
-}
-
+const devMode = document.URL.startsWith('http://localhost');
 const maxLines = 100;
 const outputMessages = [];
-function logMessage(...args) {
-    const message = args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' ');
-    outputMessages.push(message);
-    if (outputMessages.length > maxLines) outputMessages.shift();
-    const outputEl = document.getElementById('output');
-    outputEl.textContent = outputMessages.join('\n');
-    document.getElementById('output-container').scrollTop =
-        document.getElementById('output-container').scrollHeight;
-}
-function logMessageErr(...args) { logMessage("ERROR:", ...args); }
+// index of shader we’re viewing on the canvas
+let currentViewIndex = 0;
+// index of shader whose controls we’re showing
+let currentControlIndex = 0;
+// render
+let isPaused = false;
+let lastFrameTime = 0;
+let effectiveTime = 0;
 
+// Logging
+const LOG = (...args) => { if (devMode) console.log(...args); };
+function logMessage(...args) {
+    const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    outputMessages.push(msg);
+    if (outputMessages.length > maxLines) outputMessages.shift();
+    const out = document.getElementById('output');
+    out.textContent = outputMessages.join('\n');
+    document.getElementById('output-container').scrollTop = document.getElementById('output-container').scrollHeight;
+}
+const logError = (...args) => { logMessage('ERROR:', ...args); LOG('ERROR:', ...args); }
+
+// Simple helpers
+const mix = (a, b, t) => a * (1 - t) + b * t;
+const isPowerOf2 = v => (v & (v - 1)) === 0;
 function hexToRgb(hex) {
     hex = hex.replace(/^#/, '');
-    if (hex.length === 3) hex = hex.split('').map(x => x + x).join('');
-    const intVal = parseInt(hex, 16);
-    return [((intVal >> 16) & 255) / 255, ((intVal >> 8) & 255) / 255, (intVal & 255) / 255];
+    if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+    const n = parseInt(hex, 16);
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
-function mix(a, b, t) { return a * (1 - t) + b * t; }
-function isPowerOf2(value) { return (value & (value - 1)) === 0; }
-
-// Helper function to clamp preview media dimensions
-function clampPreviewSize(element, mw = 300, mh = 300) {
-    element.style.maxWidth = parseInt(mw) + "px";
-    element.style.maxHeight = parseInt(mh) + "px";
+function clampPreviewSize(el, w = 300, h = 300) {
+    el.style.maxWidth = w + 'px'; el.style.maxHeight = h + 'px';
 }
 
 // Global array of shader buffers (each representing a tab)
@@ -53,59 +53,49 @@ let shaderBuffers = [];
 /***************************************
  * WebGL: Shader, Program & Framebuffer Helpers
  ***************************************/
-function createShader(gl, type, source) {
-    const shader = gl.createShader(type);
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        const e = gl.getShaderInfoLog(shader);
-        console.error("Shader compile error:", e);
-        logMessageErr("Shader compile error:", e);
-        gl.deleteShader(shader);
+function createShader(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        logError('Shader compile error:', gl.getShaderInfoLog(s));
+        gl.deleteShader(s);
         return null;
     }
-    return shader;
+    return s;
 }
 
-function createProgram(gl, vertexSource, fragmentSource) {
-    const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexSource);
-    const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentSource);
-    if (!vertexShader || !fragmentShader) return null;
-    const program = gl.createProgram();
-    gl.attachShader(program, vertexShader);
-    gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        console.error("Program linking error:", gl.getProgramInfoLog(program));
-        gl.deleteProgram(program);
+function createProgram(vsSrc, fsSrc) {
+    const vs = createShader(gl.VERTEX_SHADER, vsSrc);
+    const fs = createShader(gl.FRAGMENT_SHADER, fsSrc);
+    if (!vs || !fs) return null;
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs); gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+        logError('Program link error:', gl.getProgramInfoLog(prog));
+        gl.deleteProgram(prog);
         return null;
     }
-    return program;
+    return prog;
 }
 
-function createFramebuffer(width, height) {
-    const texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(
-        gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0,
-        gl.RGBA, gl.UNSIGNED_BYTE, null
-    );
+function createFramebuffer(w, h) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    const framebuffer = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-    gl.framebufferTexture2D(
-        gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0,
-        gl.TEXTURE_2D, texture, 0
-    );
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
-        console.warn("Framebuffer is not complete!");
-    }
+    const fb = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
+        LOG('Warning: incomplete framebuffer');
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.bindTexture(gl.TEXTURE_2D, null);
-    return { framebuffer, texture };
+    return { framebuffer: fb, texture: tex };
 }
 
 /***************************************
@@ -152,10 +142,8 @@ function createAudioSource(src) {
     return { audio, analyser, dataArray, outputGain };
 }
 
-function toggleMute(mediaObj, mute) {
-    if (mediaObj.outputGain) {
-        mediaObj.outputGain.gain.value = mute ? 0 : 1;
-    }
+function toggleMute(media, mute) {
+    if (media.outputGain) media.outputGain.gain.value = mute ? 0 : 1;
 }
 
 /***************************************
@@ -170,7 +158,7 @@ const defaultControlSchema = {
 };
 
 function createShaderBuffer(name, vertexSrc, fragmentSrc) {
-    const program = createProgram(gl, vertexSrc, fragmentSrc);
+    const program = createProgram(vertexSrc, fragmentSrc);
     if (!program) {
         console.error("Failed to initialize shader program for", name);
         return null;
@@ -588,7 +576,7 @@ const quadFragmentShaderSource = `
     gl_FragColor = texture2D(u_texture, v_texCoord);
   }
 `;
-const quadProgram = createProgram(gl, quadVertexShaderSource, quadFragmentShaderSource);
+const quadProgram = createProgram(quadVertexShaderSource, quadFragmentShaderSource);
 const positionBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
@@ -626,10 +614,7 @@ function loadMicrophone() {
  * UI: Shader Buffer Tabs & Control Panels
  ***************************************/
 // TODO: there should be another currentControlSchemeIndex value pointing to the index of `shaderBuffers` containing the desired control scheme, and we should create another set of tabs to switch controlschemes
-// index of shader we’re viewing on the canvas
-let currentViewIndex = 0;
-// index of shader whose controls we’re showing
-let currentControlIndex = 0;
+
 function updateActiveViewUI() {
     // nothing to show/hide in the DOM here (canvas is always visible),
     // but we still want to log it:
@@ -911,7 +896,7 @@ function handleFolderUpload(event) {
     shaderReader.readAsText(shaderFile);
     function checkAndApply() {
         if (!newShaderSource) return;
-        const newProgram = createProgram(gl, vertexShaderSource, newShaderSource);
+        const newProgram = createProgram(vertexShaderSource, newShaderSource);
         const activeShader = shaderBuffers[currentViewIndex];
         if (newProgram) {
             activeShader.shaderProgram = newProgram;
@@ -932,10 +917,6 @@ function handleFolderUpload(event) {
 /***************************************
  * Main Render Loop (Two‑Pass Rendering)
  ***************************************/
-let isPaused = false;
-let lastFrameTime = 0;
-let effectiveTime = 0;
-
 function updateCustomUniforms(shaderBuffer) {
     for (let name in shaderBuffer.customUniforms) {
         const value = shaderBuffer.customUniforms[name];
