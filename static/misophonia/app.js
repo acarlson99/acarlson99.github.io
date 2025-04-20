@@ -487,7 +487,7 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
         // List available shader buffers.
         shaderBuffers.forEach((shaderBuf, idx) => {
             // Optionally, you might want to prevent sampling yourself.
-            if (idx !== currentShaderIndex) {
+            if (idx !== currentViewIndex) {
                 const opt = document.createElement('option');
                 opt.value = idx;  // use the tab index as the value.
                 opt.textContent = shaderBuf.name;
@@ -625,23 +625,30 @@ function loadMicrophone() {
 /***************************************
  * UI: Shader Buffer Tabs & Control Panels
  ***************************************/
-let currentShaderIndex = 0;
-function updateActiveShaderUI() {
-    const activeShader = shaderBuffers[currentShaderIndex];
-    logMessage("Switched to " + activeShader.name);
-    // Hide all advanced-input and control panels
-    document.querySelectorAll('.advanced-inputs-container').forEach(container => {
-        container.style.display = 'none';
-    });
-    document.querySelectorAll('.shader-control-panel').forEach(container => {
-        container.style.display = 'none';
-    });
-    // Show only the active shader’s panels.
-    activeShader.advancedInputsContainer.style.display = 'block';
-    activeShader.controlContainer.style.display = 'block';
-    // Refresh sample media textures if needed.
-    refreshShaderTextures(activeShader);
+// TODO: there should be another currentControlSchemeIndex value pointing to the index of `shaderBuffers` containing the desired control scheme, and we should create another set of tabs to switch controlschemes
+// index of shader we’re viewing on the canvas
+let currentViewIndex = 0;
+// index of shader whose controls we’re showing
+let currentControlIndex = 0;
+function updateActiveViewUI() {
+    // nothing to show/hide in the DOM here (canvas is always visible),
+    // but we still want to log it:
+    logMessage("Viewing shader: " + shaderBuffers[currentViewIndex].name);
+    // the render() function already uses currentViewIndex when blitting:
 }
+
+// Shows only the control panels for the control‑shader
+function updateActiveControlUI() {
+    const ctrlShader = shaderBuffers[currentControlIndex];
+    logMessage("Controlling shader: " + ctrlShader.name);
+    document.querySelectorAll('.advanced-inputs-container').forEach(c => c.style.display = 'none');
+    document.querySelectorAll('.shader-control-panel').forEach(c => c.style.display = 'none');
+    ctrlShader.advancedInputsContainer.style.display = 'block';
+    ctrlShader.controlContainer.style.display = 'block';
+    // If you also need to refresh textures for the control target:
+    refreshShaderTextures(ctrlShader);
+}
+
 function createShaderTabs() {
     const tabContainer = document.getElementById('shader-tabs');
     tabContainer.innerHTML = '';
@@ -649,10 +656,24 @@ function createShaderTabs() {
         const tabButton = document.createElement('button');
         tabButton.textContent = shaderBuf.name;
         tabButton.addEventListener('click', () => {
-            currentShaderIndex = index;
-            updateActiveShaderUI();
+            currentViewIndex = index;
+            updateActiveViewUI();
         });
         tabContainer.appendChild(tabButton);
+    });
+}
+
+function createControlSchemeTabs() {
+    const tabContainer = document.getElementById('control-scheme-tabs');
+    tabContainer.innerHTML = '';
+    shaderBuffers.forEach((shaderBuf, index) => {
+        const btn = document.createElement('button');
+        btn.textContent = shaderBuf.name;
+        btn.addEventListener('click', () => {
+            currentControlIndex = index;
+            updateActiveControlUI();
+        });
+        tabContainer.appendChild(btn);
     });
 }
 
@@ -891,7 +912,7 @@ function handleFolderUpload(event) {
     function checkAndApply() {
         if (!newShaderSource) return;
         const newProgram = createProgram(gl, vertexShaderSource, newShaderSource);
-        const activeShader = shaderBuffers[currentShaderIndex];
+        const activeShader = shaderBuffers[currentViewIndex];
         if (newProgram) {
             activeShader.shaderProgram = newProgram;
             activeShader.timeLocation = gl.getUniformLocation(newProgram, 'u_time');
@@ -1042,7 +1063,7 @@ function render(time) {
     const quadTextureLocation = gl.getUniformLocation(quadProgram, "u_texture");
     gl.activeTexture(gl.TEXTURE0);
     // Use the currently active shader buffer’s updated offscreen texture.
-    gl.bindTexture(gl.TEXTURE_2D, shaderBuffers[currentShaderIndex].offscreenTexture);
+    gl.bindTexture(gl.TEXTURE_2D, shaderBuffers[currentViewIndex].offscreenTexture);
     gl.uniform1i(quadTextureLocation, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
@@ -1097,7 +1118,7 @@ document.addEventListener('DOMContentLoaded', () => {
         this.textContent = isPaused ? 'Play' : 'Pause';
 
         // For the active shader, pause/resume attached media
-        const currentShader = shaderBuffers[currentShaderIndex];
+        const currentShader = shaderBuffers[currentViewIndex];
         currentShader.sampleMedia.forEach(media => {
             if (media && media.element) {
                 if (isPaused && typeof media.element.pause === 'function') {
@@ -1112,7 +1133,7 @@ document.addEventListener('DOMContentLoaded', () => {
         effectiveTime = 0;
 
         // For the active shader, reset attached media
-        const currentShader = shaderBuffers[currentShaderIndex];
+        const currentShader = shaderBuffers[currentViewIndex];
         currentShader.sampleMedia.forEach(media => {
             if (media && media.element) {
                 // Reset time to zero for video/audio elements
@@ -1165,7 +1186,9 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCanvasDimensions();
     initShaderBuffers();
     createShaderTabs();
-    updateActiveShaderUI();
+    createControlSchemeTabs();
+    updateActiveViewUI();
+    updateActiveControlUI();
     requestAnimationFrame(render);
     shaderBuffers.forEach(shaderBuffer => {
         renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
