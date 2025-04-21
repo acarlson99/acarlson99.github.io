@@ -1029,7 +1029,8 @@ function handleFolderUpload(event) {
             try {
                 newSchemaData = JSON.parse(e.target.result);
                 // cache it under a fixed key (you could include view‑index, etc.)
-                await setItem('controlSchema', newSchemaData);
+                const key = `${currentViewIndex};controlSchema`;
+                await setItem(key, newSchemaData);
             } catch (err) {
                 logMessage("Error parsing JSON schema:", err);
             }
@@ -1045,7 +1046,9 @@ function handleFolderUpload(event) {
     reader.onload = async e => {
         newShaderSource = e.target.result;
         // cache the raw text
-        await setItem('fragmentSource', newShaderSource);
+        // await setItem('fragmentSource', newShaderSource);
+        const key = `${currentViewIndex};fragmentSource`;
+        await setItem(key, newShaderSource);
         attemptApply();
     };
     reader.readAsText(shaderFile);
@@ -1367,7 +1370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const allKeys = await keys();
     for (const key of allKeys) {
-        if (key === 'fragmentSource' || key === 'controlSchema') continue;
+        if (key.match('fragmentSource') || key.match('controlSchema')) continue;
 
         const [sIdx, slotIdx] = key.split(';').map(Number);
         const sb = shaderBuffers[sIdx];
@@ -1405,26 +1408,31 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    const savedShaderSrc = await getItem('fragmentSource');
-    const savedSchema = await getItem('controlSchema');
-    if (savedShaderSrc) {
-        // exactly duplicate the “apply” logic from handleFolderUpload:
-        const active = shaderBuffers[0]; // or whichever index you used
-        const prog = createProgram(vertexShaderSource, savedShaderSrc);
-        if (prog) {
-            active.shaderProgram = prog;
-            active.timeLocation = gl.getUniformLocation(prog, 'u_time');
-            active.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
-            for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-                active.sampleTextureLocations[i] =
-                    gl.getUniformLocation(prog, `u_texture${i}`);
+    for (let idx = 0; idx < shaderBuffers.length; idx++) {
+        const sb = shaderBuffers[idx];
+        // 1) Shader source
+        const sourceKey = `${idx};fragmentSource`;
+        const src = await getItem(sourceKey);
+        if (typeof src === 'string') {
+            const prog = createProgram(vertexShaderSource, src);
+            if (prog) {
+                sb.shaderProgram = prog;
+                sb.timeLocation = gl.getUniformLocation(prog, 'u_time');
+                sb.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
+                for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+                    sb.sampleTextureLocations[i] =
+                        gl.getUniformLocation(prog, `u_texture${i}`);
+                }
             }
-            if (savedSchema) {
-                active.controlSchema = savedSchema;
-                renderControlsForShader(active, savedSchema);
-            }
-            logMessage("Restored cached shader & controls");
         }
+
+        // 2) Control schema
+        const schemaKey = `${idx};controlSchema`;
+        const schema = await getItem(schemaKey);
+        if (schema) sb.controlSchema = schema;
+
+        // 3) Rebuild that shader’s controls panel
+        renderControlsForShader(sb, sb.controlSchema);
     }
 
     requestAnimationFrame(render);
