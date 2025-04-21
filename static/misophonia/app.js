@@ -155,20 +155,23 @@ function createFramebuffer(w, h) {
     return { framebuffer: fb, texture: tex };
 }
 
-const quadVertexShaderSource = `
-  attribute vec2 a_position;
-  varying vec2 v_texCoord;
+const quadVertexShaderSource = `#version 300 es
+  in vec2 a_position;
+  out vec2 v_texCoord;
+
   void main() {
     gl_Position = vec4(a_position, 0.0, 1.0);
     v_texCoord = a_position * 0.5 + 0.5;
   }
 `;
-const quadFragmentShaderSource = `
+const quadFragmentShaderSource = `#version 300 es
   precision mediump float;
   uniform sampler2D u_texture;
-  varying vec2 v_texCoord;
-  void main(void) {
-    gl_FragColor = texture2D(u_texture, v_texCoord);
+  in vec2 v_texCoord;
+  out vec4 outColor;
+
+  void main() {
+    outColor = texture(u_texture, v_texCoord);
   }
 `;
 const quadProgram = createProgram(quadVertexShaderSource, quadFragmentShaderSource);
@@ -190,6 +193,8 @@ function updateCanvasDimensions() {
     canvas.width = width;
     canvas.height = height;
     clampPreviewSize(canvas, 1000, 1000);
+    canvas.style.minWidth = 1000 + 'px';
+    canvas.style.minHeight = 1000 + 'px';
     LOG(`Canvas dimensions set to ${width}x${height}`);
     gl.viewport(0, 0, width, height);
     shaderBuffers.forEach(sb => {
@@ -253,13 +258,13 @@ function loadMicrophone() {
 // Part 6: Default Shader Sources
 // =====================================
 
-const vertexShaderSource = `
-  attribute vec2 a_position;
+const vertexShaderSource = `#version 300 es
+  in vec2 a_position;
   void main() {
     gl_Position = vec4(a_position, 0.0, 1.0);
   }
 `;
-let fragmentShaderSource = `
+let fragmentShaderSource = `#version 300 es
   #ifdef GL_ES
   precision mediump float;
   #endif
@@ -271,6 +276,9 @@ let fragmentShaderSource = `
   uniform sampler2D u_texture3;
   uniform float u_test;
   uniform float u_test2;
+
+  out vec4 outColor;
+
   void main(void) {
     vec2 uv = gl_FragCoord.xy / u_resolution;
     uv = uv - 0.5;
@@ -279,7 +287,7 @@ let fragmentShaderSource = `
     float wave = sin(dist * 10.0 * u_test2 - u_time * 3.0 * u_test);
     float intensity = smoothstep(0.3, 0.0, abs(wave));
     vec3 color = mix(vec3(0.2, 0.1, 0.5), vec3(1.0, 0.8, 0.3), intensity);
-    gl_FragColor = vec4(color, 1.0);
+    outColor = vec4(color, 1.0);
   }
 `;
 
@@ -337,7 +345,9 @@ function createShaderBuffer(name, vertexSrc, fragmentSrc, shaderIndex = -69) {
         controlSchema: defaultControlSchema, // default control schema
         controlContainer,
         advancedInputsContainer,
-        customUniforms
+        customUniforms,
+        vertexSrc,
+        fragmentSrc
     };
 
     // Initialize advanced media inputs for each texture slot
@@ -498,7 +508,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
                 await delItem(media.cacheKey);
                 logMessage(`Removed cache entry ${media.cacheKey}`);
             } catch (err) {
-                logMessageErr(`Error deleting ${media.cacheKey}:`, err);
+                logError(`Error deleting ${media.cacheKey}:`, err);
             }
         } shaderBuffer.sampleMedia[slotIndex] = null;
         clearPreview();
@@ -564,7 +574,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
                     clearPreview();
                     previewContainer.innerHTML = 'Microphone Enabled';
                 })
-                .catch(err => { logMessageErr("Error accessing microphone:", err); });
+                .catch(err => { logError("Error accessing microphone:", err); });
         });
         inputControlsContainer.appendChild(micBtn);
     }
@@ -640,7 +650,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
                     });
                 })
                 .catch(err => {
-                    logMessageErr("Error accessing webcam:", err);
+                    logError("Error accessing webcam:", err);
                 });
         });
         inputControlsContainer.appendChild(camBtn);
@@ -781,6 +791,10 @@ function updateActiveViewUI() {
     // but we still want to log it:
     logMessage("Viewing shader: " + shaderBuffers[currentViewIndex].name);
     // the render() function already uses currentViewIndex when blitting:
+    const buttons = document.getElementById('shader-tabs').children
+    for (let i = 0; i < buttons.length; i++) {
+        buttons[i].classList.toggle('tab-active', i === currentViewIndex);
+    }
 }
 
 // Shows only the control panels for the control‑shader
@@ -793,6 +807,11 @@ function updateActiveControlUI() {
     ctrlShader.controlContainer.style.display = 'block';
     // If you also need to refresh textures for the control target:
     refreshShaderTextures(ctrlShader);
+
+    const buttons = document.getElementById('control-scheme-tabs').children
+    for (let i = 0; i < buttons.length; i++) {
+        buttons[i].classList.toggle('tab-active', i === currentControlIndex);
+    }
 }
 
 function createShaderTabs() {
@@ -837,9 +856,7 @@ function renderControlsForShader(shaderBuffer, schema) {
         controlDiv.appendChild(label);
         let inputElement;
         // Use default value from the schema (or cached value); store in the shader's custom uniforms
-        // TODO: this should not load from customUniforms, OR customUniforms should be populated first
         const saved = shaderBuffer.customUniforms[control.uniform];
-        // TODO: properly load control defaults from database
         const initialValue = (saved !== undefined) ? saved : control.default;
         LOG(shaderBuffer.customUniforms, `render control ${shaderBuffer.name} ${initialValue} ${saved} ${control.uniform} ${control.default}`);
         shaderBuffer.customUniforms[control.uniform] = initialValue;
@@ -1060,10 +1077,12 @@ function handleFolderUpload(event) {
         // compile & swap in the new program
         const prog = createProgram(vertexShaderSource, newShaderSource);
         if (!prog) {
-            logMessageErr("Failed to compile uploaded shader");
+            logError("Failed to compile uploaded shader");
             return;
         }
         active.shaderProgram = prog;
+        active.fragmentSrc = newShaderSource;
+        active.vertexSrc = vertexShaderSource;
         active.timeLocation = gl.getUniformLocation(prog, 'u_time');
         active.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
         // update texture uniform locations
@@ -1109,7 +1128,10 @@ function updateCustomUniforms(shaderBuffer) {
 // TODO: only update shaders either in use or sampled by other shaders
 function updateAllShaderBuffers() {
     // Loop through each shader buffer and update its offscreen texture.
-    shaderBuffers.forEach((shaderBuffer, idx) => {
+    // In reverse order so that sampled textures are (probably) updated before main shader
+    for (let idx = shaderBuffers.length - 1; idx > -1; idx--) {
+        console.log(`updating shader buffer ${idx}`);
+        const shaderBuffer = shaderBuffers[idx];
         // Bind the offscreen framebuffer of the shader buffer.
         gl.bindFramebuffer(gl.FRAMEBUFFER, shaderBuffer.offscreenFramebuffer);
         gl.viewport(0, 0, canvas.width, canvas.height);
@@ -1185,7 +1207,7 @@ function updateAllShaderBuffers() {
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
-    });
+    }
 }
 
 function render(time) {
@@ -1417,6 +1439,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const prog = createProgram(vertexShaderSource, src);
             if (prog) {
                 sb.shaderProgram = prog;
+                sb.fragmentSrc = src; // for debugging mostly
+                sb.vertexSrc = vertexShaderSource; // for debugging mostly
                 sb.timeLocation = gl.getUniformLocation(prog, 'u_time');
                 sb.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
                 for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
