@@ -1,11 +1,11 @@
+// =====================================
+// Part 1: IndexedDB Asset Cache
+// =====================================
 const DB_NAME = 'shader-assets-db';
 const DB_VERSION = 1;
 const STORE_NAME = 'asset-cache';
 
-/**
- * Open (or upgrade) the IndexedDB and return a Promise that resolves to the db instance.
- */
-function openDB() {
+async function openDB() {
     return new Promise((resolve, reject) => {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
         req.onupgradeneeded = () => {
@@ -19,12 +19,6 @@ function openDB() {
     });
 }
 
-/**
- * Run a transaction on the asset-cache store.
- * @param {'readonly'|'readwrite'} mode
- * @param {(store: IDBObjectStore)=>void} callback
- * @returns {Promise<void>}
- */
 async function withStore(mode, callback) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -36,14 +30,10 @@ async function withStore(mode, callback) {
     });
 }
 
-/** Store a Blob (or anything serializable) under `key`. */
 async function setItem(key, value) {
-    await withStore('readwrite', store => {
-        store.put(value, key);
-    });
+    await withStore('readwrite', store => store.put(value, key));
 }
 
-/** Retrieve the value stored under `key`. */
 async function getItem(key) {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -54,55 +44,43 @@ async function getItem(key) {
     });
 }
 
-/** Delete the entry under `key`. */
 async function delItem(key) {
-    await withStore('readwrite', store => {
-        store.delete(key);
-    });
+    await withStore('readwrite', store => store.delete(key));
 }
 
-/** Remove *all* entries in the store. */
 async function clearAll() {
-    await withStore('readwrite', store => {
-        store.clear();
-    });
+    await withStore('readwrite', store => store.clear());
 }
 
-/** Get an array of all keys currently in the store. */
 async function keys() {
     const db = await openDB();
     return new Promise((resolve, reject) => {
         const tx = db.transaction(STORE_NAME, 'readonly');
-        const store = tx.objectStore(STORE_NAME);
-        const req = store.getAllKeys();
+        const req = tx.objectStore(STORE_NAME).getAllKeys();
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
     });
 }
 
-/***************************************
- * Global Setup & Utility Functions
- ***************************************/
+
+// =====================================
+// Part 2: Global Setup & State
+// =====================================
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById('shader-canvas');
 /** @type {WebGL2RenderingContext} */
-const gl = canvas.getContext('webgl2', {
-    preserveDrawingBuffer: true,
-    premultipliedAlpha: false
-});
+const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false });
 if (!gl) alert('WebGL is not supported by your browser.');
 
 const devMode = document.URL.startsWith('http://localhost');
 const maxLines = 100;
 const outputMessages = [];
-// index of shader we’re viewing on the canvas
 let currentViewIndex = 0;
-// index of shader whose controls we’re showing
 let currentControlIndex = 0;
-// render
 let isPaused = false;
 let lastFrameTime = 0;
 let effectiveTime = 0;
+let shaderBuffers = [];
 
 // Logging
 const LOG = (...args) => { if (devMode) console.log(...args); };
@@ -114,9 +92,9 @@ function logMessage(...args) {
     out.textContent = outputMessages.join('\n');
     document.getElementById('output-container').scrollTop = document.getElementById('output-container').scrollHeight;
 }
-const logError = (...args) => { logMessage('ERROR:', ...args); LOG('ERROR:', ...args); }
+const logError = (...args) => { logMessage('ERROR:', ...args); LOG('ERROR:', ...args); };
 
-// Simple helpers
+// Helpers
 const mix = (a, b, t) => a * (1 - t) + b * t;
 const isPowerOf2 = v => (v & (v - 1)) === 0;
 function hexToRgb(hex) {
@@ -129,12 +107,9 @@ function clampPreviewSize(el, w = 300, h = 300) {
     el.style.maxWidth = w + 'px'; el.style.maxHeight = h + 'px';
 }
 
-// Global array of shader buffers (each representing a tab)
-let shaderBuffers = [];
-
-/***************************************
- * WebGL: Shader, Program & Framebuffer Helpers
- ***************************************/
+// =====================================
+// Part 3: WebGL Helpers & Quad Setup
+// =====================================
 function createShader(type, src) {
     const s = gl.createShader(type);
     gl.shaderSource(s, src);
@@ -152,7 +127,8 @@ function createProgram(vsSrc, fsSrc) {
     const fs = createShader(gl.FRAGMENT_SHADER, fsSrc);
     if (!vs || !fs) return null;
     const prog = gl.createProgram();
-    gl.attachShader(prog, vs); gl.attachShader(prog, fs);
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
         logError('Program link error:', gl.getProgramInfoLog(prog));
@@ -173,29 +149,49 @@ function createFramebuffer(w, h) {
     const fb = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE)
-        LOG('Warning: incomplete framebuffer');
+    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) LOG('Warning: incomplete framebuffer');
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.bindTexture(gl.TEXTURE_2D, null);
     return { framebuffer: fb, texture: tex };
 }
 
-/***************************************
- * Canvas Dimensions Update
- ***************************************/
+const quadVertexShaderSource = `
+  attribute vec2 a_position;
+  varying vec2 v_texCoord;
+  void main() {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+    v_texCoord = a_position * 0.5 + 0.5;
+  }
+`;
+const quadFragmentShaderSource = `
+  precision mediump float;
+  uniform sampler2D u_texture;
+  varying vec2 v_texCoord;
+  void main(void) {
+    gl_FragColor = texture2D(u_texture, v_texCoord);
+  }
+`;
+const quadProgram = createProgram(quadVertexShaderSource, quadFragmentShaderSource);
+const positionBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+// =====================================
+// Part 4: Canvas Dimension Updates
+// =====================================
 function updateCanvasDimensions() {
     const width = parseInt(document.getElementById('canvas-width').value, 10);
     const height = parseInt(document.getElementById('canvas-height').value, 10);
     if (isNaN(width) || isNaN(height)) {
-        logMessageErr(`Invalid width/height (should be integers) ${width}/${height}`);
+        logError(`Invalid width/height ${width}/${height}`);
         return;
     }
     canvas.width = width;
     canvas.height = height;
     clampPreviewSize(canvas, 1000, 1000);
-    LOG(`setting canvas w/h to ${width}/${height} `);
+    LOG(`Canvas dimensions set to ${width}x${height}`);
     gl.viewport(0, 0, width, height);
-    // Update only the offscreen framebuffer (sample textures persist)
     shaderBuffers.forEach(sb => {
         const fbObj = createFramebuffer(width, height);
         sb.offscreenFramebuffer = fbObj.framebuffer;
@@ -203,9 +199,9 @@ function updateCanvasDimensions() {
     });
 }
 
-/***************************************
- * Audio Helpers
- ***************************************/
+// =====================================
+// Part 5: Audio & Audio-Texture Helpers
+// =====================================
 function createAudioSource(src) {
     const audio = document.createElement('audio');
     audio.controls = true;
@@ -228,9 +224,69 @@ function toggleMute(media, mute) {
     if (media.outputGain) media.outputGain.gain.value = mute ? 0 : 1;
 }
 
-/***************************************
- * Shader Buffer Creation & Management
- ***************************************/
+let audioTexture = null;
+function loadMicrophone() {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+            const audioContext = new AudioContext();
+            const source = audioContext.createMediaStreamSource(stream);
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            window.audioAnalyser = analyser;
+            window.audioDataArray = dataArray;
+        })
+        .catch(err => console.error("Error accessing microphone:", err));
+    if (audioTexture === null) audioTexture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, audioTexture);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE,
+        window.audioDataArray ? window.audioDataArray.length : 128, 1,
+        0, gl.LUMINANCE, gl.UNSIGNED_BYTE, null);
+}
+
+// =====================================
+// Part 6: Default Shader Sources
+// =====================================
+
+const vertexShaderSource = `
+  attribute vec2 a_position;
+  void main() {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+  }
+`;
+let fragmentShaderSource = `
+  #ifdef GL_ES
+  precision mediump float;
+  #endif
+  uniform float u_time;
+  uniform vec2 u_resolution;
+  uniform sampler2D u_texture0;
+  uniform sampler2D u_texture1;
+  uniform sampler2D u_texture2;
+  uniform sampler2D u_texture3;
+  uniform float u_test;
+  uniform float u_test2;
+  void main(void) {
+    vec2 uv = gl_FragCoord.xy / u_resolution;
+    uv = uv - 0.5;
+    uv.x *= u_resolution.x / u_resolution.y;
+    float dist = length(uv);
+    float wave = sin(dist * 10.0 * u_test2 - u_time * 3.0 * u_test);
+    float intensity = smoothstep(0.3, 0.0, abs(wave));
+    vec3 color = mix(vec3(0.2, 0.1, 0.5), vec3(1.0, 0.8, 0.3), intensity);
+    gl_FragColor = vec4(color, 1.0);
+  }
+`;
+
+// =====================================
+// Part 7: ShaderBuffer Creation & Management
+// =====================================
+
 const MAX_TEXTURE_SLOTS = 4;
 const defaultControlSchema = {
     controls: [
@@ -293,47 +349,16 @@ function createShaderBuffer(name, vertexSrc, fragmentSrc) {
     return shadBuf;
 }
 
-function initShaderBuffers() {
+function initDefaultShaderBuffers() {
     // For demonstration, create two shader buffers (tabs)
     let shader1 = createShaderBuffer("Shader 1", vertexShaderSource, fragmentShaderSource);
     let shader2 = createShaderBuffer("Shader 2", vertexShaderSource, fragmentShaderSource);
     shaderBuffers = [shader1, shader2];
 }
 
-// Define default vertex and fragment shader sources
-const vertexShaderSource = `
-  attribute vec2 a_position;
-  void main() {
-    gl_Position = vec4(a_position, 0.0, 1.0);
-  }
-`;
-let fragmentShaderSource = `
-  #ifdef GL_ES
-  precision mediump float;
-  #endif
-  uniform float u_time;
-  uniform vec2 u_resolution;
-  uniform sampler2D u_texture0;
-  uniform sampler2D u_texture1;
-  uniform sampler2D u_texture2;
-  uniform sampler2D u_texture3;
-  uniform float u_test;
-  uniform float u_test2;
-  void main(void) {
-    vec2 uv = gl_FragCoord.xy / u_resolution;
-    uv = uv - 0.5;
-    uv.x *= u_resolution.x / u_resolution.y;
-    float dist = length(uv);
-    float wave = sin(dist * 10.0 * u_test2 - u_time * 3.0 * u_test);
-    float intensity = smoothstep(0.3, 0.0, abs(wave));
-    vec3 color = mix(vec3(0.2, 0.1, 0.5), vec3(1.0, 0.8, 0.3), intensity);
-    gl_FragColor = vec4(color, 1.0);
-  }
-`;
-
-/***************************************
- * Advanced Media Input (Per Shader)
- ***************************************/
+// =====================================
+// Part 8: Advanced Media Input & Loader
+// =====================================
 // Helper to update the sample texture for a given media element.
 function updateTextureForMedia(shaderBuffer, slotIndex, mediaElement) {
     gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[slotIndex]);
@@ -630,64 +655,103 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
     return container;
 }
 
+/**
+ * Load one media asset into a shader slot, optionally caching it.
+ *
+ * @param {File|Blob|string} source
+ *    - If string: treated as a URL (won’t be cached).  
+ *    - If File/Blob: creates an ObjectURL.  
+ * @param {object} shaderBuffer
+ * @param {number} slotIndex
+ * @param {HTMLElement} previewContainer
+ * @param {boolean} [cache=true]
+ */
+async function loadAndCacheMedia(
+    source,
+    shaderBuffer,
+    slotIndex,
+    previewContainer,
+    cache = true
+) {
+    // 1) compute which shader we’re in
+    const shaderIndex = shaderBuffers.indexOf(shaderBuffer);
+    const cacheKey = `${shaderIndex};${slotIndex}`;
 
-/***************************************
- * Quad & Geometry Setup for Post‑Processing
- ***************************************/
-const quadVertexShaderSource = `
-  attribute vec2 a_position;
-  varying vec2 v_texCoord;
-  void main() {
-    gl_Position = vec4(a_position, 0.0, 1.0);
-    v_texCoord = a_position * 0.5 + 0.5;
-  }
-`;
-const quadFragmentShaderSource = `
-  precision mediump float;
-  uniform sampler2D u_texture;
-  varying vec2 v_texCoord;
-  void main(void) {
-    gl_FragColor = texture2D(u_texture, v_texCoord);
-  }
-`;
-const quadProgram = createProgram(quadVertexShaderSource, quadFragmentShaderSource);
-const positionBuffer = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+    // 2) figure out URL and type
+    let url, blobType;
+    if (typeof source === 'string') {
+        url = source;
+        cache = false; // remote URLs don’t get cached
+        const ext = source.split('.').pop().toLowerCase();
+        blobType = ext.match(/jpe?g|png|gif/) ? 'image'
+            : ext.match(/mp4|webm|ogg/) ? 'video'
+                : ext.match(/mp3|wav|ogg/) ? 'audio'
+                    : null;
+    } else {
+        // File or Blob
+        url = URL.createObjectURL(source);
+        blobType = source.type.startsWith('image/') ? 'image'
+            : source.type.startsWith('video/') ? 'video'
+                : source.type.startsWith('audio/') ? 'audio'
+                    : null;
 
-/***************************************
- * Audio Texture Setup (Global Microphone)
- ***************************************/
-let audioTexture = null;
-function loadMicrophone() {
-    navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(stream => {
-            const audioContext = new AudioContext();
-            const source = audioContext.createMediaStreamSource(stream);
-            const analyser = audioContext.createAnalyser();
-            analyser.fftSize = 256;
-            source.connect(analyser);
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
-            window.audioAnalyser = analyser;
-            window.audioDataArray = dataArray;
-        })
-        .catch(err => console.error("Error accessing microphone:", err));
-    if (audioTexture === null) audioTexture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, audioTexture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE,
-        window.audioDataArray ? window.audioDataArray.length : 128, 1,
-        0, gl.LUMINANCE, gl.UNSIGNED_BYTE, null);
+        if (cache) {
+            // write into IndexedDB under our new key:
+            await setItem(cacheKey, source);
+        }
+    }
+
+    // 3) dispatch to the right loader
+    if (blobType === 'image') {
+        loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer);
+    }
+    else if (blobType === 'video') {
+        loadVideoFromSource(url, shaderBuffer, slotIndex, previewContainer);
+    }
+    else if (blobType === 'audio') {
+        loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer);
+    }
+    else {
+        console.warn('Unknown media type for', source);
+    }
+
+    // 4) tag it so our “remove” handler knows what to delete:
+    shaderBuffer.sampleMedia[slotIndex].cacheKey = cacheKey;
 }
 
-/***************************************
- * UI: Shader Buffer Tabs & Control Panels
- ***************************************/
+// =====================================
+// Part 9: UI: Shader & Control Tabs + Texture Refresh
+// =====================================
 // TODO: there should be another currentControlSchemeIndex value pointing to the index of `shaderBuffers` containing the desired control scheme, and we should create another set of tabs to switch controlschemes
+
+function refreshShaderTextures(shaderBuffer) {
+    for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+        const media = shaderBuffer.sampleMedia[i];
+        gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
+        if (!media) {
+            // No media assigned: Use a default 1x1 black texture
+            const defaultPixel = new Uint8Array([0, 0, 0, 255]);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0,
+                gl.RGBA, gl.UNSIGNED_BYTE, defaultPixel);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        } else if (media.type === "image" || media.type === "video") {
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA,
+                gl.RGBA, gl.UNSIGNED_BYTE, media.element);
+            if (media.type === "image") {
+                if (isPowerOf2(media.element.width) && isPowerOf2(media.element.height)) {
+                    gl.generateMipmap(gl.TEXTURE_2D);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                } else {
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                }
+            }
+        }
+        gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+}
 
 function updateActiveViewUI() {
     // nothing to show/hide in the DOM here (canvas is always visible),
@@ -736,9 +800,9 @@ function createControlSchemeTabs() {
     });
 }
 
-/***************************************
- * Control Panel Rendering
- ***************************************/
+// =====================================
+// Part 10: Control Panel Rendering
+// =====================================
 function renderControlsForShader(shaderBuffer, schema) {
     LOG(`Rendering controls for ${shaderBuffer.name}`);
     shaderBuffer.controlContainer.innerHTML = ''; // Clear previous controls
@@ -906,42 +970,9 @@ function renderControlsForShader(shaderBuffer, schema) {
     });
 }
 
-/***************************************
- * Refresh Uploaded Textures
- ***************************************/
-function refreshShaderTextures(shaderBuffer) {
-    for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-        const media = shaderBuffer.sampleMedia[i];
-        gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
-        if (!media) {
-            // No media assigned: Use a default 1x1 black texture
-            const defaultPixel = new Uint8Array([0, 0, 0, 255]);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0,
-                gl.RGBA, gl.UNSIGNED_BYTE, defaultPixel);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        } else if (media.type === "image" || media.type === "video") {
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA,
-                gl.RGBA, gl.UNSIGNED_BYTE, media.element);
-            if (media.type === "image") {
-                if (isPowerOf2(media.element.width) && isPowerOf2(media.element.height)) {
-                    gl.generateMipmap(gl.TEXTURE_2D);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-                } else {
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                }
-            }
-        }
-        gl.bindTexture(gl.TEXTURE_2D, null);
-    }
-}
-
-/***************************************
- * Directory Upload (JSON Schema & Shader Files)
- ***************************************/
-
+// =====================================
+// Part 11: Directory Upload (JSON & Shader Files)
+// =====================================
 function handleFolderUpload(event) {
     const files = event.target.files;
     let schemaFile = null, shaderFile = null;
@@ -1013,10 +1044,9 @@ function handleFolderUpload(event) {
     }
 }
 
-
-/***************************************
- * Main Render Loop (Two‑Pass Rendering)
- ***************************************/
+// =====================================
+// Part 12: Main Render Loop
+// =====================================
 function updateCustomUniforms(shaderBuffer) {
     for (let name in shaderBuffer.customUniforms) {
         const value = shaderBuffer.customUniforms[name];
@@ -1151,9 +1181,9 @@ function render(time) {
     requestAnimationFrame(render);
 }
 
-/***************************************
- * Main Controls & Recording
- ***************************************/
+// =====================================
+// Part 13: Main Controls & Recording
+// =====================================
 const canvasStream = canvas.captureStream(60);
 let mediaRecorder;
 let recordedChunks = [];
@@ -1188,70 +1218,9 @@ function stopRecording() {
     }
 }
 
-/**
- * Load one media asset into a shader slot, optionally caching it.
- *
- * @param {File|Blob|string} source
- *    - If string: treated as a URL (won’t be cached).  
- *    - If File/Blob: creates an ObjectURL.  
- * @param {object} shaderBuffer
- * @param {number} slotIndex
- * @param {HTMLElement} previewContainer
- * @param {boolean} [cache=true]
- */
-async function loadAndCacheMedia(
-    source,
-    shaderBuffer,
-    slotIndex,
-    previewContainer,
-    cache = true
-) {
-    // 1) compute which shader we’re in
-    const shaderIndex = shaderBuffers.indexOf(shaderBuffer);
-    const cacheKey = `${shaderIndex};${slotIndex}`;
-
-    // 2) figure out URL and type
-    let url, blobType;
-    if (typeof source === 'string') {
-        url = source;
-        cache = false; // remote URLs don’t get cached
-        const ext = source.split('.').pop().toLowerCase();
-        blobType = ext.match(/jpe?g|png|gif/) ? 'image'
-            : ext.match(/mp4|webm|ogg/) ? 'video'
-                : ext.match(/mp3|wav|ogg/) ? 'audio'
-                    : null;
-    } else {
-        // File or Blob
-        url = URL.createObjectURL(source);
-        blobType = source.type.startsWith('image/') ? 'image'
-            : source.type.startsWith('video/') ? 'video'
-                : source.type.startsWith('audio/') ? 'audio'
-                    : null;
-
-        if (cache) {
-            // write into IndexedDB under our new key:
-            await setItem(cacheKey, source);
-        }
-    }
-
-    // 3) dispatch to the right loader
-    if (blobType === 'image') {
-        loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer);
-    }
-    else if (blobType === 'video') {
-        loadVideoFromSource(url, shaderBuffer, slotIndex, previewContainer);
-    }
-    else if (blobType === 'audio') {
-        loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer);
-    }
-    else {
-        console.warn('Unknown media type for', source);
-    }
-
-    // 4) tag it so our “remove” handler knows what to delete:
-    shaderBuffer.sampleMedia[slotIndex].cacheKey = cacheKey;
-}
-
+// =====================================
+// Part 14: Event Listener Setup
+// =====================================
 // load/render/update things when page loaded
 document.addEventListener('DOMContentLoaded', async () => {
     // bind buttons
@@ -1348,7 +1317,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // update renderers
     updateCanvasDimensions();
-    initShaderBuffers();
+    initDefaultShaderBuffers();
     createShaderTabs();
     createControlSchemeTabs();
     updateActiveViewUI();
