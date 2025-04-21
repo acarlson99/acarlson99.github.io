@@ -465,16 +465,14 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
     removeBtn.textContent = 'Remove';
     removeBtn.addEventListener('click', async () => {
         const media = shaderBuffer.sampleMedia[slotIndex];
-        // TODO: use cacheKey elsewhere
-        if (media && media.cacheKey) {
+        if (media?.cacheKey) {
             try {
                 await delItem(media.cacheKey);
-                logMessage(`Removed ${media.cacheKey} from cache.`);
+                logMessage(`Removed cache entry ${media.cacheKey}`);
             } catch (err) {
-                logMessageErr(`Failed to remove ${media.cacheKey}:`, err);
+                logMessageErr(`Error deleting ${media.cacheKey}:`, err);
             }
-        }
-        shaderBuffer.sampleMedia[slotIndex] = null;
+        } shaderBuffer.sampleMedia[slotIndex] = null;
         clearPreview();
         logMessage(`Slot ${slotIndex} unassigned.`);
     });
@@ -1201,35 +1199,42 @@ function stopRecording() {
  * @param {HTMLElement} previewContainer
  * @param {boolean} [cache=true]
  */
-async function loadAndCacheMedia(source, shaderBuffer, slotIndex, previewContainer, cache = true) {
-    let url, blobType;
+async function loadAndCacheMedia(
+    source,
+    shaderBuffer,
+    slotIndex,
+    previewContainer,
+    cache = true
+) {
+    // 1) compute which shader we’re in
+    const shaderIndex = shaderBuffers.indexOf(shaderBuffer);
+    const cacheKey = `${shaderIndex};${slotIndex}`;
 
+    // 2) figure out URL and type
+    let url, blobType;
     if (typeof source === 'string') {
-        // URL case
         url = source;
-        // no caching for remote URLs
-        cache = false;
-        // guess type by extension
+        cache = false; // remote URLs don’t get cached
         const ext = source.split('.').pop().toLowerCase();
         blobType = ext.match(/jpe?g|png|gif/) ? 'image'
             : ext.match(/mp4|webm|ogg/) ? 'video'
                 : ext.match(/mp3|wav|ogg/) ? 'audio'
                     : null;
     } else {
-        // File or Blob case
-        const blob = source;
-        url = URL.createObjectURL(blob);
-        blobType = blob.type.startsWith('image/') ? 'image'
-            : blob.type.startsWith('video/') ? 'video'
-                : blob.type.startsWith('audio/') ? 'audio'
+        // File or Blob
+        url = URL.createObjectURL(source);
+        blobType = source.type.startsWith('image/') ? 'image'
+            : source.type.startsWith('video/') ? 'video'
+                : source.type.startsWith('audio/') ? 'audio'
                     : null;
-        if (cache && blob instanceof File) {
-            // persist the original File in IndexedDB under its name
-            await setItem(blob.name, blob);
+
+        if (cache) {
+            // write into IndexedDB under our new key:
+            await setItem(cacheKey, source);
         }
     }
 
-    // dispatch to your existing loaders:
+    // 3) dispatch to the right loader
     if (blobType === 'image') {
         loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer);
     }
@@ -1240,8 +1245,11 @@ async function loadAndCacheMedia(source, shaderBuffer, slotIndex, previewContain
         loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer);
     }
     else {
-        console.warn('Unknown media type:', source);
+        console.warn('Unknown media type for', source);
     }
+
+    // 4) tag it so our “remove” handler knows what to delete:
+    shaderBuffer.sampleMedia[slotIndex].cacheKey = cacheKey;
 }
 
 // load/render/update things when page loaded
@@ -1319,6 +1327,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    const clearBtn = document.getElementById('clear-cache-btn');
+    clearBtn.addEventListener('click', async () => {
+        // 1) Nuke the whole store
+        try {
+            await clearAll();
+            logMessage('✅ IndexedDB cache cleared.');
+        } catch (err) {
+            logError('❌ Failed to clear cache:', err);
+        }
+
+        // 2) Reset all in‑memory media & previews
+        shaderBuffers.forEach((sb, sIdx) => {
+            sb.sampleMedia = sb.sampleMedia.map(() => null);
+            // clear each slot's preview container:
+            const previews = sb.advancedInputsContainer.querySelectorAll('.media-preview');
+            previews.forEach(p => p.innerHTML = '');
+        });
+    });
+
     // update renderers
     updateCanvasDimensions();
     initShaderBuffers();
@@ -1330,12 +1357,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
     });
 
-    const allNames = await keys();
-    for (const name of allNames) {
-        if (name === 'fragmentSource' || name === 'controlSchema') continue;
-        const blob = await getItem(name);
-        // const url = URL.createObjectURL(blob);
-        await loadAndCacheMedia(blob, shaderBuffers[0], 0, undefined);
+    const allKeys = await keys();
+    for (const key of allKeys) {
+        if (key === 'fragmentSource' || key === 'controlSchema') continue;
+
+        const [sIdx, slotIdx] = key.split(';').map(Number);
+        const shaderBuf = shaderBuffers[sIdx];
+        if (!shaderBuf) {
+            logError(`shaderBuf[${sIdx}] not found for key ${key}`);
+            continue;
+        }
+        const blob = await getItem(key);
+
+        // Find the right preview container for that shader+slot:
+        const previewContainer = shaderBuf
+            .advancedInputsContainer
+            .children[slotIdx]
+            .querySelector('.media-preview');
+
+        await loadAndCacheMedia(blob, shaderBuf, slotIdx, previewContainer, false);
     }
 
     const savedShaderSrc = await getItem('fragmentSource');
