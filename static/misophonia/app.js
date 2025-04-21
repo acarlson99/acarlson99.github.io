@@ -1,3 +1,85 @@
+const DB_NAME = 'shader-assets-db';
+const DB_VERSION = 1;
+const STORE_NAME = 'asset-cache';
+
+/**
+ * Open (or upgrade) the IndexedDB and return a Promise that resolves to the db instance.
+ */
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+                db.createObjectStore(STORE_NAME);
+            }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/**
+ * Run a transaction on the asset-cache store.
+ * @param {'readonly'|'readwrite'} mode
+ * @param {(store: IDBObjectStore)=>void} callback
+ * @returns {Promise<void>}
+ */
+async function withStore(mode, callback) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, mode);
+        const store = tx.objectStore(STORE_NAME);
+        callback(store);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+/** Store a Blob (or anything serializable) under `key`. */
+async function setItem(key, value) {
+    await withStore('readwrite', store => {
+        store.put(value, key);
+    });
+}
+
+/** Retrieve the value stored under `key`. */
+async function getItem(key) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const req = tx.objectStore(STORE_NAME).get(key);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+/** Delete the entry under `key`. */
+async function delItem(key) {
+    await withStore('readwrite', store => {
+        store.delete(key);
+    });
+}
+
+/** Remove *all* entries in the store. */
+async function clearAll() {
+    await withStore('readwrite', store => {
+        store.clear();
+    });
+}
+
+/** Get an array of all keys currently in the store. */
+async function keys() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const req = store.getAllKeys();
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+    });
+}
+
 /***************************************
  * Global Setup & Utility Functions
  ***************************************/
@@ -286,8 +368,10 @@ function loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer) {
         logMessage(`Slot ${slotIndex} loaded (image).`);
         clampPreviewSize(img);
         shaderBuffer.sampleMedia[slotIndex] = { type: 'image', element: img };
-        previewContainer.innerHTML = '';
-        previewContainer.appendChild(img);
+        if (previewContainer) {
+            previewContainer.innerHTML = '';
+            previewContainer.appendChild(img);
+        }
     };
     img.src = src;
 }
@@ -379,7 +463,17 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
 
     const removeBtn = document.createElement('button');
     removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', () => {
+    removeBtn.addEventListener('click', async () => {
+        const media = shaderBuffer.sampleMedia[slotIndex];
+        // TODO: use cacheKey elsewhere
+        if (media && media.cacheKey) {
+            try {
+                await delItem(media.cacheKey);
+                logMessage(`Removed ${media.cacheKey} from cache.`);
+            } catch (err) {
+                logMessageErr(`Failed to remove ${media.cacheKey}:`, err);
+            }
+        }
         shaderBuffer.sampleMedia[slotIndex] = null;
         clearPreview();
         logMessage(`Slot ${slotIndex} unassigned.`);
@@ -403,39 +497,21 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
         fileInput.accept = 'image/*,video/*,audio/*';
-        fileInput.addEventListener('change', (event) => {
+        fileInput.addEventListener('change', async (event) => {
             resetMedia();
             const file = event.target.files[0];
             if (!file) return;
-            const src = URL.createObjectURL(file);
-            const fileType = file.type;
-            if (fileType.startsWith('image/')) {
-                loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer);
-            } else if (fileType.startsWith('video/')) {
-                loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer);
-            } else if (fileType.startsWith('audio/')) {
-                loadAudioFromSource(src, shaderBuffer, slotIndex, previewContainer);
-            } else {
-                logMessage("Unsupported file type.");
-            }
+            await loadAndCacheMedia(file, shaderBuffer, slotIndex, previewContainer);
         });
         inputControlsContainer.appendChild(fileInput);
     }
 
     function setupUrlInput() {
         inputControlsContainer.innerHTML = '';
-        const form = createUrlForm((url) => {
+        const form = createUrlForm(async (url) => {
             resetMedia();
             const lowerUrl = url.toLowerCase();
-            if (lowerUrl.match(/\.(jpg|jpeg|png|gif)$/)) {
-                loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer);
-            } else if (lowerUrl.match(/\.(mp4|webm|ogg)$/)) {
-                loadVideoFromSource(url, shaderBuffer, slotIndex, previewContainer);
-            } else if (lowerUrl.match(/\.(mp3|wav|ogg)$/)) {
-                loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer);
-            } else {
-                logMessage(`Cannot determine media type for URL: ${url}`);
-            }
+            await loadAndCacheMedia(lowerUrl, shaderBuffer, slotIndex, previewContainer);
         });
         inputControlsContainer.appendChild(form);
     }
@@ -867,52 +943,78 @@ function refreshShaderTextures(shaderBuffer) {
 /***************************************
  * Directory Upload (JSON Schema & Shader Files)
  ***************************************/
+
 function handleFolderUpload(event) {
     const files = event.target.files;
     let schemaFile = null, shaderFile = null;
-    for (let i = 0; i < files.length; i++) {
-        const file = files[i];
+    for (const file of files) {
         const name = file.name.toLowerCase();
         if (name.endsWith('.json')) schemaFile = file;
-        else if (name.endsWith('.glsl') || name.endsWith('.frag') || name.endsWith('.txt')) shaderFile = file;
+        else if (name.match(/\.(glsl|frag|txt)$/)) shaderFile = file;
     }
-    if (!shaderFile) { logMessage("No GLSL shader file found in the directory."); return; }
+    if (!shaderFile) {
+        logMessage("No GLSL shader file found in the directory.");
+        return;
+    }
+
     let newSchemaData = null, newShaderSource = null;
-    const schemaReader = new FileReader();
-    if (!schemaFile) { logMessage("No JSON schema file found in the directory."); }
-    else {
-        schemaReader.onload = e => {
-            try { newSchemaData = JSON.parse(e.target.result); }
-            catch (err) { logMessage("Error parsing JSON schema:", err); }
-            checkAndApply();
-        };
-        schemaReader.readAsText(schemaFile);
-    }
-    const shaderReader = new FileReader();
-    shaderReader.onload = e => {
-        newShaderSource = e.target.result;
-        checkAndApply();
-    };
-    shaderReader.readAsText(shaderFile);
-    function checkAndApply() {
-        if (!newShaderSource) return;
-        const newProgram = createProgram(vertexShaderSource, newShaderSource);
-        const activeShader = shaderBuffers[currentViewIndex];
-        if (newProgram) {
-            activeShader.shaderProgram = newProgram;
-            activeShader.timeLocation = gl.getUniformLocation(newProgram, 'u_time');
-            activeShader.resolutionLocation = gl.getUniformLocation(newProgram, 'u_resolution');
-            for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-                activeShader.sampleTextureLocations[i] = gl.getUniformLocation(newProgram, `u_texture${i}`);
+
+    // 1a) Read JSON schema
+    if (schemaFile) {
+        const reader = new FileReader();
+        reader.onload = async e => {
+            try {
+                newSchemaData = JSON.parse(e.target.result);
+                // cache it under a fixed key (you could include view‑index, etc.)
+                await setItem('controlSchema', newSchemaData);
+            } catch (err) {
+                logMessage("Error parsing JSON schema:", err);
             }
-            logMessage("Shader updated from folder successfully!");
-        } else {
-            logMessageErr("Failed to compile shader from folder.");
+            attemptApply();
+        };
+        reader.readAsText(schemaFile);
+    } else {
+        attemptApply();
+    }
+
+    // 1b) Read fragment shader source
+    const reader = new FileReader();
+    reader.onload = async e => {
+        newShaderSource = e.target.result;
+        // cache the raw text
+        await setItem('fragmentSource', newShaderSource);
+        attemptApply();
+    };
+    reader.readAsText(shaderFile);
+
+    function attemptApply() {
+        if (newShaderSource == null) return;
+        const active = shaderBuffers[currentViewIndex];
+
+        // compile & swap in the new program
+        const prog = createProgram(vertexShaderSource, newShaderSource);
+        if (!prog) {
+            logMessageErr("Failed to compile uploaded shader");
+            return;
         }
-        activeShader.controlSchema = newSchemaData;
-        renderControlsForShader(activeShader, newSchemaData);
+        active.shaderProgram = prog;
+        active.timeLocation = gl.getUniformLocation(prog, 'u_time');
+        active.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
+        // update texture uniform locations
+        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+            active.sampleTextureLocations[i] =
+                gl.getUniformLocation(prog, `u_texture${i}`);
+        }
+
+        // swap in the new control schema if we have it
+        if (newSchemaData) {
+            active.controlSchema = newSchemaData;
+            renderControlsForShader(active, newSchemaData);
+        }
+        logMessage("Shader & schema updated and cached!");
     }
 }
+
 
 /***************************************
  * Main Render Loop (Two‑Pass Rendering)
@@ -1088,8 +1190,62 @@ function stopRecording() {
     }
 }
 
+/**
+ * Load one media asset into a shader slot, optionally caching it.
+ *
+ * @param {File|Blob|string} source
+ *    - If string: treated as a URL (won’t be cached).  
+ *    - If File/Blob: creates an ObjectURL.  
+ * @param {object} shaderBuffer
+ * @param {number} slotIndex
+ * @param {HTMLElement} previewContainer
+ * @param {boolean} [cache=true]
+ */
+async function loadAndCacheMedia(source, shaderBuffer, slotIndex, previewContainer, cache = true) {
+    let url, blobType;
+
+    if (typeof source === 'string') {
+        // URL case
+        url = source;
+        // no caching for remote URLs
+        cache = false;
+        // guess type by extension
+        const ext = source.split('.').pop().toLowerCase();
+        blobType = ext.match(/jpe?g|png|gif/) ? 'image'
+            : ext.match(/mp4|webm|ogg/) ? 'video'
+                : ext.match(/mp3|wav|ogg/) ? 'audio'
+                    : null;
+    } else {
+        // File or Blob case
+        const blob = source;
+        url = URL.createObjectURL(blob);
+        blobType = blob.type.startsWith('image/') ? 'image'
+            : blob.type.startsWith('video/') ? 'video'
+                : blob.type.startsWith('audio/') ? 'audio'
+                    : null;
+        if (cache && blob instanceof File) {
+            // persist the original File in IndexedDB under its name
+            await setItem(blob.name, blob);
+        }
+    }
+
+    // dispatch to your existing loaders:
+    if (blobType === 'image') {
+        loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer);
+    }
+    else if (blobType === 'video') {
+        loadVideoFromSource(url, shaderBuffer, slotIndex, previewContainer);
+    }
+    else if (blobType === 'audio') {
+        loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer);
+    }
+    else {
+        console.warn('Unknown media type:', source);
+    }
+}
+
 // load/render/update things when page loaded
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     // bind buttons
     document.getElementById('update-canvas-dimensions').addEventListener('click', updateCanvasDimensions);
     document.getElementById('enable-mic').addEventListener('click', loadMicrophone);
@@ -1170,8 +1326,39 @@ document.addEventListener('DOMContentLoaded', () => {
     createControlSchemeTabs();
     updateActiveViewUI();
     updateActiveControlUI();
-    requestAnimationFrame(render);
     shaderBuffers.forEach(shaderBuffer => {
         renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
     });
+
+    const allNames = await keys();
+    for (const name of allNames) {
+        if (name === 'fragmentSource' || name === 'controlSchema') continue;
+        const blob = await getItem(name);
+        // const url = URL.createObjectURL(blob);
+        await loadAndCacheMedia(blob, shaderBuffers[0], 0, undefined);
+    }
+
+    const savedShaderSrc = await getItem('fragmentSource');
+    const savedSchema = await getItem('controlSchema');
+    if (savedShaderSrc) {
+        // exactly duplicate the “apply” logic from handleFolderUpload:
+        const active = shaderBuffers[0]; // or whichever index you used
+        const prog = createProgram(vertexShaderSource, savedShaderSrc);
+        if (prog) {
+            active.shaderProgram = prog;
+            active.timeLocation = gl.getUniformLocation(prog, 'u_time');
+            active.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
+            for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+                active.sampleTextureLocations[i] =
+                    gl.getUniformLocation(prog, `u_texture${i}`);
+            }
+            if (savedSchema) {
+                active.controlSchema = savedSchema;
+                renderControlsForShader(active, savedSchema);
+            }
+            logMessage("Restored cached shader & controls");
+        }
+    }
+
+    requestAnimationFrame(render);
 });
