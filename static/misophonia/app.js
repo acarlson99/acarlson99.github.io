@@ -295,7 +295,7 @@ const defaultControlSchema = {
     ]
 };
 
-function createShaderBuffer(name, vertexSrc, fragmentSrc) {
+function createShaderBuffer(name, vertexSrc, fragmentSrc, shaderIndex = -69) {
     const program = createProgram(vertexSrc, fragmentSrc);
     if (!program) {
         console.error("Failed to initialize shader program for", name);
@@ -342,7 +342,7 @@ function createShaderBuffer(name, vertexSrc, fragmentSrc) {
 
     // Initialize advanced media inputs for each texture slot
     for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-        let advancedInput = createAdvancedMediaInput(shadBuf, i);
+        let advancedInput = createAdvancedMediaInput(shadBuf, shaderIndex, i);
         advancedInputsContainer.appendChild(advancedInput);
     }
 
@@ -351,8 +351,8 @@ function createShaderBuffer(name, vertexSrc, fragmentSrc) {
 
 function initDefaultShaderBuffers() {
     // For demonstration, create two shader buffers (tabs)
-    let shader1 = createShaderBuffer("Shader 1", vertexShaderSource, fragmentShaderSource);
-    let shader2 = createShaderBuffer("Shader 2", vertexShaderSource, fragmentShaderSource);
+    let shader1 = createShaderBuffer("Shader 1", vertexShaderSource, fragmentShaderSource, 0);
+    let shader2 = createShaderBuffer("Shader 2", vertexShaderSource, fragmentShaderSource, 1);
     shaderBuffers = [shader1, shader2];
 }
 
@@ -471,7 +471,10 @@ function createUrlForm(callback) {
 }
 
 // Main function to create the advanced media input interface.
-function createAdvancedMediaInput(shaderBuffer, slotIndex) {
+function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
+    const cacheKey = `${shaderIndex};${slotIndex}`;
+    LOG(`${cacheKey} ${shaderIndex}`);
+
     const container = document.createElement('div');
     container.className = 'advanced-media-input';
 
@@ -532,6 +535,10 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
     function setupUrlInput() {
         inputControlsContainer.innerHTML = '';
         const form = createUrlForm(async (url) => {
+            // TODO: this causes precached URL input to break
+            const descriptor = { type: "url", url };
+            await setItem(cacheKey, JSON.stringify(descriptor));
+
             resetMedia();
             const lowerUrl = url.toLowerCase();
             await loadAndCacheMedia(lowerUrl, shaderBuffer, slotIndex, previewContainer);
@@ -582,20 +589,19 @@ function createAdvancedMediaInput(shaderBuffer, slotIndex) {
             }
         });
         tabSelect.addEventListener('change', () => {
-            const selectedIndex = tabSelect.value;
-            if (selectedIndex !== "") {
-                // Store a reference to the target tab.
-                shaderBuffer.sampleMedia[slotIndex] = {
-                    type: "tab",
-                    tabIndex: parseInt(selectedIndex)
-                };
-                LOG(`sampling shaderBuffer ${shaderBuffer.sampleMedia[slotIndex].tabIndex}`)
-                clearPreview();
-                // Update preview area with simple text info.
-                const info = document.createElement('div');
-                info.textContent = `Sampling from tab: ${shaderBuffers[selectedIndex].name}`;
-                previewContainer.appendChild(info);
-            }
+            const idx = parseInt(tabSelect.value);
+            if (isNaN(idx)) return;
+            const descriptor = { type: "tab", tabIndex: idx };
+            setItem(cacheKey, JSON.stringify(descriptor));
+
+            // Store a reference to the target tab.
+            shaderBuffer.sampleMedia[slotIndex] = descriptor;
+            LOG(`sampling shaderBuffer ${shaderBuffer.sampleMedia[slotIndex].tabIndex}`)
+            clearPreview();
+            // Update preview area with simple text info.
+            const info = document.createElement('div');
+            // info.textContent = `Sampling from tab: ${shaderBuffers[shaderIndex].name}`;
+            previewContainer.appendChild(info);
         });
         inputControlsContainer.appendChild(tabSelect);
     }
@@ -676,6 +682,7 @@ async function loadAndCacheMedia(
     // 1) compute which shader we’re in
     const shaderIndex = shaderBuffers.indexOf(shaderBuffer);
     const cacheKey = `${shaderIndex};${slotIndex}`;
+    LOG(`loadandcache ${cacheKey} ${shaderIndex}`);
 
     // 2) figure out URL and type
     let url, blobType;
@@ -717,6 +724,22 @@ async function loadAndCacheMedia(
 
     // 4) tag it so our “remove” handler knows what to delete:
     shaderBuffer.sampleMedia[slotIndex].cacheKey = cacheKey;
+}
+
+async function saveControlState(shaderBuffer) {
+    const idx = shaderBuffers.indexOf(shaderBuffer);
+    const key = `controls;${idx}`;
+    await setItem(key, JSON.stringify(shaderBuffer.customUniforms));
+}
+async function loadControlState(shaderBuffer) {
+    const idx = shaderBuffers.indexOf(shaderBuffer);
+    const key = `controls;${idx}`;
+    const str = await getItem(key);
+    if (typeof str === 'string') {
+        try {
+            shaderBuffer.customUniforms = JSON.parse(str);
+        } catch { }
+    }
 }
 
 // =====================================
@@ -813,8 +836,12 @@ function renderControlsForShader(shaderBuffer, schema) {
         label.textContent = control.label;
         controlDiv.appendChild(label);
         let inputElement;
-        // Use default value from the schema; store in the shader's custom uniforms
-        const initialValue = control.default;
+        // Use default value from the schema (or cached value); store in the shader's custom uniforms
+        // TODO: this should not load from customUniforms, OR customUniforms should be populated first
+        const saved = shaderBuffer.customUniforms[control.uniform];
+        // TODO: properly load control defaults from database
+        const initialValue = (saved !== undefined) ? saved : control.default;
+        LOG(shaderBuffer.customUniforms, `render control ${shaderBuffer.name} ${initialValue} ${saved} ${control.uniform} ${control.default}`);
         shaderBuffer.customUniforms[control.uniform] = initialValue;
         switch (control.type) {
             case 'knob':
@@ -850,6 +877,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                     const val = parseFloat(e.target.value);
                     shaderBuffer.customUniforms[control.uniform] = val;
                     updateSliderBubble(e);
+                    saveControlState(shaderBuffer);
                 });
 
                 // Show bubble on interaction
@@ -867,14 +895,16 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement.addEventListener('click', () => {
                     shaderBuffer.customUniforms[control.uniform] = true;
                     LOG(`Button action for ${control.uniform} triggered.`);
+                    saveControlState(shaderBuffer);
                 });
                 break;
             case 'toggle':
                 inputElement = document.createElement('input');
                 inputElement.type = 'checkbox';
-                inputElement.checked = initialValue;
+                inputElement.checked = !!initialValue;
                 inputElement.addEventListener('change', e => {
                     shaderBuffer.customUniforms[control.uniform] = e.target.checked;
+                    saveControlState(shaderBuffer);
                 });
                 break;
             case 'xy-plane':
@@ -928,6 +958,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                         document.removeEventListener('mousemove', onMouseMove);
                         document.removeEventListener('mouseup', onMouseUp);
                         xyInfo.style.display = 'none';
+                        saveControlState(shaderBuffer);
                     });
                 });
                 break;
@@ -937,6 +968,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement.value = initialValue;
                 inputElement.addEventListener('input', e => {
                     shaderBuffer.customUniforms[control.uniform] = e.target.value;
+                    saveControlState(shaderBuffer);
                 });
                 break;
             case 'dropdown':
@@ -950,6 +982,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 });
                 inputElement.addEventListener('change', e => {
                     shaderBuffer.customUniforms[control.uniform] = e.target.value;
+                    saveControlState(shaderBuffer);
                 });
                 break;
             case 'text-input':
@@ -958,6 +991,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement.value = initialValue;
                 inputElement.addEventListener('input', e => {
                     shaderBuffer.customUniforms[control.uniform] = e.target.value;
+                    saveControlState(shaderBuffer);
                 });
                 break;
             default:
@@ -1322,6 +1356,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     createControlSchemeTabs();
     updateActiveViewUI();
     updateActiveControlUI();
+
+    for (const sb of shaderBuffers) {
+        await loadControlState(sb);
+    }
+
     shaderBuffers.forEach(shaderBuffer => {
         renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
     });
@@ -1331,20 +1370,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (key === 'fragmentSource' || key === 'controlSchema') continue;
 
         const [sIdx, slotIdx] = key.split(';').map(Number);
-        const shaderBuf = shaderBuffers[sIdx];
-        if (!shaderBuf) {
-            logError(`shaderBuf[${sIdx}] not found for key ${key}`);
-            continue;
-        }
-        const blob = await getItem(key);
+        const sb = shaderBuffers[sIdx];
+        if (!sb) continue;
 
-        // Find the right preview container for that shader+slot:
-        const previewContainer = shaderBuf
+        const cached = await getItem(key);
+        const previewContainer = sb
             .advancedInputsContainer
             .children[slotIdx]
             .querySelector('.media-preview');
 
-        await loadAndCacheMedia(blob, shaderBuf, slotIdx, previewContainer, false);
+        // 1) Blob = file upload → use loadAndCacheMedia
+        if (cached instanceof Blob) {
+            await loadAndCacheMedia(cached, sb, slotIdx, previewContainer, false);
+
+            // 2) String = either JSON descriptor or URL
+        } else if (typeof cached === 'string') {
+            try {
+                const obj = JSON.parse(cached);
+
+                if (obj.type === 'tab') {
+                    // restore tab sampling
+                    sb.sampleMedia[slotIdx] = obj;
+                    previewContainer.textContent = `Sampling from tab: ${shaderBuffers[obj.tabIndex].name}`;
+
+                } else if (obj.type === 'url') {
+                    // restore URL input
+                    await loadAndCacheMedia(obj.url, sb, slotIdx, previewContainer, false);
+                }
+
+            } catch {
+                // fallback: treat as a raw URL string
+                await loadAndCacheMedia(cached, sb, slotIdx, previewContainer, false);
+            }
+        }
     }
 
     const savedShaderSrc = await getItem('fragmentSource');
