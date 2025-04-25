@@ -112,6 +112,7 @@ const LOG = (...args) => { if (devMode) console.log(...args); };
 function logMessage(...args) {
     const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
     outputMessages.push(msg);
+    LOG("logMessage:", msg);
     if (outputMessages.length > maxLines) outputMessages.shift();
     const out = document.getElementById('output');
     out.textContent = outputMessages.join('\n');
@@ -286,31 +287,6 @@ function toggleMute(media, mute) {
     if (media.outputGain) media.outputGain.gain.value = mute ? 0 : 1;
 }
 
-let audioTexture = null;
-function loadMicrophone() {
-    navigator.mediaDevices.getUserMedia({ audio: true })
-        .then(stream => {
-            const audioContext = new AudioContext();
-            const source = audioContext.createMediaStreamSource(stream);
-            const analyser = audioContext.createAnalyser();
-            analyser.fftSize = 256;
-            source.connect(analyser);
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
-            window.audioAnalyser = analyser;
-            window.audioDataArray = dataArray;
-        })
-        .catch(err => console.error("Error accessing microphone:", err));
-    if (audioTexture === null) audioTexture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, audioTexture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE,
-        window.audioDataArray ? window.audioDataArray.length : 128, 1,
-        0, gl.LUMINANCE, gl.UNSIGNED_BYTE, null);
-}
-
 // =====================================
 // Part 6: Default Shader Sources
 // =====================================
@@ -473,7 +449,7 @@ function loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer) {
     video.setAttribute('playsinline', '');
     video.loop = true;
     video.muted = true;
-    video.src = src;
+    if (src) video.src = src;
     // Match the shader's pause state.
     if (!isPaused) { video.play(); } else { video.pause(); }
     video.addEventListener('loadeddata', () => {
@@ -484,6 +460,7 @@ function loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer) {
     shaderBuffer.sampleMedia[slotIndex] = { type: 'video', element: video };
     previewContainer.innerHTML = '';
     previewContainer.appendChild(video);
+    return video;
 }
 
 // Helper to load audio from a source URL.
@@ -581,7 +558,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
     container.appendChild(previewContainer);
 
     function clearPreview() { previewContainer.innerHTML = ''; }
-    function resetMedia() { shaderBuffer.sampleMedia[slotIndex] = null; clearPreview(); }
+    function resetMedia() { shaderBuffer.sampleMedia[slotIndex] = null; clearPreview(); delItem(cacheKey); }
 
     function setupFileInput() {
         inputControlsContainer.innerHTML = '';
@@ -679,28 +656,23 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
             resetMedia();
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then(stream => {
-                    const video = document.createElement('video');
-                    video.autoplay = true;
-                    video.muted = true;               // must be muted for autoplay
-                    video.setAttribute('playsinline', '');
+                    const video = loadVideoFromSource(null, shaderBuffer, slotIndex, previewContainer);
+                    // FIXME: there's some promise resolution error here
                     video.srcObject = stream;
-
+                    video.autoplay = true;
+                    video.setAttribute('playsinline', '');
+                    video.autoplay = true;
+                    video.controls = false;
                     video.addEventListener('loadeddata', () => {
-                        // first texture upload
-                        updateTextureForMedia(shaderBuffer, slotIndex, video);
-                        clampPreviewSize(video);
-                        logMessage(`Slot ${slotIndex} loaded (webcam).`);
-
-                        // keep updating the texture each frame
                         function updateLoop() {
                             if (shaderBuffer.sampleMedia[slotIndex]?.type === 'webcam') {
                                 updateTextureForMedia(shaderBuffer, slotIndex, video);
                                 requestAnimationFrame(updateLoop);
                             }
                         }
-                        shaderBuffer.sampleMedia[slotIndex] = { type: 'webcam', element: video };
                         clearPreview();
                         previewContainer.appendChild(video);
+                        shaderBuffer.sampleMedia[slotIndex] = { type: 'webcam', element: video };
                         updateLoop();
                     });
                 })
@@ -811,37 +783,6 @@ async function loadControlState(shaderBuffer) {
 // =====================================
 // Part 9: UI: Shader & Control Tabs + Texture Refresh
 // =====================================
-// TODO: there should be another currentControlSchemeIndex value pointing to the index of `shaderBuffers` containing the desired control scheme, and we should create another set of tabs to switch controlschemes
-
-function refreshShaderTextures(shaderBuffer) {
-    for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-        const media = shaderBuffer.sampleMedia[i];
-        gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
-        if (!media) {
-            // No media assigned: Use a default 1x1 black texture
-            const defaultPixel = new Uint8Array([0, 0, 0, 255]);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0,
-                gl.RGBA, gl.UNSIGNED_BYTE, defaultPixel);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        } else if (media.type === "image" || media.type === "video") {
-            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA,
-                gl.RGBA, gl.UNSIGNED_BYTE, media.element);
-            if (media.type === "image") {
-                if (isPowerOf2(media.element.width) && isPowerOf2(media.element.height)) {
-                    gl.generateMipmap(gl.TEXTURE_2D);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-                } else {
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                }
-            }
-        }
-        gl.bindTexture(gl.TEXTURE_2D, null);
-    }
-}
-
 function updateActiveViewUI() {
     // nothing to show/hide in the DOM here (canvas is always visible),
     // but we still want to log it:
@@ -861,13 +802,13 @@ function updateActiveControlUI() {
     document.querySelectorAll('.shader-control-panel').forEach(c => c.style.display = 'none');
     ctrlShader.advancedInputsContainer.style.display = 'block';
     ctrlShader.controlContainer.style.display = 'block';
-    // If you also need to refresh textures for the control target:
-    refreshShaderTextures(ctrlShader);
 
     const buttons = document.getElementById('control-scheme-tabs').children
     for (let i = 0; i < buttons.length; i++) {
         buttons[i].classList.toggle('tab-active', i === currentControlIndex);
     }
+
+    updateAllShaderBuffers();
 }
 
 function createShaderTabs() {
@@ -1438,7 +1379,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         button.addEventListener('click', presetCanvasDimensions(d.w, d.h));
     });
 
-    document.getElementById('enable-mic').addEventListener('click', loadMicrophone);
     document.getElementById('folder-upload').addEventListener('change', handleFolderUpload);
     document.getElementById('play-pause').addEventListener('click', function () {
         isPaused = !isPaused;
@@ -1470,9 +1410,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
         });
-
-        // Restart microphone capture if applicable.
-        if (window.audioAnalyser) loadMicrophone();
     });
     document.getElementById('start-record').addEventListener('click', startRecording);
     document.getElementById('stop-record').addEventListener('click', stopRecording);
