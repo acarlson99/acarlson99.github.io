@@ -75,6 +75,7 @@ window.addEventListener('keydown', e => {
     const key = e.key.toLowerCase();
     const binding = hotkeyBindings[key];
     if (!binding) return;
+    if (editorOpen) return;
 
     e.preventDefault();
     const { shaderBuffer, uniform, input } = binding;
@@ -104,6 +105,7 @@ let isPaused = false;
 let lastFrameTime = 0;
 let effectiveTime = 0;
 let shaderBuffers = [];
+let editorOpen = false; // shader editor starts closed
 
 // Logging
 const LOG = (...args) => { if (devMode) console.log(...args); };
@@ -1428,23 +1430,35 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const editBtn = document.getElementById('edit-shader-btn');
     const editor = document.getElementById('shader-editor');
-    const textarea = document.getElementById('shader-editor-textarea');
     const applyBtn = document.getElementById('apply-shader-edit');
     const cancelBtn = document.getElementById('cancel-shader-edit');
 
     editBtn.addEventListener('click', () => {
+        const textarea = document.getElementById('shader-editor-container');
         const sb = shaderBuffers[currentViewIndex];
-        textarea.value = sb.fragmentSrc || ''; // pre-fill with current source
+        textarea.value = sb.fragmentSrc || '';
         editor.style.display = 'block';
+
+        if (!editor._cmInstance) {
+            editor._cmInstance = CodeMirror.fromTextArea(textarea, {
+                mode: 'x-shader/x-fragment',
+                lineNumbers: true,
+                theme: 'default'
+            });
+        } else {
+            editor._cmInstance.setValue(sb.fragmentSrc || '');
+        }
+        editorOpen = true;
     });
 
     cancelBtn.addEventListener('click', () => {
         editor.style.display = 'none';
+        editorOpen = false;
     });
 
     applyBtn.addEventListener('click', async () => {
         const sb = shaderBuffers[currentViewIndex];
-        const newSource = textarea.value;
+        const newSource = editor._newCode || sb.fragmentSrc;
 
         const prog = createProgram(vertexShaderSource, newSource);
         if (!prog) {

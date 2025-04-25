@@ -5,6 +5,12 @@
     <meta charset="UTF-8">
     <title>Shader Renderer & Control Panel</title>
     <link rel="stylesheet" href="style.css">
+
+    <!-- CodeMirror 5 core -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <!-- GLSL mode -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/clike/clike.min.js"></script>
 </head>
 
 <body>
@@ -14,7 +20,7 @@
         <div id="left-panel">
             <button id="edit-shader-btn">Edit Shader</button>
             <div id="shader-editor" style="display:none;">
-                <textarea id="shader-editor-textarea" rows="20" style="width:100%;"></textarea>
+                <div id="shader-editor-container" style="height:400px; border:1px solid #ccc;"></div>
                 <button id="apply-shader-edit">Apply Changes</button>
                 <button id="cancel-shader-edit">Cancel</button>
             </div>
