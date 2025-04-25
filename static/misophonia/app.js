@@ -366,16 +366,12 @@ function createShaderBuffer(name, vertexSrc, fragmentSrc, shaderIndex = -69) {
         console.error("Failed to initialize shader program for", name);
         return null;
     }
-    // TODO: refactor; extract uniform location code to a separate function
-    const timeLocation = gl.getUniformLocation(program, 'u_time');
-    const resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
     const fbObj = createFramebuffer(canvas.width, canvas.height);
     let sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
     let sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
     let sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
     for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
         sampleTextures[i] = gl.createTexture();
-        sampleTextureLocations[i] = gl.getUniformLocation(program, `u_texture${i}`);
     }
 
     // Create persistent containers for controls and advanced media inputs
@@ -393,8 +389,8 @@ function createShaderBuffer(name, vertexSrc, fragmentSrc, shaderIndex = -69) {
     const shadBuf = {
         name,
         shaderProgram: program,
-        timeLocation,
-        resolutionLocation,
+        timeLocation: null,
+        resolutionLocation: null,
         offscreenFramebuffer: fbObj.framebuffer,
         offscreenTexture: fbObj.texture,
         sampleTextures,
@@ -407,6 +403,7 @@ function createShaderBuffer(name, vertexSrc, fragmentSrc, shaderIndex = -69) {
         vertexSrc,
         fragmentSrc
     };
+    updateBuiltinUniformLocations(shadBuf);
 
     // Initialize advanced media inputs for each texture slot
     for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
@@ -1163,13 +1160,7 @@ function handleFolderUpload(event) {
         active.shaderProgram = prog;
         active.fragmentSrc = newShaderSource;
         active.vertexSrc = vertexShaderSource;
-        active.timeLocation = gl.getUniformLocation(prog, 'u_time');
-        active.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
-        // update texture uniform locations
-        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-            active.sampleTextureLocations[i] =
-                gl.getUniformLocation(prog, `u_texture${i}`);
-        }
+        updateBuiltinUniformLocations(active);
 
         // swap in the new control schema if we have it
         if (newSchemaData) {
