@@ -1370,6 +1370,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         { name: "480p", w: 640, h: 480 },
         { name: "720p", w: 1280, h: 720 },
         { name: "1080p", w: 1920, h: 1080 },
+        { name: "1080p 1:1", w: 1080, h: 1080 },
         { name: "2K", w: 2048, h: 1080 },
         { name: "4K", w: 3840, h: 2160 },
         { name: "8K", w: 7680, h: 4320 },
