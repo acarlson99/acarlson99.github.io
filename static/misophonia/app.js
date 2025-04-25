@@ -334,6 +334,7 @@ function createShaderBuffer(name, vertexSrc, fragmentSrc, shaderIndex = -69) {
         console.error("Failed to initialize shader program for", name);
         return null;
     }
+    // TODO: refactor; extract uniform location code to a separate function
     const timeLocation = gl.getUniformLocation(program, 'u_time');
     const resolutionLocation = gl.getUniformLocation(program, 'u_resolution');
     const fbObj = createFramebuffer(canvas.width, canvas.height);
@@ -1323,6 +1324,70 @@ function stopRecording() {
     }
 }
 
+// Shader Editor
+function setupShaderEditor() {
+    const editBtn = document.getElementById('edit-shader-btn');
+    const editor = document.getElementById('shader-editor');
+    const applyBtn = document.getElementById('apply-shader-edit');
+    const cancelBtn = document.getElementById('cancel-shader-edit');
+
+    const closeEditor = () => {
+        editor.style.display = 'none';
+        editorOpen = false;
+    };
+
+    const openEditor = () => {
+        const textarea = document.getElementById('shader-editor-container');
+        const sb = shaderBuffers[currentViewIndex];
+        textarea.value = sb.fragmentSrc || '';
+        editor.style.display = 'block';
+
+        if (!editor._cmInstance) {
+            editor._cmInstance = CodeMirror.fromTextArea(textarea, {
+                mode: 'x-shader/x-fragment',
+                lineNumbers: true,
+                theme: 'default'
+            });
+        } else {
+            editor._cmInstance.setValue(sb.fragmentSrc || '');
+        }
+        editorOpen = true;
+    };
+
+    editBtn.addEventListener('click', () => {
+        if (editorOpen) closeEditor();
+        else openEditor();
+    });
+
+    cancelBtn.addEventListener('click', () => {
+        closeEditor();
+    });
+
+    applyBtn.addEventListener('click', async () => {
+        const sb = shaderBuffers[currentViewIndex];
+        const newSource = editor._newCode || sb.fragmentSrc;
+
+        const prog = createProgram(vertexShaderSource, newSource);
+        if (!prog) {
+            logMessage('❌ Shader compilation failed. See console for errors.');
+            return;
+        }
+
+        // Assign the new program
+        sb.shaderProgram = prog;
+        sb.fragmentSrc = newSource;
+
+        sb.timeLocation = gl.getUniformLocation(prog, 'u_time');
+        sb.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
+        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+            sb.sampleTextureLocations[i] = gl.getUniformLocation(prog, `u_texture${i}`);
+        }
+
+        await setItem(`${currentViewIndex};fragmentSource`, newSource);
+        logMessage('✅ Shader updated.');
+    });
+}
+
 // =====================================
 // Part 14: Event Listener Setup
 // =====================================
@@ -1428,57 +1493,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateActiveViewUI();
     updateActiveControlUI();
 
-    const editBtn = document.getElementById('edit-shader-btn');
-    const editor = document.getElementById('shader-editor');
-    const applyBtn = document.getElementById('apply-shader-edit');
-    const cancelBtn = document.getElementById('cancel-shader-edit');
-
-    editBtn.addEventListener('click', () => {
-        const textarea = document.getElementById('shader-editor-container');
-        const sb = shaderBuffers[currentViewIndex];
-        textarea.value = sb.fragmentSrc || '';
-        editor.style.display = 'block';
-
-        if (!editor._cmInstance) {
-            editor._cmInstance = CodeMirror.fromTextArea(textarea, {
-                mode: 'x-shader/x-fragment',
-                lineNumbers: true,
-                theme: 'default'
-            });
-        } else {
-            editor._cmInstance.setValue(sb.fragmentSrc || '');
-        }
-        editorOpen = true;
-    });
-
-    cancelBtn.addEventListener('click', () => {
-        editor.style.display = 'none';
-        editorOpen = false;
-    });
-
-    applyBtn.addEventListener('click', async () => {
-        const sb = shaderBuffers[currentViewIndex];
-        const newSource = editor._newCode || sb.fragmentSrc;
-
-        const prog = createProgram(vertexShaderSource, newSource);
-        if (!prog) {
-            logMessage('❌ Shader compilation failed. See console for errors.');
-            return;
-        }
-
-        // Assign the new program
-        sb.shaderProgram = prog;
-        sb.fragmentSrc = newSource;
-
-        sb.timeLocation = gl.getUniformLocation(prog, 'u_time');
-        sb.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
-        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-            sb.sampleTextureLocations[i] = gl.getUniformLocation(prog, `u_texture${i}`);
-        }
-
-        await setItem(`${currentViewIndex};fragmentSource`, newSource);
-        logMessage('✅ Shader updated.');
-    });
+    setupShaderEditor();
 
 
     for (const sb of shaderBuffers) {
