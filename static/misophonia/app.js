@@ -128,8 +128,25 @@ function hexToRgb(hex) {
     const n = parseInt(hex, 16);
     return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
-function clampPreviewSize(el, w = 300, h = 300) {
-    el.style.maxWidth = w + 'px'; el.style.maxHeight = h + 'px';
+/**
+ * Clamp a canvas element's CSS size while maintaining aspect ratio
+ * @param {HTMLElement} canvas - The canvas element
+ * @param {number} maxWidth - Max allowed CSS width
+ * @param {number} maxHeight - Max allowed CSS height
+ */
+function clampPreviewSize(canvas, maxWidth = 300, maxHeight = 300) {
+    const aspect = canvas.width / canvas.height;
+
+    let displayWidth = maxWidth;
+    let displayHeight = displayWidth / aspect;
+
+    if (displayHeight > maxHeight) {
+        displayHeight = maxHeight;
+        displayWidth = displayHeight * aspect;
+    }
+
+    canvas.style.width = displayWidth + 'px';
+    canvas.style.height = displayHeight + 'px';
 }
 
 // =====================================
@@ -211,22 +228,37 @@ gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 function updateCanvasDimensions() {
     const width = parseInt(document.getElementById('canvas-width').value, 10);
     const height = parseInt(document.getElementById('canvas-height').value, 10);
-    if (isNaN(width) || isNaN(height)) {
-        logError(`Invalid width/height ${width}/${height}`);
+    if (isNaN(width) || isNaN(height) || width <= 0 || height <= 0) {
+        logError(`Invalid width/height: ${width}/${height}`);
         return;
     }
+    // Set the actual pixel size for WebGL rendering
     canvas.width = width;
     canvas.height = height;
+
+    // Clamp the CSS display size
     clampPreviewSize(canvas, 1000, 1000);
-    canvas.style.minWidth = 1000 + 'px';
-    canvas.style.minHeight = 1000 + 'px';
-    LOG(`Canvas dimensions set to ${width}x${height}`);
+
+    // Recreate framebuffers/textures with new dimensions
     gl.viewport(0, 0, width, height);
     shaderBuffers.forEach(sb => {
         const fbObj = createFramebuffer(width, height);
         sb.offscreenFramebuffer = fbObj.framebuffer;
         sb.offscreenTexture = fbObj.texture;
     });
+
+    LOG(`Canvas dimensions set to ${width}x${height}`);
+}
+
+function presetCanvasDimensions(w, h) {
+    const inW = document.getElementById('canvas-width');
+    const inH = document.getElementById('canvas-height');
+
+    return function () {
+        inW.value = w;
+        inH.value = h;
+        updateCanvasDimensions();
+    };
 }
 
 // =====================================
@@ -1151,7 +1183,7 @@ function handleFolderUpload(event) {
 // =====================================
 // Part 12: Main Render Loop
 // =====================================
-function updateCustomUniforms(shaderBuffer) {
+function updateCustomUniformLocations(shaderBuffer) {
     for (let name in shaderBuffer.customUniforms) {
         const value = shaderBuffer.customUniforms[name];
         const loc = gl.getUniformLocation(shaderBuffer.shaderProgram, name);
@@ -1173,6 +1205,16 @@ function updateCustomUniforms(shaderBuffer) {
     }
 }
 
+function updateBuiltinUniformLocations(shaderBuf) {
+    const prog = shaderBuf.shaderProgram;
+    shaderBuf.timeLocation = gl.getUniformLocation(prog, 'u_time');
+    shaderBuf.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
+    for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+        shaderBuf.sampleTextureLocations[i] =
+            gl.getUniformLocation(prog, `u_texture${i}`);
+    }
+}
+
 // TODO: only update shaders either in use or sampled by other shaders
 function updateAllShaderBuffers() {
     // Loop through each shader buffer and update its offscreen texture.
@@ -1191,7 +1233,7 @@ function updateAllShaderBuffers() {
             gl.uniform1f(shaderBuffer.timeLocation, effectiveTime * 0.001);
         if (shaderBuffer.resolutionLocation)
             gl.uniform2f(shaderBuffer.resolutionLocation, canvas.width, canvas.height);
-        updateCustomUniforms(shaderBuffer);
+        updateCustomUniformLocations(shaderBuffer);
 
         // Bind the sample media textures.
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
@@ -1365,7 +1407,9 @@ function setupShaderEditor() {
 
     applyBtn.addEventListener('click', async () => {
         const sb = shaderBuffers[currentViewIndex];
-        const newSource = editor._newCode || sb.fragmentSrc;
+        //           this doesnt work V
+        const newSource = editor._cmInstance.getValue() || sb.fragmentSrc;
+        editor._cmInstance.refresh();
 
         const prog = createProgram(vertexShaderSource, newSource);
         if (!prog) {
@@ -1376,12 +1420,7 @@ function setupShaderEditor() {
         // Assign the new program
         sb.shaderProgram = prog;
         sb.fragmentSrc = newSource;
-
-        sb.timeLocation = gl.getUniformLocation(prog, 'u_time');
-        sb.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
-        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-            sb.sampleTextureLocations[i] = gl.getUniformLocation(prog, `u_texture${i}`);
-        }
+        updateBuiltinUniformLocations(sb);
 
         await setItem(`${currentViewIndex};fragmentSource`, newSource);
         logMessage('✅ Shader updated.');
@@ -1395,6 +1434,19 @@ function setupShaderEditor() {
 document.addEventListener('DOMContentLoaded', async () => {
     // bind buttons
     document.getElementById('update-canvas-dimensions').addEventListener('click', updateCanvasDimensions);
+    presetDimensions = [
+        { name: "480p", w: 640, h: 480 },
+        { name: "720p", w: 1280, h: 720 },
+        { name: "1080p", w: 1920, h: 1080 },
+        { name: "2K", w: 2048, h: 1080 },
+        { name: "4K", w: 3840, h: 2160 },
+        { name: "8K", w: 7680, h: 4320 },
+    ];
+    presetDimensions.forEach((d) => {
+        const button = document.getElementById('preset-dimensions-' + d.name);
+        button.addEventListener('click', presetCanvasDimensions(d.w, d.h));
+    });
+
     document.getElementById('enable-mic').addEventListener('click', loadMicrophone);
     document.getElementById('folder-upload').addEventListener('change', handleFolderUpload);
     document.getElementById('play-pause').addEventListener('click', function () {
@@ -1555,12 +1607,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 sb.shaderProgram = prog;
                 sb.fragmentSrc = src; // for debugging mostly
                 sb.vertexSrc = vertexShaderSource; // for debugging mostly
-                sb.timeLocation = gl.getUniformLocation(prog, 'u_time');
-                sb.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
-                for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-                    sb.sampleTextureLocations[i] =
-                        gl.getUniformLocation(prog, `u_texture${i}`);
-                }
+                updateBuiltinUniformLocations(sb);
             }
         }
 
