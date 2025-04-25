@@ -145,3 +145,8 @@ body {
 .media-preview {
     margin-top: 5px;
 }
+
+button.tab-active {
+    background-color: grey;
+    color: white;
+}

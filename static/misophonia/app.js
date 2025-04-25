@@ -64,6 +64,29 @@ async function keys() {
 
 
 // =====================================
+// Part 1.5: Hotkey Helpers
+// =====================================
+
+// top‑level, alongside your other globals
+const hotkeyBindings = {};
+
+// only once: listen for keydown and dispatch to whichever toggle is bound
+window.addEventListener('keydown', e => {
+    const key = e.key.toLowerCase();
+    const binding = hotkeyBindings[key];
+    if (!binding) return;
+
+    e.preventDefault();
+    const { shaderBuffer, uniform, input } = binding;
+    // flip the stored value
+    const newVal = !shaderBuffer.customUniforms[uniform];
+    shaderBuffer.customUniforms[uniform] = newVal;
+    // update the UI
+    input.checked = newVal;
+    saveControlState(shaderBuffer);
+});
+
+// =====================================
 // Part 2: Global Setup & State
 // =====================================
 /** @type {HTMLCanvasElement} */
@@ -733,6 +756,7 @@ async function loadAndCacheMedia(
     }
 
     // 4) tag it so our “remove” handler knows what to delete:
+    if (!shaderBuffer.sampleMedia[slotIndex]) return;
     shaderBuffer.sampleMedia[slotIndex].cacheKey = cacheKey;
 }
 
@@ -848,6 +872,10 @@ function createControlSchemeTabs() {
 function renderControlsForShader(shaderBuffer, schema) {
     LOG(`Rendering controls for ${shaderBuffer.name}`);
     shaderBuffer.controlContainer.innerHTML = ''; // Clear previous controls
+    if (shaderBuffer._autoToggleTimers) {
+        shaderBuffer._autoToggleTimers.forEach(id => clearInterval(id));
+    }
+    shaderBuffer._autoToggleTimers = [];
     schema?.controls?.forEach(control => {
         const controlDiv = document.createElement('div');
         controlDiv.className = 'control';
@@ -919,10 +947,27 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement = document.createElement('input');
                 inputElement.type = 'checkbox';
                 inputElement.checked = !!initialValue;
+                inputElement.setAttribute('data-uniform', control.uniform);
                 inputElement.addEventListener('change', e => {
                     shaderBuffer.customUniforms[control.uniform] = e.target.checked;
                     saveControlState(shaderBuffer);
                 });
+
+                // when user clicks, update uniform & state as before
+                inputElement.addEventListener('change', e => {
+                    shaderBuffer.customUniforms[control.uniform] = e.target.checked;
+                    saveControlState(shaderBuffer);
+                });
+
+                // if schema defines a hotkey, register it
+                if (control.hotkey) {
+                    const key = control.hotkey.toLowerCase();
+                    hotkeyBindings[key] = {
+                        shaderBuffer,
+                        uniform: control.uniform,
+                        input: inputElement
+                    };
+                }
                 break;
             case 'xy-plane':
                 inputElement = document.createElement('div');
@@ -1130,7 +1175,6 @@ function updateAllShaderBuffers() {
     // Loop through each shader buffer and update its offscreen texture.
     // In reverse order so that sampled textures are (probably) updated before main shader
     for (let idx = shaderBuffers.length - 1; idx > -1; idx--) {
-        console.log(`updating shader buffer ${idx}`);
         const shaderBuffer = shaderBuffers[idx];
         // Bind the offscreen framebuffer of the shader buffer.
         gl.bindFramebuffer(gl.FRAMEBUFFER, shaderBuffer.offscreenFramebuffer);
