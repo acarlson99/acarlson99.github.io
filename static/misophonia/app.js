@@ -400,37 +400,11 @@ function initDefaultShaderBuffers() {
 // =====================================
 // Part 8: Advanced Media Input & Loader
 // =====================================
-// Helper to update the sample texture for a given media element.
-function updateTextureForMedia(shaderBuffer, slotIndex, mediaElement) {
-    gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[slotIndex]);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, mediaElement);
-    if (mediaElement.tagName === 'IMG') {
-        if (isPowerOf2(mediaElement.width) && isPowerOf2(mediaElement.height)) {
-            gl.generateMipmap(gl.TEXTURE_2D);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-        } else {
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        }
-    } else {
-        // video, webcam, canvas, etc — always clamp & linear
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    }
-
-    gl.bindTexture(gl.TEXTURE_2D, null);
-}
-
 // Helper to load an image from a source URL.
 function loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer) {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
-        updateTextureForMedia(shaderBuffer, slotIndex, img);
         logMessage(`Slot ${slotIndex} loaded (image).`);
         clampPreviewSize(img);
         shaderBuffer.sampleMedia[slotIndex] = { type: 'image', element: img };
@@ -450,10 +424,9 @@ function loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer) {
     video.loop = true;
     video.muted = true;
     if (src) video.src = src;
-    // Match the shader's pause state.
-    if (!isPaused) { video.play(); } else { video.pause(); }
     video.addEventListener('loadeddata', () => {
-        updateTextureForMedia(shaderBuffer, slotIndex, video);
+        // Match the shader's pause state.
+        if (!isPaused) { video.play(); } else { video.pause(); }
         logMessage(`Slot ${slotIndex} loaded (video).`);
         clampPreviewSize(video);
     });
@@ -534,16 +507,14 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
     const removeBtn = document.createElement('button');
     removeBtn.textContent = 'Remove';
     removeBtn.addEventListener('click', async () => {
-        const media = shaderBuffer.sampleMedia[slotIndex];
-        if (media?.cacheKey) {
-            try {
-                await delItem(media.cacheKey);
-                logMessage(`Removed cache entry ${media.cacheKey}`);
-            } catch (err) {
-                logError(`Error deleting ${media.cacheKey}:`, err);
-            }
-        } shaderBuffer.sampleMedia[slotIndex] = null;
-        clearPreview();
+        try {
+            await delItem(cacheKey);
+            logMessage(`Removed cache entry ${cacheKey}`);
+        } catch (err) {
+            logError(`Error deleting ${cacheKey}:`, err);
+        }
+        shaderBuffer.sampleMedia[slotIndex] = null;
+        resetMedia();
         logMessage(`Slot ${slotIndex} unassigned.`);
     });
     container.appendChild(removeBtn);
@@ -657,7 +628,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then(stream => {
                     const video = loadVideoFromSource(null, shaderBuffer, slotIndex, previewContainer);
-                    // FIXME: there's some promise resolution error here
+                    shaderBuffer.sampleMedia[slotIndex] = null; // not ready yet
                     video.srcObject = stream;
                     video.autoplay = true;
                     video.setAttribute('playsinline', '');
@@ -666,13 +637,12 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
                     video.addEventListener('loadeddata', () => {
                         function updateLoop() {
                             if (shaderBuffer.sampleMedia[slotIndex]?.type === 'webcam') {
-                                updateTextureForMedia(shaderBuffer, slotIndex, video);
                                 requestAnimationFrame(updateLoop);
                             }
                         }
                         clearPreview();
                         previewContainer.appendChild(video);
-                        shaderBuffer.sampleMedia[slotIndex] = { type: 'webcam', element: video };
+                        shaderBuffer.sampleMedia[slotIndex] = { type: 'webcam', element: video }; // ready now
                         updateLoop();
                     });
                 })
@@ -758,10 +728,6 @@ async function loadAndCacheMedia(
     else {
         console.warn('Unknown media type for', source);
     }
-
-    // 4) tag it so our “remove” handler knows what to delete:
-    if (!shaderBuffer.sampleMedia[slotIndex]) return;
-    shaderBuffer.sampleMedia[slotIndex].cacheKey = cacheKey;
 }
 
 async function saveControlState(shaderBuffer) {
@@ -1173,8 +1139,9 @@ function updateAllShaderBuffers() {
                 continue;
             const textureLocation = shaderBuffer.sampleTextureLocations[i];
             const media = shaderBuffer.sampleMedia[i];
+            const treatAsEmpty = !!media || ((media?.type == 'webcam' && media.element.readyState >= 2));
             gl.activeTexture(gl.TEXTURE2 + i);
-            if (!media) {
+            if (!treatAsEmpty) {
                 // No media: use a fallback texture.
                 gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
                 gl.uniform1i(textureLocation, 2 + i);
@@ -1189,6 +1156,10 @@ function updateAllShaderBuffers() {
                 gl.texImage2D(
                     gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media.element
                 );
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
                 gl.uniform1i(textureLocation, 2 + i);
             } else if (media.type === "audio") {
                 const { analyser, dataArray } = media;
