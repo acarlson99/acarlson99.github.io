@@ -243,11 +243,12 @@ function updateCanvasDimensions() {
     // Recreate framebuffers/textures with new dimensions
     gl.viewport(0, 0, width, height);
     shaderBuffers.forEach(sb => {
-        const fbObj = createFramebuffer(width, height);
-        sb.offscreenFramebuffer = fbObj.framebuffer;
-        sb.offscreenTexture = fbObj.texture;
-    });
+        const fbObjA = createFramebuffer(width, height);
+        const fbObjB = createFramebuffer(width, height);
 
+        sb.framebuffers = [fbObjA.framebuffer, fbObjB.framebuffer];
+        sb.textures = [fbObjA.texture, fbObjB.texture];
+    });
     LOG(`Canvas dimensions set to ${width}x${height}`);
 }
 
@@ -342,7 +343,9 @@ function createShaderBuffer(name, vertexSrc, fragmentSrc, shaderIndex = -69) {
         console.error("Failed to initialize shader program for", name);
         return null;
     }
-    const fbObj = createFramebuffer(canvas.width, canvas.height);
+    const fbObjA = createFramebuffer(canvas.width, canvas.height);
+    const fbObjB = createFramebuffer(canvas.width, canvas.height);
+
     let sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
     let sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
     let sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
@@ -367,8 +370,9 @@ function createShaderBuffer(name, vertexSrc, fragmentSrc, shaderIndex = -69) {
         shaderProgram: program,
         timeLocation: null,
         resolutionLocation: null,
-        offscreenFramebuffer: fbObj.framebuffer,
-        offscreenTexture: fbObj.texture,
+        framebuffers: [fbObjA.framebuffer, fbObjB.framebuffer],
+        textures: [fbObjA.texture, fbObjB.texture],
+        currentFramebufferIndex: 0, // flip-flop this each frame
         sampleTextures,
         sampleTextureLocations,
         sampleMedia,
@@ -394,7 +398,9 @@ function initDefaultShaderBuffers() {
     // For demonstration, create two shader buffers (tabs)
     let shader1 = createShaderBuffer("Shader 1", vertexShaderSource, fragmentShaderSource, 0);
     let shader2 = createShaderBuffer("Shader 2", vertexShaderSource, fragmentShaderSource, 1);
-    shaderBuffers = [shader1, shader2];
+    let shader3 = createShaderBuffer("Shader 3", vertexShaderSource, fragmentShaderSource, 2);
+    let shader4 = createShaderBuffer("Shader 4", vertexShaderSource, fragmentShaderSource, 3);
+    shaderBuffers = [shader1, shader2, shader3, shader4];
 }
 
 // =====================================
@@ -593,13 +599,10 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
 
         // List available shader buffers.
         shaderBuffers.forEach((shaderBuf, idx) => {
-            // Optionally, you might want to prevent sampling yourself.
-            if (idx !== currentViewIndex) {
-                const opt = document.createElement('option');
-                opt.value = idx;  // use the tab index as the value.
-                opt.textContent = shaderBuf.name;
-                tabSelect.appendChild(opt);
-            }
+            const opt = document.createElement('option');
+            opt.value = idx;  // use the tab index as the value.
+            opt.textContent = shaderBuf.name;
+            tabSelect.appendChild(opt);
         });
         tabSelect.addEventListener('change', () => {
             const idx = parseInt(tabSelect.value);
@@ -632,8 +635,6 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
                     video.srcObject = stream;
                     video.autoplay = true;
                     video.setAttribute('playsinline', '');
-                    video.autoplay = true;
-                    video.controls = false;
                     video.addEventListener('loadeddata', () => {
                         function updateLoop() {
                             if (shaderBuffer.sampleMedia[slotIndex]?.type === 'webcam') {
@@ -851,7 +852,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                     const rect = inputElement.getBoundingClientRect();
                     const pct = (parseFloat(inputElement.value) - control.min) / (control.max - control.min);
                     const bubbleX = pct * rect.width;
-                    infoBubble.innerText = parseFloat(inputElement.value).toFixed(2);
+                    infoBubble.innerText = parseFloat(inputElement.value).toFixed(control.fixedPrecision || 2);
                     infoBubble.style.left = `${bubbleX}px`;
                     infoBubble.style.top = `-1.5em`;
                 }
@@ -1119,9 +1120,12 @@ function updateAllShaderBuffers() {
     // In reverse order so that sampled textures are (probably) updated before main shader
     for (let idx = shaderBuffers.length - 1; idx > -1; idx--) {
         const shaderBuffer = shaderBuffers[idx];
+
+        const srcTexIndex = 1 - shaderBuffer.currentFramebufferIndex; // The one NOT being written into
+        const dstFboIndex = shaderBuffer.currentFramebufferIndex;      // The one we WILL write into
+
         // Bind the offscreen framebuffer of the shader buffer.
-        gl.bindFramebuffer(gl.FRAMEBUFFER, shaderBuffer.offscreenFramebuffer);
-        gl.viewport(0, 0, canvas.width, canvas.height);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, shaderBuffer.framebuffers[dstFboIndex]); gl.viewport(0, 0, canvas.width, canvas.height);
         gl.clearColor(0, 0, 0, 1);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
@@ -1148,7 +1152,7 @@ function updateAllShaderBuffers() {
             } else if (media.type === "tab") {
                 // For tab-sampled shaders, bind the target shader's offscreen texture.
                 const targetShader = shaderBuffers[media.tabIndex];
-                gl.bindTexture(gl.TEXTURE_2D, targetShader.offscreenTexture);
+                gl.bindTexture(gl.TEXTURE_2D, targetShader.textures[targetShader.currentFramebufferIndex ^ 1]);
                 gl.uniform1i(textureLocation, 2 + i);
             } else if (media.type === "video" || media.type === "webcam") {
                 gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
@@ -1199,6 +1203,8 @@ function updateAllShaderBuffers() {
         gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+        shaderBuffer.currentFramebufferIndex ^= 1;
     }
 }
 
@@ -1225,7 +1231,8 @@ function render(time) {
     const quadTextureLocation = gl.getUniformLocation(quadProgram, "u_texture");
     gl.activeTexture(gl.TEXTURE0);
     // Use the currently active shader buffer’s updated offscreen texture.
-    gl.bindTexture(gl.TEXTURE_2D, shaderBuffers[currentViewIndex].offscreenTexture);
+    const sh = shaderBuffers[currentViewIndex];
+    gl.bindTexture(gl.TEXTURE_2D, sh.textures[sh.currentFramebufferIndex]);
     gl.uniform1i(quadTextureLocation, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
