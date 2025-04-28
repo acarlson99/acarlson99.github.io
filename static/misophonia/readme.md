@@ -8,16 +8,23 @@ precision mediump float;
 #endif
 #define iTime u_time
 #define iResolution u_resolution
-#define texture(s,p) texture2D(s,p)
+
+#define iChannel0 u_texture0
+#define iChannel1 u_texture1
+
+#define PI 3.141592653589
 
 uniform float u_time;
 uniform vec2 u_resolution;
 uniform sampler2D u_texture0;
 
-in vec2 v_texCoord;
 out vec4 outColor;
 
+void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+    // ...
+}
+
 void main() {
-    mainImage(outColor,v_texCoord);
+    mainImage(outColor, gl_FragCoord.xy);
 }
 ```

@@ -1,6 +1,8 @@
 body {
     font-family: Arial, sans-serif;
     margin: 20px;
+    background: #0d0d0d;
+    color: #F8F8F2;
 }
 
 #main-container {
@@ -13,7 +15,8 @@ body {
     width: 25%;
     padding-right: 20px;
     box-sizing: border-box;
-    border-right: 1px solid #ccc;
+    border-right: 1px solid #404048;
+    background: #202024;
 }
 
 /* Right Panel: Canvas & Uploads */
@@ -23,6 +26,7 @@ body {
     box-sizing: border-box;
 }
 
+/* Canvas and Upload Containers */
 #canvas-settings {
     margin-bottom: 10px;
 }
@@ -41,18 +45,20 @@ body {
 
 #output-container {
     margin-top: 15px;
-    border: 1px solid #ccc;
+    border: 1px solid #404048;
     padding: 10px;
-    background: #fafafa;
+    background: #202024;
     font-family: monospace;
     height: 150px;
     overflow-y: auto;
+    color: #C7F0BD;
 }
 
 #shader-canvas {
-    border: 1px solid #ccc;
+    border: 1px solid #404048;
     display: block;
     margin-bottom: 15px;
+    background: #121212;
 }
 
 /* Control Panel Styles */
@@ -64,17 +70,19 @@ body {
     display: block;
     font-weight: bold;
     margin-bottom: 5px;
+    color: #B3CDD1;
 }
 
 /* XY Plane & Grid */
 .xy-plane {
-    border: 1px solid #ccc;
+    border: 1px solid #404048;
     width: 200px;
     height: 200px;
     position: relative;
-    background: #f0f0f0;
+    background: #181818;
     cursor: crosshair;
     margin-top: 5px;
+    box-shadow: 0 0 8px rgba(25, 100, 126, 0.3);
 }
 
 .xy-grid {
@@ -85,26 +93,29 @@ body {
     height: 100%;
     pointer-events: none;
     background-image:
-        linear-gradient(to right, rgba(0, 0, 0, 0.1) 1px, transparent 1px),
-        linear-gradient(to bottom, rgba(0, 0, 0, 0.1) 1px, transparent 1px);
+        linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
     background-size: 20px 20px;
 }
 
 .xy-indicator {
     width: 10px;
     height: 10px;
-    background: red;
+    background: #CC8B86;
     border-radius: 50%;
     position: absolute;
     transform: translate(-50%, -50%);
+    box-shadow: 0 0 5px #CC8B86;
 }
 
 .xy-label {
     position: absolute;
     font-size: 12px;
-    background: rgba(255, 255, 255, 0.7);
+    background: rgba(200, 200, 200, 0.2);
     padding: 2px 4px;
     pointer-events: none;
+    color: #F8F8F2;
+    border-radius: 3px;
 }
 
 .xy-label-min {
@@ -122,7 +133,7 @@ body {
     position: absolute;
     padding: 4px 8px;
     background: #333;
-    color: #fff;
+    color: #C7F0BD;
     border-radius: 4px;
     font-size: 12px;
     white-space: nowrap;
@@ -133,9 +144,10 @@ body {
 
 /* Advanced Media Input Styles */
 .advanced-media-input {
-    border: 1px solid #ccc;
+    border: 1px solid #404048;
     padding: 8px;
     margin-bottom: 10px;
+    background: #181818;
 }
 
 .media-input-controls {
@@ -146,7 +158,23 @@ body {
     margin-top: 5px;
 }
 
+button {
+    background: #19647E;
+    color: #F8F8F2;
+    border: none;
+}
+
+button:hover {
+    background: #B3CDD1;
+    color: #0d0d0d;
+}
+
 button.tab-active {
-    background-color: grey;
-    color: white;
+    background-color: #CC8B86;
+    color: #0d0d0d;
+}
+
+button+button {
+    margin-left: 4px;
+    margin-top: 4px;
 }
