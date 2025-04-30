@@ -394,13 +394,19 @@ function createShaderBuffer(name, vertexSrc, fragmentSrc, shaderIndex = -69) {
     return shadBuf;
 }
 
+let MAX_TAB_SLOTS = 8;
 function initDefaultShaderBuffers() {
     // For demonstration, create two shader buffers (tabs)
-    let shader1 = createShaderBuffer("Shader 1", vertexShaderSource, fragmentShaderSource, 0);
-    let shader2 = createShaderBuffer("Shader 2", vertexShaderSource, fragmentShaderSource, 1);
-    let shader3 = createShaderBuffer("Shader 3", vertexShaderSource, fragmentShaderSource, 2);
-    let shader4 = createShaderBuffer("Shader 4", vertexShaderSource, fragmentShaderSource, 3);
-    shaderBuffers = [shader1, shader2, shader3, shader4];
+    let buffers = [];
+    for (let i = 0; i < MAX_TAB_SLOTS; i++) {
+        buffers.push(createShaderBuffer(`Shader ${i + 1}`, vertexShaderSource, fragmentShaderSource, i));
+    }
+    shaderBuffers = buffers;
+    // let shader1 = createShaderBuffer("Shader 1", vertexShaderSource, fragmentShaderSource, 0);
+    // let shader2 = createShaderBuffer("Shader 2", vertexShaderSource, fragmentShaderSource, 1);
+    // let shader3 = createShaderBuffer("Shader 3", vertexShaderSource, fragmentShaderSource, 2);
+    // let shader4 = createShaderBuffer("Shader 4", vertexShaderSource, fragmentShaderSource, 3);
+    // shaderBuffers = [shader1, shader2, shader3, shader4];
 }
 
 // =====================================
@@ -758,6 +764,7 @@ function updateActiveViewUI() {
     const buttons = document.getElementById('shader-tabs').children
     for (let i = 0; i < buttons.length; i++) {
         buttons[i].classList.toggle('tab-active', i === currentViewIndex);
+        shaderBuffers[i].shaderTab = buttons[i];
     }
 }
 
@@ -773,6 +780,7 @@ function updateActiveControlUI() {
     const buttons = document.getElementById('control-scheme-tabs').children
     for (let i = 0; i < buttons.length; i++) {
         buttons[i].classList.toggle('tab-active', i === currentControlIndex);
+        shaderBuffers[i].controlTab = buttons[i];
     }
 
     updateAllShaderBuffers();
@@ -785,6 +793,7 @@ function createShaderTabs() {
         const tabButton = document.createElement('button');
         tabButton.textContent = shaderBuf.name;
         tabButton.addEventListener('click', () => {
+            editorSEX.close();
             currentViewIndex = index;
             updateActiveViewUI();
         });
@@ -799,6 +808,7 @@ function createControlSchemeTabs() {
         const btn = document.createElement('button');
         btn.textContent = shaderBuf.name;
         btn.addEventListener('click', () => {
+            editorSEX.close();
             currentControlIndex = index;
             updateActiveControlUI();
         });
@@ -816,6 +826,12 @@ function renderControlsForShader(shaderBuffer, schema) {
         shaderBuffer._autoToggleTimers.forEach(id => clearInterval(id));
     }
     shaderBuffer._autoToggleTimers = [];
+    if (schema.name) {
+        const i = shaderBuffers.indexOf(shaderBuffer);
+        shaderBuffer.name = `${schema.name} ${i + 1}`;
+        shaderBuffer.controlTab.innerText = shaderBuffer.name;
+        shaderBuffer.shaderTab.innerText = shaderBuffer.name;
+    }
     schema?.controls?.forEach(control => {
         const controlDiv = document.createElement('div');
         controlDiv.className = 'control';
@@ -1276,9 +1292,11 @@ function stopRecording() {
     }
 }
 
-// Shader Editor
+// Shader Editor State Editor muX
+let editorSEX = {};
 function setupShaderEditor() {
     const editBtn = document.getElementById('edit-shader-btn');
+    const editShower = document.getElementById('shader-editor-hideshow');
     const editor = document.getElementById('shader-editor');
     const applyBtn = document.getElementById('apply-shader-edit');
     const cancelBtn = document.getElementById('cancel-shader-edit');
@@ -1300,11 +1318,17 @@ function setupShaderEditor() {
                 lineNumbers: true,
                 theme: 'default'
             });
+            // Set editor size larger
+            editor._cmInstance.setSize('100%', '100%');
         } else {
             editor._cmInstance.setValue(sb.fragmentSrc || '');
+            editor._cmInstance.refresh();
         }
         editorOpen = true;
     };
+
+    editorSEX.close = closeEditor;
+    editorSEX.open = openEditor;
 
     editBtn.addEventListener('click', () => {
         if (editorOpen) closeEditor();

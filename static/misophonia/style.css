@@ -19,6 +19,11 @@ body {
     background: #202024;
 }
 
+#control-panel {
+    overflow: auto;
+    height: 90vh;
+}
+
 /* Right Panel: Canvas & Uploads */
 #right-panel {
     width: 75%;
@@ -177,4 +182,18 @@ button.tab-active {
 button+button {
     margin-left: 4px;
     margin-top: 4px;
+}
+
+#shader-editor {
+    display: none;
+    width: 40vw;
+    height: 40vh;
+    overflow: visible;
+    border: 1px solid #ccc;
+}
+
+#shader-editor-container {
+    resize: both;
+    width: 100%;
+    height: 80%;
 }

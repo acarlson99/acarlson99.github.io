@@ -11,25 +11,56 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
     <!-- GLSL mode -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/clike/clike.min.js"></script>
+
+    <!-- <script>
+        document.addEventListener('DOMContentLoaded', async () => {
+            document.getElementById('toggle-dark-mode').addEventListener('click', () => {
+                document.body.classList.toggle('dark-mode');
+            });
+        });
+    </script> -->
 </head>
 
 <body>
     <h1>Shader Renderer & Control Panel</h1>
+    <!-- <button id="toggle-dark-mode">Toggle Dark Mode</button> -->
     <div id="main-container">
         <!-- Left Panel: Controls -->
         <div id="left-panel">
-            <button id="edit-shader-btn">Edit Shader</button>
-            <div id="shader-editor" style="display:none;">
-                <div id="shader-editor-container" style="height:400px; border:1px solid #ccc;"></div>
-                <button id="apply-shader-edit">Apply Changes</button>
-                <button id="cancel-shader-edit">Cancel</button>
-            </div>
             <div id="control-scheme-tabs"></div>
-            <h2>Controls</h2>
-            <div id="controls-container"></div>
+            <div id="control-panel">
+                <h2>Controls</h2>
+                <div id="controls-container"></div>
+                <br>
+                <!-- Output Container -->
+                <div id="output-container">
+                    <h3>Output</h3>
+                    <pre id="output"></pre>
+                </div>
+                <!-- Uploads Container -->
+                <div id="uploads-container">
+                    <div id="folder-upload-container">
+                        <label for="folder-upload">Upload Folder (with JSON schema & GLSL shader):</label>
+                        <input type="file" id="folder-upload" webkitdirectory directory multiple>
+                    </div>
+                    <!-- Advanced Media Inputs for texture channels -->
+                    <div id="advanced-inputs"></div>
+                    <div>
+                        <button id="enable-mic">Enable Mic</button>
+                        <button id="clear-cache-btn">Clear Cache</button>
+                    </div>
+                </div>
+            </div>
         </div>
         <!-- Right Panel: Canvas and Uploads -->
         <div id="right-panel">
+            <button id="edit-shader-btn">Edit Shader</button>
+            <div id="shader-editor" style="display:none; border:none;">
+                <button id="apply-shader-edit">Apply Changes</button>
+                <button id="cancel-shader-edit">Cancel</button>
+                <br>
+                <div id="shader-editor-container" style="border:1px solid #ccc;"></div>
+            </div>
             <div id="shader-tabs"></div>
             <div id="canvas-settings">
                 <label for="canvas-width">Canvas Width:</label>
@@ -55,25 +86,6 @@
             <button id="start-record">Record</button>
             <button id="stop-record">Stop</button>
             <button id="save-image">Save Image</button>
-            <br>
-            <!-- Output Container -->
-            <div id="output-container">
-                <h3>Output</h3>
-                <pre id="output"></pre>
-            </div>
-            <!-- Uploads Container -->
-            <div id="uploads-container">
-                <div id="folder-upload-container">
-                    <label for="folder-upload">Upload Folder (with JSON schema & GLSL shader):</label>
-                    <input type="file" id="folder-upload" webkitdirectory directory multiple>
-                </div>
-                <!-- Advanced Media Inputs for texture channels -->
-                <div id="advanced-inputs"></div>
-                <div>
-                    <button id="enable-mic">Enable Mic</button>
-                    <button id="clear-cache-btn">Clear Cache</button>
-                </div>
-            </div>
         </div>
     </div>
     <script src="app.js"></script>
