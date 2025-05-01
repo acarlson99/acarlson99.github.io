@@ -1,0 +1,19 @@
+- TODO
+  - reload [3/4]
+    - [X] simple (only support files)
+    - [X] make `Remove` button remove from cache as well
+    - [X] save control state
+    - [ ] reload entire media state (including preview windows and media selection dropdown state)
+  - [X] Named tabs
+  - [ ] Option to clone tab(?)
+  - [-] Editor [1/2]
+    - [X] Edit and hot-reload shader
+    - [ ] Edit and hot-reload control panel
+  - [ ] Media
+    - [ ] Preview shader tab reference as well (same as previewing video feed)
+    - [ ] Embed youtube video
+    - [ ] make GIF work
+  - [ ] `Restart` button should clear previous frame as well
+  - [ ] Hotkeys
+    - [ ] change tabs
+    - [ ] make control+preview pannel match, or intentionally split them
