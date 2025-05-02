@@ -1,0 +1,123 @@
+{
+    "name": "moire",
+    "controls": [
+        {
+            "type": "slider",
+            "label": "scroll speed",
+            "uniform": "u_scroll",
+            "min": -10.0,
+            "max": 10.0,
+            "default": -1.0,
+            "step": 0.5
+        },
+        {
+            "type": "slider",
+            "label": "width",
+            "uniform": "u_width",
+            "min": 0.0,
+            "max": 1.0,
+            "default": 0.5,
+            "step": 0.01
+        },
+        {
+            "type": "slider",
+            "label": "smoothness",
+            "uniform": "u_smoothness",
+            "min": 0.0,
+            "max": 1.0,
+            "default": 0.0,
+            "step": 0.01
+        },
+        {
+            "type": "slider",
+            "label": "mix 0",
+            "uniform": "u_tmxa",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "step": 0.01
+        },
+        {
+            "type": "slider",
+            "label": "mix 1",
+            "uniform": "u_tmxb",
+            "min": 0,
+            "max": 1,
+            "default": 0,
+            "step": 0.01
+        },
+        {
+            "type": "slider",
+            "label": "scale",
+            "uniform": "u_scale",
+            "min": 0.0,
+            "max": 20.0,
+            "default": 10.0,
+            "step": 0.5
+        },
+        {
+            "type": "slider",
+            "label": "mode",
+            "uniform": "u_mode",
+            "min": 1,
+            "max": 2,
+            "default": 1,
+            "step": 1
+        },
+        {
+            "type": "toggle",
+            "label": "Invert texture0",
+            "uniform": "u_colInv0",
+            "hotkey": "a",
+            "default": false
+        },
+        {
+            "type": "toggle",
+            "label": "Invert texture1",
+            "uniform": "u_colInv1",
+            "hotkey": "s",
+            "default": false
+        },
+        {
+            "type": "slider",
+            "label": "Phase",
+            "uniform": "u_tPhase",
+            "min": 0,
+            "max": 2,
+            "step": 0.01,
+            "default": 1
+        },
+        {
+            "type": "slider",
+            "label": "rotate",
+            "uniform": "u_ra",
+            "min": 0.0,
+            "max": 2.0,
+            "default": 0.0,
+            "step": 0.01
+        },
+        {
+            "type": "toggle",
+            "label": "time scroll",
+            "uniform": "u_timescroll",
+            "default": true
+        },
+        {
+            "type": "xy-plane",
+            "uniform": "u_mv",
+            "label": "Move",
+            "min": {
+                "x": -1,
+                "y": -1
+            },
+            "max": {
+                "x": 1,
+                "y": 1
+            },
+            "default": {
+                "x": 0,
+                "y": 0
+            }
+        }
+    ]
+}

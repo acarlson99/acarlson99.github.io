@@ -17,3 +17,4 @@
   - [ ] Hotkeys
     - [ ] change tabs
     - [ ] make control+preview pannel match, or intentionally split them
+  - [ ] upload directory from url
