@@ -1095,6 +1095,101 @@ function handleFolderUpload(event) {
     }
 }
 
+// update the <select> with an array of folder names
+function populateConfigsMenu(names) {
+    const sel = document.getElementById('configs-menu');
+    sel.innerHTML = '<option value="">— select —</option>';
+    names.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        sel.appendChild(opt);
+    });
+}
+
+// invoked when you drop a directory of sub-directories
+async function handleConfigsUpload(event) {
+    const files = Array.from(event.target.files);
+    // group by top-level folder name (webkitRelativePath)
+    LOG(`processing ${files} dir`);
+    const dirs = files.reduce((acc, f) => {
+        const path = f.webkitRelativePath.split('/');
+        LOG(`acc ${acc} f ${f} path ${path}`);
+        const top = path[1];
+        (acc[top] ||= []).push(f);
+        return acc;
+    }, {});
+
+    const names = Object.keys(dirs);
+    for (const name of names) {
+        LOG(`processing ${name}`);
+        let shaderFile, schemaFile;
+        for (const f of dirs[name]) {
+            const low = f.name.toLowerCase();
+            if (low.endsWith('.json')) schemaFile = f;
+            else if (/\.(glsl|frag|txt)$/.test(low)) shaderFile = f;
+        }
+
+        // read & cache schema.json
+        if (schemaFile) {
+            const txt = await schemaFile.text();
+            try {
+                await setItem(`config;${name};controlSchema`, JSON.parse(txt));
+            } catch (e) {
+                logError('bad JSON in', schemaFile.name, e);
+            }
+        }
+
+        // read & cache fragment shader
+        if (shaderFile) {
+            const src = await shaderFile.text();
+            await setItem(`config;${name};fragmentSource`, src);
+        }
+    }
+
+    // save the list of names and repopulate the menu
+    await setItem('configsList', JSON.stringify(names));
+    populateConfigsMenu(names);
+    logMessage(`✅ Cached ${names.length} configs: ${names.join(', ')}`);
+}
+
+async function loadConfigDirectory(name) {
+    const active = shaderBuffers[currentViewIndex];
+    const fragKey = `config;${name};fragmentSource`;
+    const schemaKey = `config;${name};controlSchema`;
+
+    const fragSrc = await getItem(fragKey);
+    if (typeof fragSrc === 'string') {
+        const prog = createProgram(vertexShaderSource, fragSrc);
+        if (!prog) {
+            logError(`Failed to compile shader from config "${name}"`);
+        } else {
+            active.shaderProgram = prog;
+            active.fragmentSrc = fragSrc;
+            active.vertexSrc = vertexShaderSource;
+            const key = `${currentViewIndex};fragmentSource`;
+            await setItem(key, fragSrc);
+            updateBuiltinUniformLocations(active);
+        }
+    }
+
+    const schema = await getItem(schemaKey);
+    if (schema) {
+        active.controlSchema = schema;
+        const key = `${currentViewIndex};controlSchema`;
+        await setItem(key, schema);
+        renderControlsForShader(active, schema);
+    }
+
+    // rename the tab to the config name
+    active.name = name;
+    active.shaderTab.textContent = name;
+    active.controlTab.textContent = name;
+    updateActiveViewUI();
+
+    logMessage(`✅ Loaded config "${name}" into tab ${currentViewIndex + 1}`);
+}
+
 // =====================================
 // Part 12: Main Render Loop
 // =====================================
@@ -1383,6 +1478,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     document.getElementById('folder-upload').addEventListener('change', handleFolderUpload);
+    document
+        .getElementById('configs-upload')
+        .addEventListener('change', handleConfigsUpload);
+
+    document
+        .getElementById('load-config')
+        .addEventListener('click', () => {
+            const name = document.getElementById('configs-menu').value;
+            LOG(`load config ${name}`);
+            if (name) loadConfigDirectory(name);
+        });
+
+    // on startup, populate menu from any previously saved list
+    const savedList = await getItem('configsList');
+    if (typeof savedList === 'string') {
+        populateConfigsMenu(JSON.parse(savedList));
+    }
+
     document.getElementById('play-pause').addEventListener('click', function () {
         isPaused = !isPaused;
         this.textContent = isPaused ? 'Play' : 'Pause';

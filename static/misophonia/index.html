@@ -42,6 +42,18 @@
                     <div id="folder-upload-container">
                         <label for="folder-upload">Upload Folder (with JSON schema & GLSL shader):</label>
                         <input type="file" id="folder-upload" webkitdirectory directory multiple>
+                        <label>
+                            Upload configs directory:
+                            <input id="configs-upload" type="file" webkitdirectory directory multiple />
+                        </label>
+
+                        <label>
+                            Choose a cached config:
+                            <select id="configs-menu">
+                                <option value="">— select —</option>
+                            </select>
+                            <button id="load-config">Load into Current Tab</button>
+                        </label>
                     </div>
                     <!-- Advanced Media Inputs for texture channels -->
                     <div id="advanced-inputs"></div>
