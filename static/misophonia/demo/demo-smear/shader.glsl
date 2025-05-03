@@ -19,8 +19,8 @@ uniform sampler2D u_texture1;
 // in vec2 v_texCoord;
 out vec4 outColor;
 
+uniform float u_dropoff;
 uniform float u_intensity;
-uniform float u_speed;
 uniform vec2 u_direction;
 
 
@@ -38,13 +38,14 @@ void mainImage( out vec4 fragColor, in vec2 fragCoord )
     // Smear UVs slightly based on some function (e.g., random noise or offset)
     vec2 offset = vec2(0.01, 0.0); // slight right smear
     //offset = vec2(cos(iTime-atan(uv.x,uv.y)*2.),sin(iTime+atan(uv.x,uv.y)))*0.01;
-    offset = normalize(u_direction) * u_speed;
+    offset = normalize(u_direction) * u_intensity;
     // TODO: only "offset" sections matching some pattern/outline maybe?
     // basically, sample a monochrome depth map texture
     vec4 smeared = texture(iChannel0, uv - offset);
+    smeared = 1.-((1.-baseImage)*(1.-smeared));
 
     // Blend base image and smeared frame
-    fragColor = mix(baseImage, smeared, u_intensity); // 0.95 = strong smear
+    fragColor = mix(smeared, baseImage, u_dropoff); // 0.95 = strong smear
 }
 
 

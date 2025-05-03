@@ -3,17 +3,17 @@
     "controls": [
         {
             "type": "slider",
-            "label": "smear intensity",
-            "uniform": "u_intensity",
+            "label": "smear dropoff",
+            "uniform": "u_dropoff",
             "min": 0,
             "max": 1,
-            "default": 0,
+            "default": 1,
             "step": 0.0001
         },
         {
             "type": "slider",
-            "label": "speed",
-            "uniform": "u_speed",
+            "label": "intensity",
+            "uniform": "u_intensity",
             "fixedPrecision": 4,
             "min": 0,
             "max": 0.06,
