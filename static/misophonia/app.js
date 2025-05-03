@@ -505,6 +505,17 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
     const container = document.createElement('div');
     container.className = 'advanced-media-input';
 
+    let slotName;
+    if (shaderBuffer.controlSchema.textureLabels)
+        slotName = shaderBuffer.textureLabels[slotIndex];
+    else
+        slotName = `Texture ${slotIndex}`;
+    LOG(`tex labs ${shaderBuffer.controlSchema.texture}`);
+    const slotLabel = document.createElement('div');
+    slotLabel.className = 'texture-slot-label';
+    slotLabel.textContent = slotName;
+    container.appendChild(slotLabel);
+
     const sourceSelect = document.createElement('select');
     sourceSelect.innerHTML = `
     <option value="none">None</option>
@@ -1020,11 +1031,40 @@ function renderControlsForShader(shaderBuffer, schema) {
         }
         shaderBuffer.controlContainer.appendChild(controlDiv);
     });
+    // name texture slots
+    for (let i = 0; i < schema.textureLabels?.length; i++) {
+        const label = schema.textureLabels[i];
+        shaderBuffer.advancedInputsContainer.children[i].children[0].innerText = label;
+    }
+    shaderBuffer.controlSchema = schema;
 }
 
 // =====================================
 // Part 11: Directory Upload (JSON & Shader Files)
 // =====================================
+async function applyControlSchema(viewIndex, schema) {
+    const buf = shaderBuffers[viewIndex];
+    renderControlsForShader(buf, schema);
+
+    const key = `${viewIndex};controlSchema`;
+    await setItem(key, schema);
+}
+async function applyShader(viewIndex, frag, vert) {
+    const buf = shaderBuffers[viewIndex];
+    const prog = createProgram(vertexShaderSource, newShaderSource);
+    if (!prog) {
+        return false;
+    }
+    buf.shaderProgram = prog;
+    buf.fragmentSrc = frag;
+    buf.vertexSrc = vert;
+    updateBuiltinUniformLocations(buf);
+
+    const key = `${currentViewIndex};fragmentSource`;
+    await setItem(key, newShaderSource);
+    return true;
+}
+
 function handleFolderUpload(event) {
     const files = event.target.files;
     let schemaFile = null, shaderFile = null;
@@ -1046,17 +1086,12 @@ function handleFolderUpload(event) {
         reader.onload = async e => {
             try {
                 newSchemaData = JSON.parse(e.target.result);
-                // cache it under a fixed key (you could include view‑index, etc.)
-                const key = `${currentViewIndex};controlSchema`;
-                await setItem(key, newSchemaData);
             } catch (err) {
                 logMessage("Error parsing JSON schema:", err);
             }
             attemptApply();
         };
         reader.readAsText(schemaFile);
-    } else {
-        attemptApply();
     }
 
     // 1b) Read fragment shader source
@@ -1071,25 +1106,15 @@ function handleFolderUpload(event) {
     };
     reader.readAsText(shaderFile);
 
-    function attemptApply() {
+    async function attemptApply() {
         if (newShaderSource == null) return;
-        const active = shaderBuffers[currentViewIndex];
-
-        // compile & swap in the new program
-        const prog = createProgram(vertexShaderSource, newShaderSource);
-        if (!prog) {
-            logError("Failed to compile uploaded shader");
-            return;
-        }
-        active.shaderProgram = prog;
-        active.fragmentSrc = newShaderSource;
-        active.vertexSrc = vertexShaderSource;
-        updateBuiltinUniformLocations(active);
+        const success = await applyShader(currentViewIndex, newShaderSource, vertexShaderSource);
+        if (!success) return;
 
         // swap in the new control schema if we have it
         if (newSchemaData) {
-            active.controlSchema = newSchemaData;
-            renderControlsForShader(active, newSchemaData);
+            // renderControlsForShader(active, newSchemaData);
+            applyControlSchema(currentViewIndex, newSchemaData);
         }
         logMessage("Shader & schema updated and cached!");
     }
