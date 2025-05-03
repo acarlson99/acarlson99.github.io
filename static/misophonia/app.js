@@ -1051,7 +1051,7 @@ async function applyControlSchema(viewIndex, schema) {
 }
 async function applyShader(viewIndex, frag, vert) {
     const buf = shaderBuffers[viewIndex];
-    const prog = createProgram(vertexShaderSource, newShaderSource);
+    const prog = createProgram(vertexShaderSource, frag);
     if (!prog) {
         return false;
     }
@@ -1061,7 +1061,7 @@ async function applyShader(viewIndex, frag, vert) {
     updateBuiltinUniformLocations(buf);
 
     const key = `${currentViewIndex};fragmentSource`;
-    await setItem(key, newShaderSource);
+    await setItem(key, frag);
     return true;
 }
 
