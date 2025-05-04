@@ -76,7 +76,7 @@
             "label": "Invert texture1",
             "uniform": "u_colInv1",
             "hotkey": "s",
-            "default": false
+            "default": true
         },
         {
             "type": "slider",

@@ -1,0 +1,11 @@
+{
+    "name": "invert",
+    "controls": [],
+    "inputs": [
+        {
+            "name": "A",
+            "description": "texture to invert",
+            "required": true
+        }
+    ]
+}
