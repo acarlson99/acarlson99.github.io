@@ -413,7 +413,7 @@ function initDefaultShaderBuffers() {
 // Part 8: Advanced Media Input & Loader
 // =====================================
 // Helper to load an image from a source URL.
-function loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer) {
+function loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
@@ -424,12 +424,13 @@ function loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer) {
             previewContainer.innerHTML = '';
             previewContainer.appendChild(img);
         }
+        if (cb) cb();
     };
     img.src = src;
 }
 
 // Helper to load a video from a source URL.
-function loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer) {
+function loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
     const video = document.createElement('video');
     video.controls = true;
     video.setAttribute('playsinline', '');
@@ -441,6 +442,7 @@ function loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer) {
         if (!isPaused) { video.play(); } else { video.pause(); }
         logMessage(`Slot ${slotIndex} loaded (video).`);
         clampPreviewSize(video);
+        if (cb) cb();
     });
     shaderBuffer.sampleMedia[slotIndex] = { type: 'video', element: video };
     previewContainer.innerHTML = '';
@@ -449,7 +451,7 @@ function loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer) {
 }
 
 // Helper to load audio from a source URL.
-function loadAudioFromSource(src, shaderBuffer, slotIndex, previewContainer) {
+function loadAudioFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
     const audioSource = createAudioSource(src);
     if (!isPaused && typeof audioSource.audio.play === 'function') {
         audioSource.audio.play();
@@ -476,6 +478,7 @@ function loadAudioFromSource(src, shaderBuffer, slotIndex, previewContainer) {
         muted = !muted;
         toggleMute(shaderBuffer.sampleMedia[slotIndex], muted);
         muteBtn.textContent = muted ? "Unmute" : "Mute";
+        if (cb) cb();
     });
     previewContainer.appendChild(muteBtn);
 }
@@ -580,8 +583,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
             resetMedia();
             const file = event.target.files[0];
             if (!file) return;
-            await loadAndCacheMedia(file, shaderBuffer, slotIndex, previewContainer);
-            updateRequiredHighlight();
+            await loadAndCacheMedia(file, shaderBuffer, slotIndex, previewContainer, true, updateRequiredHighlight);
         });
         inputControlsContainer.appendChild(fileInput);
     }
@@ -595,8 +597,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
 
             resetMedia();
             const lowerUrl = url.toLowerCase();
-            await loadAndCacheMedia(lowerUrl, shaderBuffer, slotIndex, previewContainer);
-            updateRequiredHighlight();
+            await loadAndCacheMedia(lowerUrl, shaderBuffer, slotIndex, previewContainer, true, updateRequiredHighlight);
         });
         inputControlsContainer.appendChild(form);
     }
@@ -754,7 +755,8 @@ async function loadAndCacheMedia(
     shaderBuffer,
     slotIndex,
     previewContainer,
-    cache = true
+    cache = true,
+    cb = undefined
 ) {
     // 1) compute which shader we’re in
     const shaderIndex = shaderBuffers.indexOf(shaderBuffer);
@@ -787,13 +789,13 @@ async function loadAndCacheMedia(
 
     // 3) dispatch to the right loader
     if (blobType === 'image') {
-        loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer);
+        loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
     }
     else if (blobType === 'video') {
-        loadVideoFromSource(url, shaderBuffer, slotIndex, previewContainer);
+        loadVideoFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
     }
     else if (blobType === 'audio') {
-        loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer);
+        loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
     }
     else {
         console.warn('Unknown media type for', source);
