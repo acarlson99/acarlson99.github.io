@@ -5,63 +5,68 @@ const DB_NAME = 'shader-assets-db';
 const DB_VERSION = 1;
 const STORE_NAME = 'asset-cache';
 
-async function openDB() {
-    return new Promise((resolve, reject) => {
-        const req = indexedDB.open(DB_NAME, DB_VERSION);
-        req.onupgradeneeded = () => {
-            const db = req.result;
-            if (!db.objectStoreNames.contains(STORE_NAME)) {
-                db.createObjectStore(STORE_NAME);
-            }
-        };
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-    });
+class CacheManager {
+    constructor(dbName, storeName, dbVersion = 1) {
+        this.dbName = dbName;
+        this.storeName = storeName;
+        this.dbVersion = dbVersion;
+        this.db = null;
+    }
+
+    init() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(this.dbName, this.dbVersion);
+            req.onupgradeneeded = () => {
+                const db = req.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName);
+                }
+            };
+            req.onsuccess = () => {
+                this.db = req.result;
+                resolve(this.db);
+            };
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    withStore(mode, callback) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(this.storeName, mode);
+            const store = tx.objectStore(this.storeName);
+            callback(store);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
+    get(key) {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(this.storeName, 'readonly');
+            const req = tx.objectStore(this.storeName).get(key);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+
+    put(key, value) { return this.withStore('readwrite', store => store.put(value, key)); }
+
+    delete(key) { return this.withStore('readwrite', store => store.delete(key)); }
+
+    clear() { return this.withStore('readwrite', store => store.clear()); }
+
+    keys() {
+        return new Promise((resolve, reject) => {
+            const tx = this.db.transaction(this.storeName, 'readonly');
+            const req = tx.objectStore(this.storeName).getAllKeys();
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
 }
 
-async function withStore(mode, callback) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, mode);
-        const store = tx.objectStore(STORE_NAME);
-        callback(store);
-        tx.oncomplete = () => resolve();
-        tx.onerror = () => reject(tx.error);
-    });
-}
-
-async function setItem(key, value) {
-    await withStore('readwrite', store => store.put(value, key));
-}
-
-async function getItem(key) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const req = tx.objectStore(STORE_NAME).get(key);
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-    });
-}
-
-async function delItem(key) {
-    await withStore('readwrite', store => store.delete(key));
-}
-
-async function clearAll() {
-    await withStore('readwrite', store => store.clear());
-}
-
-async function keys() {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-        const tx = db.transaction(STORE_NAME, 'readonly');
-        const req = tx.objectStore(STORE_NAME).getAllKeys();
-        req.onsuccess = () => resolve(req.result);
-        req.onerror = () => reject(req.error);
-    });
-}
-
+const resourceCache = new CacheManager(DB_NAME, STORE_NAME, DB_VERSION);
+resourceCache.init().catch(err => { console.error('THIS SHOULD NOT HAPPEN! Failed to open cache:', err); });
 
 // =====================================
 // Part 1.5: Hotkey Helpers
@@ -548,7 +553,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
     removeBtn.textContent = 'Remove';
     removeBtn.addEventListener('click', async () => {
         try {
-            await delItem(cacheKey);
+            await resourceCache.delete(cacheKey);
             logMessage(`Removed cache entry ${cacheKey}`);
         } catch (err) {
             logError(`Error deleting ${cacheKey}:`, err);
@@ -572,7 +577,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
     container.appendChild(previewContainer);
 
     function clearPreview() { previewContainer.innerHTML = ''; }
-    function resetMedia() { shaderBuffer.sampleMedia[slotIndex] = null; clearPreview(); delItem(cacheKey); }
+    function resetMedia() { shaderBuffer.sampleMedia[slotIndex] = null; clearPreview(); resourceCache.delete(cacheKey); }
 
     function setupFileInput() {
         inputControlsContainer.innerHTML = '';
@@ -593,7 +598,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
         const form = createUrlForm(async (url) => {
             // TODO: this causes precached URL input to break
             const descriptor = { type: "url", url };
-            await setItem(cacheKey, JSON.stringify(descriptor));
+            await resourceCache.put(cacheKey, JSON.stringify(descriptor));
 
             resetMedia();
             const lowerUrl = url.toLowerCase();
@@ -646,7 +651,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
             const idx = parseInt(tabSelect.value);
             if (isNaN(idx)) return;
             const descriptor = { type: "tab", tabIndex: idx };
-            setItem(cacheKey, JSON.stringify(descriptor));
+            resourceCache.put(cacheKey, JSON.stringify(descriptor));
 
             // Store a reference to the target tab.
             shaderBuffer.sampleMedia[slotIndex] = descriptor;
@@ -783,7 +788,7 @@ async function loadAndCacheMedia(
 
         if (cache) {
             // write into IndexedDB under our new key:
-            await setItem(cacheKey, source);
+            await resourceCache.put(cacheKey, source);
         }
     }
 
@@ -805,12 +810,12 @@ async function loadAndCacheMedia(
 async function saveControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
     const key = `controls;${idx}`;
-    await setItem(key, JSON.stringify(shaderBuffer.customUniforms));
+    await resourceCache.put(key, JSON.stringify(shaderBuffer.customUniforms));
 }
 async function loadControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
     const key = `controls;${idx}`;
-    const str = await getItem(key);
+    const str = await resourceCache.get(key);
     if (typeof str === 'string') {
         try {
             shaderBuffer.customUniforms = JSON.parse(str);
@@ -860,7 +865,7 @@ function createShaderTabs() {
         tabButton.addEventListener('click', () => {
             editorSEX.close();
             currentViewIndex = index;
-            localStorage.setItem('currentViewIndex', currentViewIndex);
+            localStorage.cache.put('currentViewIndex', currentViewIndex);
             updateActiveViewUI();
         });
         tabContainer.appendChild(tabButton);
@@ -876,7 +881,7 @@ function createControlSchemeTabs() {
         btn.addEventListener('click', () => {
             editorSEX.close();
             currentControlIndex = index;
-            localStorage.setItem('currentControlIndex', currentControlIndex);
+            localStorage.cache.put('currentControlIndex', currentControlIndex);
             updateActiveControlUI();
         });
         tabContainer.appendChild(btn);
@@ -1113,7 +1118,7 @@ async function applyControlSchema(viewIndex, schema) {
     renderControlsForShader(buf, schema);
 
     const key = `${viewIndex};controlSchema`;
-    await setItem(key, schema);
+    await resourceCache.put(key, schema);
 }
 async function applyShader(viewIndex, frag, vert) {
     const buf = shaderBuffers[viewIndex];
@@ -1127,7 +1132,7 @@ async function applyShader(viewIndex, frag, vert) {
     updateBuiltinUniformLocations(buf);
 
     const key = `${currentViewIndex};fragmentSource`;
-    await setItem(key, frag);
+    await resourceCache.put(key, frag);
     return true;
 }
 
@@ -1165,9 +1170,9 @@ function handleFolderUpload(event) {
     reader.onload = async e => {
         newShaderSource = e.target.result;
         // cache the raw text
-        // await setItem('fragmentSource', newShaderSource);
+        // await resourceCache.put('fragmentSource', newShaderSource);
         const key = `${currentViewIndex};fragmentSource`;
-        await setItem(key, newShaderSource);
+        await resourceCache.put(key, newShaderSource);
         attemptApply();
     };
     reader.readAsText(shaderFile);
@@ -1225,7 +1230,7 @@ async function handleConfigsUpload(event) {
         if (schemaFile) {
             const txt = await schemaFile.text();
             try {
-                await setItem(`config;${name};controlSchema`, JSON.parse(txt));
+                await resourceCache.put(`config;${name};controlSchema`, JSON.parse(txt));
             } catch (e) {
                 logError('bad JSON in', schemaFile.name, e);
             }
@@ -1234,12 +1239,12 @@ async function handleConfigsUpload(event) {
         // read & cache fragment shader
         if (shaderFile) {
             const src = await shaderFile.text();
-            await setItem(`config;${name};fragmentSource`, src);
+            await resourceCache.put(`config;${name};fragmentSource`, src);
         }
     }
 
     // save the list of names and repopulate the menu
-    await setItem('configsList', JSON.stringify(names));
+    await resourceCache.put('configsList', JSON.stringify(names));
     populateConfigsMenu(names);
     logMessage(`✅ Cached ${names.length} configs: ${names.join(', ')}`);
 }
@@ -1249,7 +1254,7 @@ async function loadConfigDirectory(name) {
     const fragKey = `config;${name};fragmentSource`;
     const schemaKey = `config;${name};controlSchema`;
 
-    const fragSrc = await getItem(fragKey);
+    const fragSrc = await resourceCache.get(fragKey);
     if (typeof fragSrc === 'string') {
         const prog = createProgram(vertexShaderSource, fragSrc);
         if (!prog) {
@@ -1259,16 +1264,16 @@ async function loadConfigDirectory(name) {
             active.fragmentSrc = fragSrc;
             active.vertexSrc = vertexShaderSource;
             const key = `${currentViewIndex};fragmentSource`;
-            await setItem(key, fragSrc);
+            await resourceCache.put(key, fragSrc);
             updateBuiltinUniformLocations(active);
         }
     }
 
-    const schema = await getItem(schemaKey);
+    const schema = await resourceCache.get(schemaKey);
     if (schema) {
         active.controlSchema = schema;
         const key = `${currentViewIndex};controlSchema`;
-        await setItem(key, schema);
+        await resourceCache.put(key, schema);
         renderControlsForShader(active, schema);
     }
 
@@ -1542,7 +1547,7 @@ function setupShaderEditor() {
         sb.fragmentSrc = newSource;
         updateBuiltinUniformLocations(sb);
 
-        await setItem(`${currentViewIndex};fragmentSource`, newSource);
+        await resourceCache.put(`${currentViewIndex};fragmentSource`, newSource);
         logMessage('✅ Shader updated.');
     });
 }
@@ -1582,7 +1587,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
 
     // on startup, populate menu from any previously saved list
-    const savedList = await getItem('configsList');
+    const savedList = await resourceCache.get('configsList');
     if (typeof savedList === 'string') {
         populateConfigsMenu(JSON.parse(savedList));
     }
@@ -1657,7 +1662,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     clearBtn.addEventListener('click', async () => {
         // 1) Nuke the whole store
         try {
-            await clearAll();
+            await resourceCache.clear();
             logMessage('✅ IndexedDB cache cleared.');
         } catch (err) {
             logError('❌ Failed to clear cache:', err);
@@ -1682,7 +1687,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     setupShaderEditor();
 
-    const allKeys = await keys();
+    const allKeys = await resourceCache.keys();
     for (const key of allKeys) {
         if (key.match('fragmentSource') || key.match('controlSchema')) continue;
 
@@ -1690,7 +1695,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const sb = shaderBuffers[sIdx];
         if (!sb) continue;
 
-        const cached = await getItem(key);
+        const cached = await resourceCache.get(key);
         const previewContainer = sb
             .advancedInputsContainer
             .children[slotIdx]
@@ -1725,7 +1730,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const sb = shaderBuffers[idx];
         // 1) Shader source
         const sourceKey = `${idx};fragmentSource`;
-        const src = await getItem(sourceKey);
+        const src = await resourceCache.get(sourceKey);
         if (typeof src === 'string') {
             const prog = createProgram(vertexShaderSource, src);
             if (prog) {
@@ -1738,7 +1743,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 2) Control schema
         const schemaKey = `${idx};controlSchema`;
-        const schema = await getItem(schemaKey);
+        const schema = await resourceCache.get(schemaKey);
         if (schema) sb.controlSchema = schema;
 
         // 3) Rebuild that shader’s controls panel
