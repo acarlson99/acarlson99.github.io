@@ -505,16 +505,30 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
     const container = document.createElement('div');
     container.className = 'advanced-media-input';
 
-    let slotName;
-    if (shaderBuffer.controlSchema.textureLabels)
-        slotName = shaderBuffer.textureLabels[slotIndex];
-    else
-        slotName = `Texture ${slotIndex}`;
-    LOG(`tex labs ${shaderBuffer.controlSchema.texture}`);
-    const slotLabel = document.createElement('div');
+    const slotLabel = document.createElement('span');
     slotLabel.className = 'texture-slot-label';
-    slotLabel.textContent = slotName;
+    slotLabel.textContent = `Texture ${slotIndex}`;
     container.appendChild(slotLabel);
+
+    const infoIcon = document.createElement('span');
+    infoIcon.className = 'texture-slot-description';
+    infoIcon.innerText = '*';
+    infoIcon.title = 'help';
+    infoIcon.hidden = true; // default to invisible
+    container.appendChild(infoIcon);
+    container.appendChild(document.createElement('br'));
+
+    // Highlight required fields when unset
+    function updateRequiredHighlight() {
+        const inputTexInfo = (shaderBuffer?.controlSchema?.inputs || [])[slotIndex] || {};
+        const isRequired = Boolean(inputTexInfo.required);
+
+        if (isRequired && !shaderBuffer.sampleMedia[slotIndex]) {
+            container.style.backgroundColor = 'rgba(255, 0, 0, 0.2)';
+        } else {
+            container.style.backgroundColor = '';
+        }
+    }
 
     const sourceSelect = document.createElement('select');
     sourceSelect.innerHTML = `
@@ -539,6 +553,9 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
         shaderBuffer.sampleMedia[slotIndex] = null;
         resetMedia();
         logMessage(`Slot ${slotIndex} unassigned.`);
+        updateRequiredHighlight();
+        sourceSelect.selectedIndex = 0;
+        sourceSelect.dispatchEvent(new Event('change'));
     });
     container.appendChild(removeBtn);
 
@@ -681,7 +698,22 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
         else if (val === 'webcam') setupWebcamInput();
         else if (val === 'tab') setupTabSampleInput();
         else inputControlsContainer.innerHTML = '';
+        updateRequiredHighlight();
     });
+    container.refreshHl = () => { updateRequiredHighlight(); };
+    container.setDescription = (desc) => {
+        if (desc) {
+            infoIcon.hidden = false;
+            infoIcon.title = desc;
+        } else {
+            infoIcon.hidden = true;
+        }
+    };
+    container.setInputName = (label) => { slotLabel.innerText = label; };
+    container.removeTexture = () => { removeBtn.dispatchEvent(new Event('click')); };
+
+    // Initial highlight
+    updateRequiredHighlight();
 
     return container;
 }
@@ -1032,9 +1064,14 @@ function renderControlsForShader(shaderBuffer, schema) {
         shaderBuffer.controlContainer.appendChild(controlDiv);
     });
     // name texture slots
-    for (let i = 0; i < schema.textureLabels?.length; i++) {
-        const label = schema.textureLabels[i];
-        shaderBuffer.advancedInputsContainer.children[i].children[0].innerText = label;
+    for (let i = 0; i < schema.inputs?.length; i++) {
+        const input = schema.inputs[i];
+        const label = input.name;
+        const inputController = shaderBuffer.advancedInputsContainer.children[i];
+        inputController.setInputName(label);
+        const desc = input.description;
+        inputController.setDescription(desc);
+        inputController.refreshHl();
     }
     shaderBuffer.controlSchema = schema;
 }
