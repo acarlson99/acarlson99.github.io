@@ -28,12 +28,14 @@ void main(void) {
   float wave = sin(dist * 10.0 + u_time * u_speed * 3.0);
 
   // Smooth the wave to create a gentle gradient effect
-  float audioVal = 1.-texture2D(u_audioTexture, sin(uv*3.14*2.*2.)).r;
+  float audioVal = 1. - texture2D(u_audioTexture, sin(uv * 3.14 * 2. * 2.)).r;
   float intensity = smoothstep(0.3, 0.0, abs(wave)) * audioVal;
 
   // Mix two colors based on the intensity
-  vec3 color = mix(u_color, vec3(1.0, 0.8, 0.3), intensity*u_intensity);
-  if (u_mode) { color = 1.0-color; }
+  vec3 color = mix(u_color, vec3(1.0, 0.8, 0.3), intensity * u_intensity);
+  if (u_mode) {
+    color = 1.0 - color;
+  }
 
   gl_FragColor = vec4(color, 1.0);
 }

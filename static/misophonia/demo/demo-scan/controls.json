@@ -1,4 +1,21 @@
 {
     "name": "depth scan",
-    "controls": []
+    "controls": [],
+    "inputs": [
+        {
+            "name": "depth map",
+            "description": "depth map up/down which to scan",
+            "required": true
+        },
+        {
+            "name": "A",
+            "description": "texture to mix",
+            "required": false
+        },
+        {
+            "name": "B",
+            "description": "texture to mix",
+            "required": false
+        }
+    ]
 }

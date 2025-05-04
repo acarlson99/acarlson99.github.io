@@ -119,5 +119,17 @@
                 "y": 0
             }
         }
+    ],
+    "inputs": [
+        {
+            "name": "A",
+            "description": "texture to mix",
+            "required": false
+        },
+        {
+            "name": "B",
+            "description": "texture to mix",
+            "required": false
+        }
     ]
 }

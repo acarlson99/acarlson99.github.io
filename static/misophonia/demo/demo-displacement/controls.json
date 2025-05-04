@@ -31,9 +31,22 @@
             "step": 0.5
         }
     ],
-    "textureLabels": [
-        "reference",
-        "self",
-        "distortion"
+    "inputs": [
+        {
+            "name": "reference",
+            "description": "the image to which to apply the effect",
+            "required": true
+        },
+        {
+            "name": "self",
+            "description": "the current buffer (for self-sampling)",
+            "autoAssign": "self",
+            "required": true
+        },
+        {
+            "name": "distortion",
+            "description": "an optional image to distort the output",
+            "required": false
+        }
     ]
 }

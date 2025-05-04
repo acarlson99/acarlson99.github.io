@@ -99,8 +99,8 @@ if (!gl) alert('WebGL is not supported by your browser.');
 const devMode = document.URL.startsWith('http://localhost');
 const maxLines = 100;
 const outputMessages = [];
-let currentViewIndex = 0;
-let currentControlIndex = 0;
+let currentViewIndex = parseInt(localStorage.getItem('currentViewIndex') || '0');
+let currentControlIndex = parseInt(localStorage.getItem('currentControlIndex') || '0');
 let isPaused = false;
 let lastFrameTime = 0;
 let effectiveTime = 0;
@@ -581,6 +581,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
             const file = event.target.files[0];
             if (!file) return;
             await loadAndCacheMedia(file, shaderBuffer, slotIndex, previewContainer);
+            updateRequiredHighlight();
         });
         inputControlsContainer.appendChild(fileInput);
     }
@@ -595,6 +596,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
             resetMedia();
             const lowerUrl = url.toLowerCase();
             await loadAndCacheMedia(lowerUrl, shaderBuffer, slotIndex, previewContainer);
+            updateRequiredHighlight();
         });
         inputControlsContainer.appendChild(form);
     }
@@ -618,6 +620,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
                     previewContainer.innerHTML = 'Microphone Enabled';
                 })
                 .catch(err => { logError("Error accessing microphone:", err); });
+            updateRequiredHighlight();
         });
         inputControlsContainer.appendChild(micBtn);
     }
@@ -652,8 +655,10 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
             const info = document.createElement('div');
             // info.textContent = `Sampling from tab: ${shaderBuffers[shaderIndex].name}`;
             previewContainer.appendChild(info);
+            updateRequiredHighlight();
         });
         inputControlsContainer.appendChild(tabSelect);
+        inputControlsContainer.tabSelect = tabSelect;
     }
 
     function setupWebcamInput() {
@@ -671,6 +676,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
                     video.setAttribute('playsinline', '');
                     video.addEventListener('loadeddata', () => {
                         function updateLoop() {
+                            updateRequiredHighlight();
                             if (shaderBuffer.sampleMedia[slotIndex]?.type === 'webcam') {
                                 requestAnimationFrame(updateLoop);
                             }
@@ -711,6 +717,20 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
     };
     container.setInputName = (label) => { slotLabel.innerText = label; };
     container.removeTexture = () => { removeBtn.dispatchEvent(new Event('click')); };
+    container.selectTab = (i) => {
+        const tabIdx = 5; // index 
+        sourceSelect.selectedIndex = tabIdx;
+        sourceSelect.dispatchEvent(new Event('change'));
+        inputControlsContainer.tabSelect.selectedIndex = i + 1;
+        inputControlsContainer.tabSelect.dispatchEvent(new Event('change'));
+        updateRequiredHighlight();
+    }
+    container.selectMediaTab = (i) => {
+        sourceSelect.selectedIndex = i;
+        sourceSelect.dispatchEvent(new Event('change'));
+        updateRequiredHighlight();
+        updateRequiredHighlight();
+    }
 
     // Initial highlight
     updateRequiredHighlight();
@@ -804,7 +824,7 @@ function updateActiveViewUI() {
     // but we still want to log it:
     logMessage("Viewing shader: " + shaderBuffers[currentViewIndex].name);
     // the render() function already uses currentViewIndex when blitting:
-    const buttons = document.getElementById('shader-tabs').children
+    const buttons = document.getElementById('shader-tabs').children;
     for (let i = 0; i < buttons.length; i++) {
         buttons[i].classList.toggle('tab-active', i === currentViewIndex);
         shaderBuffers[i].shaderTab = buttons[i];
@@ -838,6 +858,7 @@ function createShaderTabs() {
         tabButton.addEventListener('click', () => {
             editorSEX.close();
             currentViewIndex = index;
+            localStorage.setItem('currentViewIndex', currentViewIndex);
             updateActiveViewUI();
         });
         tabContainer.appendChild(tabButton);
@@ -853,6 +874,7 @@ function createControlSchemeTabs() {
         btn.addEventListener('click', () => {
             editorSEX.close();
             currentControlIndex = index;
+            localStorage.setItem('currentControlIndex', currentControlIndex);
             updateActiveControlUI();
         });
         tabContainer.appendChild(btn);
@@ -869,9 +891,9 @@ function renderControlsForShader(shaderBuffer, schema) {
         shaderBuffer._autoToggleTimers.forEach(id => clearInterval(id));
     }
     shaderBuffer._autoToggleTimers = [];
+    const tabIdx = shaderBuffers.indexOf(shaderBuffer);
     if (schema.name) {
-        const i = shaderBuffers.indexOf(shaderBuffer);
-        shaderBuffer.name = `${schema.name} ${i + 1}`;
+        shaderBuffer.name = `${schema.name} ${tabIdx + 1}`;
         shaderBuffer.controlTab.innerText = shaderBuffer.name;
         shaderBuffer.shaderTab.innerText = shaderBuffer.name;
     }
@@ -1071,6 +1093,11 @@ function renderControlsForShader(shaderBuffer, schema) {
         inputController.setInputName(label);
         const desc = input.description;
         inputController.setDescription(desc);
+
+        // only support self for now
+        if (input.autoAssign == 'self') {
+            inputController.selectTab(tabIdx);
+        }
         inputController.refreshHl();
     }
     shaderBuffer.controlSchema = schema;
@@ -1653,15 +1680,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     setupShaderEditor();
 
-
-    for (const sb of shaderBuffers) {
-        await loadControlState(sb);
-    }
-
-    shaderBuffers.forEach(shaderBuffer => {
-        renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
-    });
-
     const allKeys = await keys();
     for (const key of allKeys) {
         if (key.match('fragmentSource') || key.match('controlSchema')) continue;
@@ -1687,8 +1705,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 if (obj.type === 'tab') {
                     // restore tab sampling
-                    sb.sampleMedia[slotIdx] = obj;
-                    previewContainer.textContent = `Sampling from tab: ${shaderBuffers[obj.tabIndex].name}`;
+                    sb.advancedInputsContainer.children[slotIdx].selectTab(obj.tabIndex);
 
                 } else if (obj.type === 'url') {
                     // restore URL input
@@ -1725,6 +1742,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         // 3) Rebuild that shader’s controls panel
         renderControlsForShader(sb, sb.controlSchema);
     }
+
+    for (const sb of shaderBuffers) {
+        await loadControlState(sb);
+    }
+
+    shaderBuffers.forEach(shaderBuffer => {
+        renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
+    });
+    updateActiveViewUI();
 
     requestAnimationFrame(render);
 });
