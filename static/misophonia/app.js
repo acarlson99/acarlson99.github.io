@@ -102,6 +102,7 @@ const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipl
 if (!gl) alert('WebGL is not supported by your browser.');
 
 const devMode = document.URL.startsWith('http://localhost');
+const MAX_TEXTURE_SLOTS = 4;
 const maxLines = 100;
 const outputMessages = [];
 let currentViewIndex = parseInt(localStorage.getItem('currentViewIndex') || '0');
@@ -109,7 +110,6 @@ let currentControlIndex = parseInt(localStorage.getItem('currentControlIndex') |
 let isPaused = false;
 let lastFrameTime = 0;
 let effectiveTime = 0;
-let shaderBuffers = [];
 let editorOpen = false; // shader editor starts closed
 
 // Logging
@@ -155,52 +155,282 @@ function clampPreviewSize(canvas, maxWidth = 300, maxHeight = 300) {
     canvas.style.height = displayHeight + 'px';
 }
 
+class ShaderBuffer {
+    constructor(name, program, controlSchema, shaderIndex) {
+        this.name = name;
+        this.gl = gl;
+        this.program = program;
+        console.log(`setting control schema to`, controlSchema);
+        this.controlSchema = controlSchema;
+
+        this.width = canvas.width;
+        this.height = canvas.height;
+
+        // will hold [fb0, fb1] and [tex0, tex1]
+        this.framebuffers = [];
+        this.textures = [];
+        this.currentFramebufferIndex = 0;
+
+        this.sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
+        this.sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
+        this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
+        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+            this.sampleTextures[i] = gl.createTexture();
+        }
+
+        this.controlContainer = document.createElement('div');
+        this.controlContainer.className = 'shader-control-panel';
+        document.getElementById('controls-container').appendChild(this.controlContainer);
+
+        this.advancedInputsContainer = document.createElement('div');
+        this.advancedInputsContainer.className = 'advanced-inputs-container';
+        document.getElementById('advanced-inputs').appendChild(this.advancedInputsContainer);
+
+        this.customUniforms = {};
+
+        this._reallocateFramebuffersAndTextures(canvas.width, canvas.height);
+        let p = this.program?.compile();
+        if (p) this.shaderProgram = p;
+        this.updateBuiltinUniformLocations();
+
+        // Initialize advanced media inputs for each texture slot
+        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+            let advancedInput = createAdvancedMediaInput(this, shaderIndex, i);
+            this.advancedInputsContainer.appendChild(advancedInput);
+        }
+    }
+
+    _reallocateFramebuffersAndTextures(w, h) {
+        gl.viewport(0, 0, w, h);
+        const fbObjA = ShaderBuffer.createGLFramebuffer(w, h);
+        const fbObjB = ShaderBuffer.createGLFramebuffer(w, h);
+        this.framebuffers = [fbObjA.framebuffer, fbObjB.framebuffer];
+        this.textures = [fbObjA.texture, fbObjB.texture];
+    }
+
+    static createGLFramebuffer(w, h) {
+        // const gl = this.gl;
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        const fb = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) LOG('Warning: incomplete framebuffer');
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        return { framebuffer: fb, texture: tex };
+    }
+
+    updateCustomUniformValues() {
+        for (let name in this.customUniforms) {
+            const value = this.customUniforms[name];
+            const loc = gl.getUniformLocation(this.shaderProgram, name);
+            if (loc === null) continue;
+            if (typeof value === 'number') {
+                gl.uniform1f(loc, value);
+            } else if (typeof value === 'boolean') {
+                gl.uniform1i(loc, value ? 1 : 0);
+            } else if (typeof value === 'object' && value && 'x' in value && 'y' in value) {
+                gl.uniform2f(loc, value.x, value.y);
+            } else if (typeof value === 'string') {
+                if (value.startsWith('#')) {
+                    const rgb = hexToRgb(value);
+                    gl.uniform3f(loc, rgb[0], rgb[1], rgb[2]);
+                } else {
+                    gl.uniform1f(loc, parseFloat(value) || 0);
+                }
+            }
+        }
+    }
+
+    bindSampledTextures() {
+        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+            if (!this.sampleTextures[i] || !this.sampleTextureLocations[i])
+                continue;
+            const textureLocation = this.sampleTextureLocations[i];
+            const media = this.sampleMedia[i];
+            const treatAsEmpty = !!media || ((media?.type == 'webcam' && media.element.readyState >= 2));
+            gl.activeTexture(gl.TEXTURE2 + i);
+            if (!treatAsEmpty) {
+                // No media: use a fallback texture.
+                gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
+                gl.uniform1i(textureLocation, 2 + i);
+            } else if (media.type === "tab") {
+                // For tab-sampled shaders, bind the target shader's offscreen texture.
+                const targetShader = shaderBuffers[media.tabIndex];
+                gl.bindTexture(gl.TEXTURE_2D, targetShader.textures[targetShader?.currentFramebufferIndex ^ 1]);
+                gl.uniform1i(textureLocation, 2 + i);
+            } else if (media.type === "video" || media.type === "webcam") {
+                gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texImage2D(
+                    gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media.element
+                );
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.uniform1i(textureLocation, 2 + i);
+            } else if (media.type === "audio") {
+                const { analyser, dataArray } = media;
+                analyser.getByteFrequencyData(dataArray);
+                gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texImage2D(
+                    gl.TEXTURE_2D, 0, gl.LUMINANCE, dataArray.length, 1, 0,
+                    gl.LUMINANCE, gl.UNSIGNED_BYTE, dataArray
+                );
+                gl.uniform1i(textureLocation, 2 + i);
+            } else if (media.type === "image") {
+                gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
+                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+                gl.texImage2D(
+                    gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media.element
+                );
+                if (isPowerOf2(media.element.width) && isPowerOf2(media.element.height)) {
+                    gl.generateMipmap(gl.TEXTURE_2D);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+                } else {
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                }
+                gl.uniform1i(textureLocation, 2 + i);
+            } else {
+                LOG(`WARN: uncaught shaderbuffer media.type case: ${media.type}`);
+            }
+        }
+    }
+
+    draw(timeMs) {
+        const gl = this.gl;
+        const dstIdx = this.currentFramebufferIndex;
+        const srcIdx = 1 - dstIdx;
+
+        // 1) bind our FBO
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers[dstIdx]);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        // 2) use our program
+        gl.useProgram(this.shaderProgram);
+
+        // 3) built-ins
+        if (this.timeLocation) gl.uniform1f(this.timeLocation, timeMs * 0.001);
+        if (this.resolutionLocation) gl.uniform2f(this.resolutionLocation, gl.canvas.width, gl.canvas.height);
+
+        this.updateCustomUniformValues();
+
+        // 4) user uniforms were already set via setUniform calls
+        this.bindSampledTextures();
+
+        // 5) draw a fullscreen quad
+        const posLoc = gl.getAttribLocation(this.shaderProgram, "a_position");
+        gl.enableVertexAttribArray(posLoc);
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+        // 6) flip-flop
+        this.currentFramebufferIndex = srcIdx;
+    }
+
+    updateBuiltinUniformLocations() {
+        if (!this.shaderProgram) return;
+        this.timeLocation = gl.getUniformLocation(this.shaderProgram, 'u_time');
+        this.resolutionLocation = gl.getUniformLocation(this.shaderProgram, 'u_resolution');
+        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+            this.sampleTextureLocations[i] =
+                gl.getUniformLocation(this.shaderProgram, `u_texture${i}`);
+        }
+    }
+
+    getOutputTexture() {
+        return this.textures[this.currentFramebufferIndex];
+    }
+}
+
 // =====================================
 // Part 3: WebGL Helpers & Quad Setup
 // =====================================
-function createShader(type, src) {
-    const s = gl.createShader(type);
-    gl.shaderSource(s, src);
-    gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-        logError('Shader compile error:', gl.getShaderInfoLog(s));
-        gl.deleteShader(s);
-        return null;
+class ShaderProgram {
+    constructor(gl, vsSrc, fsSrc) {
+        /** @type {WebGL2RenderingContext} */
+        this.gl = gl;
+        this.vsSrc = vsSrc;
+        this.fsSrc = fsSrc;
+        this.program = null;
+
+        if (vsSrc && fsSrc) {
+            this.compile();
+        }
     }
-    return s;
+
+    static createShader(type, src) {
+        const s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+            logError('Shader compile error:', gl.getShaderInfoLog(s));
+            gl.deleteShader(s);
+            return null;
+        }
+        return s;
+    };
+
+    // recompile shaders
+    compile(vsSrc, fsSrc) {
+        if (!vsSrc) vsSrc = this.vsSrc;
+        if (!fsSrc) fsSrc = this.fsSrc;
+        this.vsSrc = vsSrc;
+        this.fsSrc = fsSrc;
+        this.vs = ShaderProgram.createShader(this.gl.VERTEX_SHADER, vsSrc);
+        this.fs = ShaderProgram.createShader(this.gl.FRAGMENT_SHADER, fsSrc);
+        if (!this.vs || !this.fs) return null;
+        const prog = this.gl.createProgram();
+        this.gl.attachShader(prog, this.vs);
+        this.gl.attachShader(prog, this.fs);
+        this.gl.linkProgram(prog);
+        if (!this.gl.getProgramParameter(prog, this.gl.LINK_STATUS)) {
+            logError('Program link error:', this.gl.getProgramInfoLog(prog));
+            this.gl.deleteProgram(prog);
+            return null;
+        }
+        this.program = prog;
+        return prog;
+    };
+
+    // TODO: add uniform interface functions
+    // get uniform location
+    // set uniform val
+    //  these will be used to set texture uniforms as well
 }
+
+//                   goofy trick to preserve type information
+let shaderBuffers = [new ShaderBuffer()]; shaderBuffers = [];
 
 function createProgram(vsSrc, fsSrc) {
-    const vs = createShader(gl.VERTEX_SHADER, vsSrc);
-    const fs = createShader(gl.FRAGMENT_SHADER, fsSrc);
-    if (!vs || !fs) return null;
-    const prog = gl.createProgram();
-    gl.attachShader(prog, vs);
-    gl.attachShader(prog, fs);
-    gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-        logError('Program link error:', gl.getProgramInfoLog(prog));
-        gl.deleteProgram(prog);
-        return null;
-    }
-    return prog;
-}
-
-function createFramebuffer(w, h) {
-    const tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    const fb = gl.createFramebuffer();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) LOG('Warning: incomplete framebuffer');
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-    return { framebuffer: fb, texture: tex };
+    return new ShaderProgram(gl, vsSrc, fsSrc).compile();
+    // const vs = ShaderProgram.createShader(gl.VERTEX_SHADER, vsSrc);
+    // const fs = ShaderProgram.createShader(gl.FRAGMENT_SHADER, fsSrc);
+    // if (!vs || !fs) return null;
+    // const prog = gl.createProgram();
+    // gl.attachShader(prog, vs);
+    // gl.attachShader(prog, fs);
+    // gl.linkProgram(prog);
+    // if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    //     logError('Program link error:', gl.getProgramInfoLog(prog));
+    //     gl.deleteProgram(prog);
+    //     return null;
+    // }
+    // return prog;
 }
 
 const quadVertexShaderSource = `#version 300 es
@@ -246,14 +476,7 @@ function updateCanvasDimensions() {
     clampPreviewSize(canvas, 1000, 1000);
 
     // Recreate framebuffers/textures with new dimensions
-    gl.viewport(0, 0, width, height);
-    shaderBuffers.forEach(sb => {
-        const fbObjA = createFramebuffer(width, height);
-        const fbObjB = createFramebuffer(width, height);
-
-        sb.framebuffers = [fbObjA.framebuffer, fbObjB.framebuffer];
-        sb.textures = [fbObjA.texture, fbObjB.texture];
-    });
+    shaderBuffers.forEach(sb => sb._reallocateFramebuffersAndTextures(width, height));
     LOG(`Canvas dimensions set to ${width}x${height}`);
 }
 
@@ -334,7 +557,6 @@ let fragmentShaderSource = `#version 300 es
 // Part 7: ShaderBuffer Creation & Management
 // =====================================
 
-const MAX_TEXTURE_SLOTS = 4;
 const defaultControlSchema = {
     controls: [
         { type: 'slider', label: 'Speed', uniform: 'u_test', default: 0.5, min: 0, max: 1, step: 0.01 },
@@ -343,60 +565,7 @@ const defaultControlSchema = {
 };
 
 function createShaderBuffer(name, vertexSrc, fragmentSrc, shaderIndex = -69) {
-    const program = createProgram(vertexSrc, fragmentSrc);
-    if (!program) {
-        console.error("Failed to initialize shader program for", name);
-        return null;
-    }
-    const fbObjA = createFramebuffer(canvas.width, canvas.height);
-    const fbObjB = createFramebuffer(canvas.width, canvas.height);
-
-    let sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
-    let sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
-    let sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
-    for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-        sampleTextures[i] = gl.createTexture();
-    }
-
-    // Create persistent containers for controls and advanced media inputs
-    let controlContainer = document.createElement('div');
-    controlContainer.className = 'shader-control-panel';
-    document.getElementById('controls-container').appendChild(controlContainer);
-
-    let advancedInputsContainer = document.createElement('div');
-    advancedInputsContainer.className = 'advanced-inputs-container';
-    document.getElementById('advanced-inputs').appendChild(advancedInputsContainer);
-
-    // Each shader now gets its own customUniforms state
-    const customUniforms = {};
-
-    const shadBuf = {
-        name,
-        shaderProgram: program,
-        timeLocation: null,
-        resolutionLocation: null,
-        framebuffers: [fbObjA.framebuffer, fbObjB.framebuffer],
-        textures: [fbObjA.texture, fbObjB.texture],
-        currentFramebufferIndex: 0, // flip-flop this each frame
-        sampleTextures,
-        sampleTextureLocations,
-        sampleMedia,
-        controlSchema: defaultControlSchema, // default control schema
-        controlContainer,
-        advancedInputsContainer,
-        customUniforms,
-        vertexSrc,
-        fragmentSrc
-    };
-    updateBuiltinUniformLocations(shadBuf);
-
-    // Initialize advanced media inputs for each texture slot
-    for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-        let advancedInput = createAdvancedMediaInput(shadBuf, shaderIndex, i);
-        advancedInputsContainer.appendChild(advancedInput);
-    }
-
-    return shadBuf;
+    return new ShaderBuffer(name, new ShaderProgram(gl, vertexSrc, fragmentSrc), defaultControlSchema, shaderIndex);
 }
 
 let MAX_TAB_SLOTS = 8;
@@ -407,11 +576,6 @@ function initDefaultShaderBuffers() {
         buffers.push(createShaderBuffer(`Shader ${i + 1}`, vertexShaderSource, fragmentShaderSource, i));
     }
     shaderBuffers = buffers;
-    // let shader1 = createShaderBuffer("Shader 1", vertexShaderSource, fragmentShaderSource, 0);
-    // let shader2 = createShaderBuffer("Shader 2", vertexShaderSource, fragmentShaderSource, 1);
-    // let shader3 = createShaderBuffer("Shader 3", vertexShaderSource, fragmentShaderSource, 2);
-    // let shader4 = createShaderBuffer("Shader 4", vertexShaderSource, fragmentShaderSource, 3);
-    // shaderBuffers = [shader1, shader2, shader3, shader4];
 }
 
 // =====================================
@@ -644,7 +808,7 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
         shaderBuffers.forEach((shaderBuf, idx) => {
             const opt = document.createElement('option');
             opt.value = idx;  // use the tab index as the value.
-            opt.textContent = shaderBuf.name;
+            opt.textContent = shaderBuf.name; // TODO: refactor this read to update when shaderBuf.name changes
             tabSelect.appendChild(opt);
         });
         tabSelect.addEventListener('change', () => {
@@ -865,7 +1029,7 @@ function createShaderTabs() {
         tabButton.addEventListener('click', () => {
             editorSEX.close();
             currentViewIndex = index;
-            localStorage.cache.put('currentViewIndex', currentViewIndex);
+            localStorage.setItem('currentViewIndex', currentViewIndex);
             updateActiveViewUI();
         });
         tabContainer.appendChild(tabButton);
@@ -881,7 +1045,7 @@ function createControlSchemeTabs() {
         btn.addEventListener('click', () => {
             editorSEX.close();
             currentControlIndex = index;
-            localStorage.cache.put('currentControlIndex', currentControlIndex);
+            localStorage.setItem('currentControlIndex', currentControlIndex);
             updateActiveControlUI();
         });
         tabContainer.appendChild(btn);
@@ -1323,96 +1487,7 @@ function updateBuiltinUniformLocations(shaderBuf) {
 
 // TODO: only update shaders either in use or sampled by other shaders
 function updateAllShaderBuffers() {
-    // Loop through each shader buffer and update its offscreen texture.
-    // In reverse order so that sampled textures are (probably) updated before main shader
-    for (let idx = shaderBuffers.length - 1; idx > -1; idx--) {
-        const shaderBuffer = shaderBuffers[idx];
-
-        const srcTexIndex = 1 - shaderBuffer.currentFramebufferIndex; // The one NOT being written into
-        const dstFboIndex = shaderBuffer.currentFramebufferIndex;      // The one we WILL write into
-
-        // Bind the offscreen framebuffer of the shader buffer.
-        gl.bindFramebuffer(gl.FRAMEBUFFER, shaderBuffer.framebuffers[dstFboIndex]); gl.viewport(0, 0, canvas.width, canvas.height);
-        gl.clearColor(0, 0, 0, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-
-        // Use the shader's program and update its uniforms.
-        gl.useProgram(shaderBuffer.shaderProgram);
-        if (shaderBuffer.timeLocation)
-            gl.uniform1f(shaderBuffer.timeLocation, effectiveTime * 0.001);
-        if (shaderBuffer.resolutionLocation)
-            gl.uniform2f(shaderBuffer.resolutionLocation, canvas.width, canvas.height);
-        updateCustomUniformLocations(shaderBuffer);
-
-        // Bind the sample media textures.
-        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-            if (!shaderBuffer.sampleTextures[i] || !shaderBuffer.sampleTextureLocations[i])
-                continue;
-            const textureLocation = shaderBuffer.sampleTextureLocations[i];
-            const media = shaderBuffer.sampleMedia[i];
-            const treatAsEmpty = !!media || ((media?.type == 'webcam' && media.element.readyState >= 2));
-            gl.activeTexture(gl.TEXTURE2 + i);
-            if (!treatAsEmpty) {
-                // No media: use a fallback texture.
-                gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
-                gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "tab") {
-                // For tab-sampled shaders, bind the target shader's offscreen texture.
-                const targetShader = shaderBuffers[media.tabIndex];
-                gl.bindTexture(gl.TEXTURE_2D, targetShader.textures[targetShader.currentFramebufferIndex ^ 1]);
-                gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "video" || media.type === "webcam") {
-                gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
-                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                gl.texImage2D(
-                    gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media.element
-                );
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "audio") {
-                const { analyser, dataArray } = media;
-                analyser.getByteFrequencyData(dataArray);
-                gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                gl.texImage2D(
-                    gl.TEXTURE_2D, 0, gl.LUMINANCE, dataArray.length, 1, 0,
-                    gl.LUMINANCE, gl.UNSIGNED_BYTE, dataArray
-                );
-                gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "image") {
-                gl.bindTexture(gl.TEXTURE_2D, shaderBuffer.sampleTextures[i]);
-                gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-                gl.texImage2D(
-                    gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media.element
-                );
-                if (isPowerOf2(media.element.width) && isPowerOf2(media.element.height)) {
-                    gl.generateMipmap(gl.TEXTURE_2D);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-                } else {
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-                }
-                gl.uniform1i(textureLocation, 2 + i);
-            } else {
-                LOG(`WARN: uncaught shaderbuffer media.type case: ${media.type}`);
-            }
-        }
-
-        // Draw the full-screen quad to update the offscreen texture.
-        const posLoc = gl.getAttribLocation(shaderBuffer.shaderProgram, "a_position");
-        gl.enableVertexAttribArray(posLoc);
-        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-        shaderBuffer.currentFramebufferIndex ^= 1;
-    }
+    shaderBuffers.forEach(sb => sb.draw(effectiveTime));
 }
 
 function render(time) {
@@ -1438,8 +1513,8 @@ function render(time) {
     const quadTextureLocation = gl.getUniformLocation(quadProgram, "u_texture");
     gl.activeTexture(gl.TEXTURE0);
     // Use the currently active shader buffer’s updated offscreen texture.
-    const sh = shaderBuffers[currentViewIndex];
-    gl.bindTexture(gl.TEXTURE_2D, sh.textures[sh.currentFramebufferIndex]);
+    const target = shaderBuffers[currentViewIndex].getOutputTexture();
+    gl.bindTexture(gl.TEXTURE_2D, target);
     gl.uniform1i(quadTextureLocation, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
@@ -1750,13 +1825,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderControlsForShader(sb, sb.controlSchema);
     }
 
+    shaderBuffers.forEach(shaderBuffer => {
+        renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
+    });
+
     for (const sb of shaderBuffers) {
         await loadControlState(sb);
     }
 
-    shaderBuffers.forEach(shaderBuffer => {
-        renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
-    });
     updateActiveViewUI();
 
     requestAnimationFrame(render);
