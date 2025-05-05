@@ -66,7 +66,6 @@ class CacheManager {
 }
 
 const resourceCache = new CacheManager(DB_NAME, STORE_NAME, DB_VERSION);
-resourceCache.init().catch(err => { console.error('THIS SHOULD NOT HAPPEN! Failed to open cache:', err); });
 
 // =====================================
 // Part 1.5: Hotkey Helpers
@@ -1632,6 +1631,8 @@ function setupShaderEditor() {
 // =====================================
 // load/render/update things when page loaded
 document.addEventListener('DOMContentLoaded', async () => {
+    await resourceCache.init().then(() => console.log('resource cache loaded')).catch(err => { console.error('THIS SHOULD NOT HAPPEN! Failed to open cache:', err); });
+
     // bind buttons
     document.getElementById('update-canvas-dimensions').addEventListener('click', updateCanvasDimensions);
     presetDimensions = [
