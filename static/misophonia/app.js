@@ -158,9 +158,6 @@ class ShaderBuffer {
     constructor(name, program, controlSchema, shaderIndex) {
         this.name = name;
         this.gl = gl;
-        this.program = program;
-        console.log(`setting control schema to`, controlSchema);
-        this.controlSchema = controlSchema;
 
         this.width = canvas.width;
         this.height = canvas.height;
@@ -177,6 +174,11 @@ class ShaderBuffer {
             this.sampleTextures[i] = gl.createTexture();
         }
 
+        /** @type {ShaderProgram} **/
+        if (program) this.setProgram(program);
+        console.log(`setting control schema to`, controlSchema);
+        this.setControlSchema(controlSchema);
+
         this.controlContainer = document.createElement('div');
         this.controlContainer.className = 'shader-control-panel';
         document.getElementById('controls-container').appendChild(this.controlContainer);
@@ -188,15 +190,32 @@ class ShaderBuffer {
         this.customUniforms = {};
 
         this._reallocateFramebuffersAndTextures(canvas.width, canvas.height);
-        let p = this.program?.compile();
-        if (p) this.shaderProgram = p;
-        this.updateBuiltinUniformLocations();
 
         // Initialize advanced media inputs for each texture slot
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
             let advancedInput = createAdvancedMediaInput(this, shaderIndex, i);
             this.advancedInputsContainer.appendChild(advancedInput);
         }
+    }
+
+    setFragmentShader(fragSrc) {
+        return this.setProgram(new ShaderProgram(this.program.vsSrc, fragSrc, gl));
+    }
+
+    setProgram(shaderProgram) {
+        console.log(shaderProgram.vsSrc, shaderProgram.fsSrc);
+        const prog = shaderProgram.compile();
+        if (!prog) return false;
+        this.program = shaderProgram;
+        this.shaderProgram = prog;
+        this.updateBuiltinUniformLocations();
+        this.updateCustomUniformValues();
+        return true;
+    }
+
+    setControlSchema(controlSchema) {
+        this.controlSchema = controlSchema;
+        return true;
     }
 
     _reallocateFramebuffersAndTextures(w, h) {
@@ -360,9 +379,10 @@ class ShaderBuffer {
 // Part 3: WebGL Helpers & Quad Setup
 // =====================================
 class ShaderProgram {
-    constructor(gl, vsSrc, fsSrc) {
+    constructor(vsSrc, fsSrc, gl_) {
         /** @type {WebGL2RenderingContext} */
-        this.gl = gl;
+        if (gl_) this.gl = gl_;
+        else this.gl = gl;
         this.vsSrc = vsSrc;
         this.fsSrc = fsSrc;
         this.program = null;
@@ -383,6 +403,10 @@ class ShaderProgram {
         }
         return s;
     };
+
+    setFragmentShader(fsSrc) {
+        return this.compile(undefined, fsSrc);
+    }
 
     // recompile shaders
     compile(vsSrc, fsSrc) {
@@ -406,6 +430,15 @@ class ShaderProgram {
         return prog;
     };
 
+    getUniformLocation(name) {
+        // TODO: cache?
+        return this.gl.getUniformLocation(name);
+    }
+
+    setUniform(name, val) {
+        // TODO: this
+    }
+
     // TODO: add uniform interface functions
     // get uniform location
     // set uniform val
@@ -416,7 +449,7 @@ class ShaderProgram {
 let shaderBuffers = [new ShaderBuffer()]; shaderBuffers = [];
 
 function createProgram(vsSrc, fsSrc) {
-    return new ShaderProgram(gl, vsSrc, fsSrc).compile();
+    return new ShaderProgram(vsSrc, fsSrc, gl).compile();
     // const vs = ShaderProgram.createShader(gl.VERTEX_SHADER, vsSrc);
     // const fs = ShaderProgram.createShader(gl.FRAGMENT_SHADER, fsSrc);
     // if (!vs || !fs) return null;
@@ -442,6 +475,15 @@ const quadVertexShaderSource = `#version 300 es
   }
 `;
 const quadFragmentShaderSource = `#version 300 es
+  #ifdef GL_ES
+  precision mediump float;
+  #endif
+  #ifdef GL_FRAGMENT_PRECISION_HIGH
+  precision highp float;
+  #else
+  precision mediump float;
+  #endif
+
   precision mediump float;
   uniform sampler2D u_texture;
   in vec2 v_texCoord;
@@ -529,6 +571,12 @@ let fragmentShaderSource = `#version 300 es
   #ifdef GL_ES
   precision mediump float;
   #endif
+  #ifdef GL_FRAGMENT_PRECISION_HIGH
+  precision highp float;
+  #else
+  precision mediump float;
+  #endif
+
   uniform float u_time;
   uniform vec2 u_resolution;
   uniform sampler2D u_texture0;
@@ -563,16 +611,12 @@ const defaultControlSchema = {
     ]
 };
 
-function createShaderBuffer(name, vertexSrc, fragmentSrc, shaderIndex = -69) {
-    return new ShaderBuffer(name, new ShaderProgram(gl, vertexSrc, fragmentSrc), defaultControlSchema, shaderIndex);
-}
-
 let MAX_TAB_SLOTS = 8;
 function initDefaultShaderBuffers() {
     // For demonstration, create two shader buffers (tabs)
     let buffers = [];
     for (let i = 0; i < MAX_TAB_SLOTS; i++) {
-        buffers.push(createShaderBuffer(`Shader ${i + 1}`, vertexShaderSource, fragmentShaderSource, i));
+        buffers.push(new ShaderBuffer(`Shader ${i + 1}`, new ShaderProgram(vertexShaderSource, fragmentShaderSource, gl), defaultControlSchema, i));
     }
     shaderBuffers = buffers;
 }
@@ -1419,17 +1463,14 @@ async function loadConfigDirectory(name) {
 
     const fragSrc = await resourceCache.get(fragKey);
     if (typeof fragSrc === 'string') {
-        const prog = createProgram(vertexShaderSource, fragSrc);
+        const prog = active.setFragmentShader(fragSrc);
         if (!prog) {
-            logError(`Failed to compile shader from config "${name}"`);
-        } else {
-            active.shaderProgram = prog;
-            active.fragmentSrc = fragSrc;
-            active.vertexSrc = vertexShaderSource;
-            const key = `${currentViewIndex};fragmentSource`;
-            await resourceCache.put(key, fragSrc);
-            updateBuiltinUniformLocations(active);
+            logError(`❌ Failed to load ${name}`);
+            return;
         }
+        const key = `${currentViewIndex};fragmentSource`;
+        await resourceCache.put(key, fragSrc);
+        updateBuiltinUniformLocations(active);
     }
 
     const schema = await resourceCache.get(schemaKey);
