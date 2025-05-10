@@ -154,19 +154,10 @@ function clampPreviewSize(canvas, maxWidth = 300, maxHeight = 300) {
     canvas.style.height = displayHeight + 'px';
 }
 
-class ShaderBuffer {
-    constructor(name, program, controlSchema, shaderIndex) {
-        this.name = name;
-        this.gl = gl;
-
-        this.width = canvas.width;
-        this.height = canvas.height;
-
-        // will hold [fb0, fb1] and [tex0, tex1]
-        this.framebuffers = [];
-        this.textures = [];
-        this.currentFramebufferIndex = 0;
-
+class Uniforms {
+    constructor() {
+        this.customValues = {};
+        this.customLocations = {};
         this.sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
         this.sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
         this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
@@ -174,76 +165,12 @@ class ShaderBuffer {
             this.sampleTextures[i] = gl.createTexture();
         }
 
-        /** @type {ShaderProgram} **/
-        if (program) this.setProgram(program);
-        console.log(`setting control schema to`, controlSchema);
-        this.setControlSchema(controlSchema);
-
-        this.controlContainer = document.createElement('div');
-        this.controlContainer.className = 'shader-control-panel';
-        document.getElementById('controls-container').appendChild(this.controlContainer);
-
-        this.advancedInputsContainer = document.createElement('div');
-        this.advancedInputsContainer.className = 'advanced-inputs-container';
-        document.getElementById('advanced-inputs').appendChild(this.advancedInputsContainer);
-
-        this.customUniforms = {};
-
-        this._reallocateFramebuffersAndTextures(canvas.width, canvas.height);
-
-        // Initialize advanced media inputs for each texture slot
-        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-            let advancedInput = createAdvancedMediaInput(this, shaderIndex, i);
-            this.advancedInputsContainer.appendChild(advancedInput);
-        }
     }
 
-    setFragmentShader(fragSrc) {
-        return this.setProgram(new ShaderProgram(this.program.vsSrc, fragSrc, gl));
-    }
-
-    setProgram(p) {
-        const prog = p.compile();
-        if (!prog) return false;
-        this.customUniforms = {}; // TODO: populate custom uniform locations here instead of within renderControls
-        this.program = p;
-        this.shaderProgram = prog;
-        this.updateUniformLocations();
-        this.updateCustomUniformValues();
-        if (this.controlContainer) renderControlsForShader(this, this.controlSchema);
-        return true;
-    }
-
-    setControlSchema(controlSchema) {
-        this.controlSchema = controlSchema;
-        if (this.controlContainer) renderControlsForShader(this, controlSchema);
-        return true;
-    }
-
-    _reallocateFramebuffersAndTextures(w, h) {
-        gl.viewport(0, 0, w, h);
-        const fbObjA = ShaderBuffer.createGLFramebuffer(w, h);
-        const fbObjB = ShaderBuffer.createGLFramebuffer(w, h);
-        this.framebuffers = [fbObjA.framebuffer, fbObjB.framebuffer];
-        this.textures = [fbObjA.texture, fbObjB.texture];
-    }
-
-    static createGLFramebuffer(w, h) {
-        // const gl = this.gl;
-        const tex = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        const fb = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) LOG('Warning: incomplete framebuffer');
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        return { framebuffer: fb, texture: tex };
+    updateBuiltinValues(timeMs, res) {
+        if (this.timeLocation) gl.uniform1f(this.timeLocation, timeMs * 0.001);
+        if (this.resolutionLocation) gl.uniform2f(this.resolutionLocation, res.width, res.height);
+        this.bindSampledTextures()
     }
 
     bindSampledTextures() {
@@ -307,46 +234,12 @@ class ShaderBuffer {
         }
     }
 
-    draw(timeMs) {
-        const gl = this.gl;
-        const dstIdx = this.currentFramebufferIndex;
-        const srcIdx = 1 - dstIdx;
-
-        // 1) bind our FBO
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers[dstIdx]);
-        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-
-        // 2) use our program
-        gl.useProgram(this.shaderProgram);
-
-        // 3) built-ins
-        if (this.timeLocation) gl.uniform1f(this.timeLocation, timeMs * 0.001);
-        if (this.resolutionLocation) gl.uniform2f(this.resolutionLocation, gl.canvas.width, gl.canvas.height);
-
-        this.updateCustomUniformValues();
-
-        // 4) user uniforms were already set via setUniform calls
-        this.bindSampledTextures();
-
-        // 5) draw a fullscreen quad
-        const posLoc = gl.getAttribLocation(this.shaderProgram, "a_position");
-        gl.enableVertexAttribArray(posLoc);
-        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-        gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-        // 6) flip-flop
-        this.currentFramebufferIndex = srcIdx;
-    }
-
-    updateCustomUniformValues() {
-        // TODO: don't update locations every value update, that's silly
-        this.updateCustomUniformLocations(Object.keys(this.customUniforms));
-        for (let name in this.customUniforms) {
-            const value = this.customUniforms[name];
-            const loc = this.customUniformLocations[name];
+    updateCustomValues(customs) {
+        for (let name in customs) {
+            const value = customs[name];
+            const loc = this.customLocations[name];
             if (loc === null) continue;
+            if (!loc) continue; // TODO: this is too broad-- remove this line when all else works
             if (typeof value === 'number') {
                 gl.uniform1f(loc, value);
             } else if (typeof value === 'boolean') {
@@ -362,33 +255,158 @@ class ShaderBuffer {
                 }
             } else {
                 console.warn(`uniform ${name} receiving unknown type ${typeof value} of unknown value ${value} `);
+                console.warn(value, loc, name);
             }
         }
     }
 
+    updateValues(time, res, uniforms) {
+        if (uniforms) this.updateCustomValues(uniforms);
+        this.updateBuiltinValues(time, res);
+    }
+
     /** @param {[String]} names is a list of uniform names **/
-    updateCustomUniformLocations(names) {
-        this.customUniformLocations = {};
-        names.forEach((s) => {
-            const loc = this.gl.getUniformLocation(this.program.program, s);
-            this.customUniformLocations[s] = loc;
+    updateCustomLocations(prog, names) {
+        this.customLocations = {};
+        names?.forEach((s) => {
+            const loc = gl.getUniformLocation(prog, s);
+            this.customLocations[s] = loc;
         });
     }
 
-    updateBuiltinUniformLocations() {
-        if (!this.shaderProgram) return;
-        this.timeLocation = gl.getUniformLocation(this.shaderProgram, 'u_time');
-        this.resolutionLocation = gl.getUniformLocation(this.shaderProgram, 'u_resolution');
+    updateBuiltinLocations(prog) {
+        if (!prog) return;
+        this.timeLocation = gl.getUniformLocation(prog, 'u_time');
+        this.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
             this.sampleTextureLocations[i] =
-                gl.getUniformLocation(this.shaderProgram, `u_texture${i}`);
+                gl.getUniformLocation(prog, `u_texture${i}`);
         }
     }
 
+    updateLocations(prog, customNames) {
+        gl.useProgram(prog);
+        this.updateBuiltinLocations(prog);
+        this.updateCustomLocations(prog, customNames);
+    }
+}
+
+class ShaderBuffer {
+    constructor(name, program, controlSchema, shaderIndex) {
+        this.name = name;
+        this.gl = gl;
+
+        this.width = canvas.width;
+        this.height = canvas.height;
+
+        // will hold [fb0, fb1] and [tex0, tex1]
+        this.framebuffers = [];
+        this.textures = [];
+        this.currentFramebufferIndex = 0;
+
+        this.uniforms = new Uniforms();
+
+        // this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
+        this.sampleMedia = this.uniforms.sampleMedia; // TODO: fix codesmell
+
+        /** @type {ShaderProgram} **/
+        if (program) this.setProgram(program);
+        console.log(`setting control schema to`, controlSchema);
+        this.setControlSchema(controlSchema);
+
+        this.controlContainer = document.createElement('div');
+        this.controlContainer.className = 'shader-control-panel';
+        document.getElementById('controls-container').appendChild(this.controlContainer);
+
+        this.advancedInputsContainer = document.createElement('div');
+        this.advancedInputsContainer.className = 'advanced-inputs-container';
+        document.getElementById('advanced-inputs').appendChild(this.advancedInputsContainer);
+
+        this.customUniforms = {};
+
+        this._reallocateFramebuffersAndTextures(canvas.width, canvas.height);
+
+        // Initialize advanced media inputs for each texture slot
+        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+            let advancedInput = createAdvancedMediaInput(this, shaderIndex, i);
+            this.advancedInputsContainer.appendChild(advancedInput);
+        }
+    }
+
+    setFragmentShader(fragSrc) {
+        return this.setProgram(new ShaderProgram(this.program.vsSrc, fragSrc, gl));
+    }
+
+    /** @param {ShaderProgram} p */
+    setProgram(p) {
+        const prog = p.compile();
+        if (!prog) return false;
+        this.customUniforms = {}; // TODO: populate custom uniform locations here instead of within renderControls
+        this.program = p;
+        this.shaderProgram = prog;
+        this.updateUniformLocations();
+        if (this.controlContainer) renderControlsForShader(this, this.controlSchema);
+        return true;
+    }
+
     updateUniformLocations() {
-        this.updateBuiltinUniformLocations();
-        // TODO: customUniforms is populated in renderControls-- this is codesmell
-        this.updateCustomUniformLocations(Object.keys(this.customUniforms));
+        const us = this.controlSchema?.controls.map((o) => o.uniform);
+        this.uniforms.updateLocations(this.program.program, us);
+    }
+
+    setControlSchema(controlSchema) {
+        this.controlSchema = controlSchema;
+        if (this.controlContainer) renderControlsForShader(this, controlSchema);
+        return true;
+    }
+
+    _reallocateFramebuffersAndTextures(w, h) {
+        gl.viewport(0, 0, w, h);
+        const fbObjA = ShaderBuffer.createGLFramebuffer(w, h);
+        const fbObjB = ShaderBuffer.createGLFramebuffer(w, h);
+        this.framebuffers = [fbObjA.framebuffer, fbObjB.framebuffer];
+        this.textures = [fbObjA.texture, fbObjB.texture];
+    }
+
+    static createGLFramebuffer(w, h) {
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        const fb = gl.createFramebuffer();
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) LOG('Warning: incomplete framebuffer');
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        return { framebuffer: fb, texture: tex };
+    }
+
+    draw(timeMs) {
+        const gl = this.gl;
+        const dstIdx = this.currentFramebufferIndex;
+        const srcIdx = 1 - dstIdx;
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers[dstIdx]);
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
+        gl.useProgram(this.program.program);
+
+        this.updateUniformLocations(); // TODO: this line should go
+        this.uniforms.updateValues(
+            timeMs,
+            { width: gl.canvas.width, height: gl.canvas.height },
+            this.customUniforms
+        );
+
+        this.program.drawToPosition(quadBuffer);
+
+        // flip-flop
+        this.currentFramebufferIndex = srcIdx;
     }
 
     getOutputTexture() {
@@ -451,19 +469,16 @@ class ShaderProgram {
         return prog;
     };
 
-    getUniformLocation(name) {
-        // TODO: cache?
-        return this.gl.getUniformLocation(name);
+    drawToPosition(posBuf) {
+        gl.useProgram(this.program);
+        const posLoc = gl.getAttribLocation(this.program, "a_position");
+        gl.enableVertexAttribArray(posLoc);
+        gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+        gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
-    setUniform(name, val) {
-        // TODO: this
-    }
-
-    // TODO: add uniform interface functions
-    // get uniform location
-    // set uniform val
-    //  these will be used to set texture uniforms as well
+    // TODO: maybe move uniforms into the ShaderProgram
 }
 
 //                   goofy trick to preserve type information
@@ -502,8 +517,8 @@ const quadFragmentShaderSource = `#version 300 es
   }
 `;
 const quadProgram = createProgram(quadVertexShaderSource, quadFragmentShaderSource);
-const positionBuffer = gl.createBuffer();
-gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+const quadBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
 const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
@@ -1294,6 +1309,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                     if (option === initialValue) opt.selected = true;
                     inputElement.appendChild(opt);
                 });
+                inputElement.value = String(initialValue);
                 inputElement.addEventListener('change', e => {
                     shaderBuffer.customUniforms[control.uniform] = e.target.value;
                     saveControlState(shaderBuffer);
@@ -1522,7 +1538,7 @@ function render(time) {
     gl.useProgram(quadProgram);
     const quadPosLocation = gl.getAttribLocation(quadProgram, "a_position");
     gl.enableVertexAttribArray(quadPosLocation);
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
     gl.vertexAttribPointer(quadPosLocation, 2, gl.FLOAT, false, 0, 0);
     const quadTextureLocation = gl.getUniformLocation(quadProgram, "u_texture");
     gl.activeTexture(gl.TEXTURE0);
@@ -1761,7 +1777,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 2) Reset all in‑memory media & previews
         shaderBuffers.forEach((sb, sIdx) => {
-            sb.sampleMedia = sb.sampleMedia.map(() => null);
+            // sb.sampleMedia = sb.sampleMedia.map(() => null);
+            for (let i = 0; i < sb.sampleMedia.length; i++) {
+                sb.sampleMedia[i] = null; // TODO: cleanup this
+            }
             // clear each slot's preview container:
             const previews = sb.advancedInputsContainer.querySelectorAll('.media-preview');
             previews.forEach(p => p.innerHTML = '');
