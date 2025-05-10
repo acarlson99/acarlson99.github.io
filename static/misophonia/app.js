@@ -1359,6 +1359,7 @@ async function applyControlSchema(viewIndex, schema) {
 
     const key = `${viewIndex};controlSchema`;
     await resourceCache.put(key, schema);
+    await loadControlState(shaderBuffers[viewIndex]);
     return true;
 }
 async function applyShader(viewIndex, frag, vert) {
@@ -1661,6 +1662,7 @@ function setupShaderEditor() {
 // Part 14: Event Listener Setup
 // =====================================
 // load/render/update things when page loaded
+const cachedShaderData = {};
 document.addEventListener('DOMContentLoaded', async () => {
     await resourceCache.init().then(() => console.log('resource cache loaded')).catch(err => { console.error('THIS SHOULD NOT HAPPEN! Failed to open cache:', err); });
 
@@ -1797,63 +1799,71 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     setupShaderEditor();
 
-    // load cached media
-    const allKeys = await resourceCache.keys();
-    for (const key of allKeys) {
-        if (key.match('fragmentSource') || key.match('controlSchema')) continue;
-
-        const [sIdx, slotIdx] = key.split(';').map(Number);
-        const sb = shaderBuffers[sIdx];
-        if (!sb) continue;
-
-        const cached = await resourceCache.get(key);
-        const previewContainer = sb
-            .advancedInputsContainer
-            .children[slotIdx]
-            .querySelector('.media-preview');
-
-        // 1) Blob = file upload → use loadAndCacheMedia
-        if (cached instanceof Blob) {
-            await loadAndCacheMedia(cached, sb, slotIdx, previewContainer, false);
-
-            // 2) String = either JSON descriptor or URL
-        } else if (typeof cached === 'string') {
-            try {
-                const obj = JSON.parse(cached);
-
-                if (obj.type === 'tab') {
-                    // restore tab sampling
-                    sb.advancedInputsContainer.children[slotIdx].selectTab(obj.tabIndex);
-
-                } else if (obj.type === 'url') {
-                    // restore URL input
-                    await loadAndCacheMedia(obj.url, sb, slotIdx, previewContainer, false);
-                }
-
-            } catch {
-                // fallback: treat as a raw URL string
-                await loadAndCacheMedia(cached, sb, slotIdx, previewContainer, false);
-            }
-        }
-    }
-
     // load cached shaders
-    for (let idx = 0; idx < shaderBuffers.length; idx++) {
-        const sb = shaderBuffers[idx];
-        // 1) Shader source
-        const sourceKey = `${idx};fragmentSource`;
-        const src = await resourceCache.get(sourceKey);
-        if (typeof src === 'string') {
-            if (!sb.setFragmentShader(src)) {
-                logError(`Unable to set fragment shader for buffer ${idx}`);
+    await (async () => {
+        for (const key of await resourceCache.keys()) {
+            if (key.match('fragmentSource') || key.match('controlSchema')) continue;
+            const [sIdx, slotIdx] = key.split(';').map(Number);
+            if (!cachedShaderData[sIdx]) cachedShaderData[sIdx] = { media: {}, urls: {}, objs: {} };
+
+            const cached = await resourceCache.get(key);
+
+            if (cached instanceof Blob) {
+                cachedShaderData[sIdx].media[slotIdx] = cached;
+            } else if (typeof cached === 'string') {
+                try {
+                    const obj = JSON.parse(cached);
+                    cachedShaderData[sIdx].objs[slotIdx] = obj;
+                } catch {
+                    cachedShaderData[sIdx].urls[slotIdx] = cached;
+                }
             }
         }
 
-        // 2) Control schema
-        const schemaKey = `${idx};controlSchema`;
-        const schema = await resourceCache.get(schemaKey);
-        if (schema) sb.setControlSchema(schema);
-    }
+        for (let idx = 0; idx < shaderBuffers.length; idx++) {
+            const sb = shaderBuffers[idx];
+            const sourceKey = `${idx};fragmentSource`;
+            const src = await resourceCache.get(sourceKey);
+            if (typeof src === 'string') {
+                cachedShaderData[idx].shader = src;
+            }
+
+            const schemaKey = `${idx};controlSchema`;
+            const schema = await resourceCache.get(schemaKey);
+            if (schema) cachedShaderData[idx].schema = schema;
+        }
+
+        for (let idx = 0; idx < shaderBuffers.length; idx++) {
+            let dat = cachedShaderData[idx];
+            if (!dat) continue;
+
+            const sb = shaderBuffers[idx];
+
+            if (dat.schema) sb.setControlSchema(dat.schema);
+            if (dat.shader) sb.setFragmentShader(dat.shader);
+
+            for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+                const previewContainer = sb
+                    .advancedInputsContainer
+                    .children[i]
+                    .querySelector('.media-preview');
+                if (dat.media[i]) {
+                    await loadAndCacheMedia(dat.media[i], sb, i, previewContainer, false);
+                }
+                if (dat.objs[i]) {
+                    const o = dat.objs[i];
+                    if (o.type === 'tab') {
+                        sb.advancedInputsContainer.children[i].selectTab(o.tabIndex);
+                    } else if (o.type === 'url') {
+                        await loadAndCacheMedia(o.url, sb, i, previewContainer, false);
+                    }
+                }
+                if (dat.urls[i]) {
+                    await loadAndCacheMedia(cached, sb, i, previewContainer, false);
+                }
+            }
+        }
+    })()
 
     shaderBuffers.forEach(shaderBuffer => {
         renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
