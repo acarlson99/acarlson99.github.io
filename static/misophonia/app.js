@@ -202,19 +202,21 @@ class ShaderBuffer {
         return this.setProgram(new ShaderProgram(this.program.vsSrc, fragSrc, gl));
     }
 
-    setProgram(shaderProgram) {
-        console.log(shaderProgram.vsSrc, shaderProgram.fsSrc);
-        const prog = shaderProgram.compile();
+    setProgram(p) {
+        const prog = p.compile();
         if (!prog) return false;
-        this.program = shaderProgram;
+        this.customUniforms = {}; // TODO: populate custom uniform locations here instead of within renderControls
+        this.program = p;
         this.shaderProgram = prog;
-        this.updateBuiltinUniformLocations();
+        this.updateUniformLocations();
         this.updateCustomUniformValues();
+        if (this.controlContainer) renderControlsForShader(this, this.controlSchema);
         return true;
     }
 
     setControlSchema(controlSchema) {
         this.controlSchema = controlSchema;
+        if (this.controlContainer) renderControlsForShader(this, controlSchema);
         return true;
     }
 
@@ -242,28 +244,6 @@ class ShaderBuffer {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.bindTexture(gl.TEXTURE_2D, null);
         return { framebuffer: fb, texture: tex };
-    }
-
-    updateCustomUniformValues() {
-        for (let name in this.customUniforms) {
-            const value = this.customUniforms[name];
-            const loc = gl.getUniformLocation(this.shaderProgram, name);
-            if (loc === null) continue;
-            if (typeof value === 'number') {
-                gl.uniform1f(loc, value);
-            } else if (typeof value === 'boolean') {
-                gl.uniform1i(loc, value ? 1 : 0);
-            } else if (typeof value === 'object' && value && 'x' in value && 'y' in value) {
-                gl.uniform2f(loc, value.x, value.y);
-            } else if (typeof value === 'string') {
-                if (value.startsWith('#')) {
-                    const rgb = hexToRgb(value);
-                    gl.uniform3f(loc, rgb[0], rgb[1], rgb[2]);
-                } else {
-                    gl.uniform1f(loc, parseFloat(value) || 0);
-                }
-            }
-        }
     }
 
     bindSampledTextures() {
@@ -360,6 +340,41 @@ class ShaderBuffer {
         this.currentFramebufferIndex = srcIdx;
     }
 
+    updateCustomUniformValues() {
+        // TODO: don't update locations every value update, that's silly
+        this.updateCustomUniformLocations(Object.keys(this.customUniforms));
+        for (let name in this.customUniforms) {
+            const value = this.customUniforms[name];
+            const loc = this.customUniformLocations[name];
+            if (loc === null) continue;
+            if (typeof value === 'number') {
+                gl.uniform1f(loc, value);
+            } else if (typeof value === 'boolean') {
+                gl.uniform1i(loc, value ? 1 : 0);
+            } else if (typeof value === 'object' && value && 'x' in value && 'y' in value) {
+                gl.uniform2f(loc, value.x, value.y);
+            } else if (typeof value === 'string') {
+                if (value.startsWith('#')) {
+                    const rgb = hexToRgb(value);
+                    gl.uniform3f(loc, rgb[0], rgb[1], rgb[2]);
+                } else {
+                    gl.uniform1f(loc, parseFloat(value) || 0);
+                }
+            } else {
+                console.warn(`uniform ${name} receiving unknown type ${typeof value} of unknown value ${value} `);
+            }
+        }
+    }
+
+    /** @param {[String]} names is a list of uniform names **/
+    updateCustomUniformLocations(names) {
+        this.customUniformLocations = {};
+        names.forEach((s) => {
+            const loc = this.gl.getUniformLocation(this.program.program, s);
+            this.customUniformLocations[s] = loc;
+        });
+    }
+
     updateBuiltinUniformLocations() {
         if (!this.shaderProgram) return;
         this.timeLocation = gl.getUniformLocation(this.shaderProgram, 'u_time');
@@ -368,6 +383,12 @@ class ShaderBuffer {
             this.sampleTextureLocations[i] =
                 gl.getUniformLocation(this.shaderProgram, `u_texture${i}`);
         }
+    }
+
+    updateUniformLocations() {
+        this.updateBuiltinUniformLocations();
+        // TODO: customUniforms is populated in renderControls-- this is codesmell
+        this.updateCustomUniformLocations(Object.keys(this.customUniforms));
     }
 
     getOutputTexture() {
@@ -450,19 +471,6 @@ let shaderBuffers = [new ShaderBuffer()]; shaderBuffers = [];
 
 function createProgram(vsSrc, fsSrc) {
     return new ShaderProgram(vsSrc, fsSrc, gl).compile();
-    // const vs = ShaderProgram.createShader(gl.VERTEX_SHADER, vsSrc);
-    // const fs = ShaderProgram.createShader(gl.FRAGMENT_SHADER, fsSrc);
-    // if (!vs || !fs) return null;
-    // const prog = gl.createProgram();
-    // gl.attachShader(prog, vs);
-    // gl.attachShader(prog, fs);
-    // gl.linkProgram(prog);
-    // if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-    //     logError('Program link error:', gl.getProgramInfoLog(prog));
-    //     gl.deleteProgram(prog);
-    //     return null;
-    // }
-    // return prog;
 }
 
 const quadVertexShaderSource = `#version 300 es
@@ -1019,15 +1027,24 @@ async function saveControlState(shaderBuffer) {
     const key = `controls;${idx}`;
     await resourceCache.put(key, JSON.stringify(shaderBuffer.customUniforms));
 }
-async function loadControlState(shaderBuffer) {
+async function getControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
     const key = `controls;${idx}`;
     const str = await resourceCache.get(key);
     if (typeof str === 'string') {
         try {
-            shaderBuffer.customUniforms = JSON.parse(str);
-        } catch { }
+            return JSON.parse(str);
+        } catch {
+            logError(`Invalid value for control state\nkey:${key}\nval: ${str}`);
+            return null;
+        }
     }
+    return null;
+}
+async function loadControlState(shaderBuffer) {
+    const uniforms = await getControlState(shaderBuffer);
+    if (uniforms)
+        shaderBuffer.customUniforms = uniforms;
 }
 
 // =====================================
@@ -1321,22 +1338,17 @@ function renderControlsForShader(shaderBuffer, schema) {
 // Part 11: Directory Upload (JSON & Shader Files)
 // =====================================
 async function applyControlSchema(viewIndex, schema) {
-    const buf = shaderBuffers[viewIndex];
-    renderControlsForShader(buf, schema);
+    const ok = shaderBuffers[viewIndex].setControlSchema(schema);
+    if (!ok) return ok;
 
     const key = `${viewIndex};controlSchema`;
     await resourceCache.put(key, schema);
+    return true;
 }
 async function applyShader(viewIndex, frag, vert) {
-    const buf = shaderBuffers[viewIndex];
-    const prog = createProgram(vertexShaderSource, frag);
-    if (!prog) {
-        return false;
-    }
-    buf.shaderProgram = prog;
-    buf.fragmentSrc = frag;
-    buf.vertexSrc = vert;
-    updateBuiltinUniformLocations(buf);
+    if (!vert) vert = vertexShaderSource; // default
+    const ok = shaderBuffers[viewIndex].setProgram(new ShaderProgram(vert, frag, gl));
+    if (!ok) return false;
 
     const key = `${currentViewIndex};fragmentSource`;
     await resourceCache.put(key, frag);
@@ -1463,22 +1475,16 @@ async function loadConfigDirectory(name) {
 
     const fragSrc = await resourceCache.get(fragKey);
     if (typeof fragSrc === 'string') {
-        const prog = active.setFragmentShader(fragSrc);
-        if (!prog) {
+        const ok = applyShader(currentViewIndex, fragSrc, null);
+        if (!ok) {
             logError(`❌ Failed to load ${name}`);
             return;
         }
-        const key = `${currentViewIndex};fragmentSource`;
-        await resourceCache.put(key, fragSrc);
-        updateBuiltinUniformLocations(active);
     }
 
     const schema = await resourceCache.get(schemaKey);
     if (schema) {
-        active.controlSchema = schema;
-        const key = `${currentViewIndex};controlSchema`;
-        await resourceCache.put(key, schema);
-        renderControlsForShader(active, schema);
+        applyControlSchema(currentViewIndex, schema);
     }
 
     // rename the tab to the config name
@@ -1493,38 +1499,6 @@ async function loadConfigDirectory(name) {
 // =====================================
 // Part 12: Main Render Loop
 // =====================================
-function updateCustomUniformLocations(shaderBuffer) {
-    for (let name in shaderBuffer.customUniforms) {
-        const value = shaderBuffer.customUniforms[name];
-        const loc = gl.getUniformLocation(shaderBuffer.shaderProgram, name);
-        if (loc === null) continue;
-        if (typeof value === 'number') {
-            gl.uniform1f(loc, value);
-        } else if (typeof value === 'boolean') {
-            gl.uniform1i(loc, value ? 1 : 0);
-        } else if (typeof value === 'object' && value && 'x' in value && 'y' in value) {
-            gl.uniform2f(loc, value.x, value.y);
-        } else if (typeof value === 'string') {
-            if (value.startsWith('#')) {
-                const rgb = hexToRgb(value);
-                gl.uniform3f(loc, rgb[0], rgb[1], rgb[2]);
-            } else {
-                gl.uniform1f(loc, parseFloat(value) || 0);
-            }
-        }
-    }
-}
-
-function updateBuiltinUniformLocations(shaderBuf) {
-    const prog = shaderBuf.shaderProgram;
-    shaderBuf.timeLocation = gl.getUniformLocation(prog, 'u_time');
-    shaderBuf.resolutionLocation = gl.getUniformLocation(prog, 'u_resolution');
-    for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-        shaderBuf.sampleTextureLocations[i] =
-            gl.getUniformLocation(prog, `u_texture${i}`);
-    }
-}
-
 // TODO: only update shaders either in use or sampled by other shaders
 function updateAllShaderBuffers() {
     shaderBuffers.forEach(sb => sb.draw(effectiveTime));
@@ -1660,7 +1634,7 @@ function setupShaderEditor() {
         // Assign the new program
         sb.shaderProgram = prog;
         sb.fragmentSrc = newSource;
-        updateBuiltinUniformLocations(sb);
+        sb.updateUniformLocations();
 
         await resourceCache.put(`${currentViewIndex};fragmentSource`, newSource);
         logMessage('✅ Shader updated.');
@@ -1804,6 +1778,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     setupShaderEditor();
 
+    // load cached media
     const allKeys = await resourceCache.keys();
     for (const key of allKeys) {
         if (key.match('fragmentSource') || key.match('controlSchema')) continue;
@@ -1843,28 +1818,22 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // load cached shaders
     for (let idx = 0; idx < shaderBuffers.length; idx++) {
         const sb = shaderBuffers[idx];
         // 1) Shader source
         const sourceKey = `${idx};fragmentSource`;
         const src = await resourceCache.get(sourceKey);
         if (typeof src === 'string') {
-            const prog = createProgram(vertexShaderSource, src);
-            if (prog) {
-                sb.shaderProgram = prog;
-                sb.fragmentSrc = src; // for debugging mostly
-                sb.vertexSrc = vertexShaderSource; // for debugging mostly
-                updateBuiltinUniformLocations(sb);
+            if (!sb.setFragmentShader(src)) {
+                logError(`Unable to set fragment shader for buffer ${idx}`);
             }
         }
 
         // 2) Control schema
         const schemaKey = `${idx};controlSchema`;
         const schema = await resourceCache.get(schemaKey);
-        if (schema) sb.controlSchema = schema;
-
-        // 3) Rebuild that shader’s controls panel
-        renderControlsForShader(sb, sb.controlSchema);
+        if (schema) sb.setControlSchema(schema);
     }
 
     shaderBuffers.forEach(shaderBuffer => {
