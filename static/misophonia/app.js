@@ -156,10 +156,10 @@ function clampPreviewSize(canvas, maxWidth = 300, maxHeight = 300) {
 
 class Uniforms {
     constructor() {
-        this.customValues = {};
         this.customLocations = {};
         this.sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
         this.sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
+        // TODO: instead of assigning media to sampleMedia slots this should provide a way to easily assign media
         this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
             this.sampleTextures[i] = gl.createTexture();
@@ -239,7 +239,6 @@ class Uniforms {
             const value = customs[name];
             const loc = this.customLocations[name];
             if (loc === null) continue;
-            if (!loc) continue; // TODO: this is too broad-- remove this line when all else works
             if (typeof value === 'number') {
                 gl.uniform1f(loc, value);
             } else if (typeof value === 'boolean') {
@@ -331,6 +330,12 @@ class ShaderBuffer {
             let advancedInput = createAdvancedMediaInput(this, shaderIndex, i);
             this.advancedInputsContainer.appendChild(advancedInput);
         }
+    }
+
+    setName(s) {
+        this.name = s;
+        this.shaderTab.textContent = s;
+        this.controlTab.textContent = s;
     }
 
     setFragmentShader(fragSrc) {
@@ -871,11 +876,13 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
         tabSelect.appendChild(defaultOption);
 
         // List available shader buffers.
+        let opts = [];
         shaderBuffers.forEach((shaderBuf, idx) => {
             const opt = document.createElement('option');
             opt.value = idx;  // use the tab index as the value.
             opt.textContent = shaderBuf.name; // TODO: refactor this read to update when shaderBuf.name changes
             tabSelect.appendChild(opt);
+            opts.push(opt);
         });
         tabSelect.addEventListener('change', () => {
             const idx = parseInt(tabSelect.value);
@@ -892,6 +899,11 @@ function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
             // info.textContent = `Sampling from tab: ${shaderBuffers[shaderIndex].name}`;
             previewContainer.appendChild(info);
             updateRequiredHighlight();
+            // refresh selector names here if needed
+            // TODO: make this its own class function updateTabSelectorNames
+            for (let i = 0; i < opts.length; i++) {
+                opts[i].textContent = shaderBuffers[i].name;
+            }
         });
         inputControlsContainer.appendChild(tabSelect);
         inputControlsContainer.tabSelect = tabSelect;
@@ -1139,9 +1151,7 @@ function renderControlsForShader(shaderBuffer, schema) {
     shaderBuffer._autoToggleTimers = [];
     const tabIdx = shaderBuffers.indexOf(shaderBuffer);
     if (schema.name) {
-        shaderBuffer.name = `${schema.name} ${tabIdx + 1}`;
-        shaderBuffer.controlTab.innerText = shaderBuffer.name;
-        shaderBuffer.shaderTab.innerText = shaderBuffer.name;
+        shaderBuffer.setName(`${schema.name} ${tabIdx + 1}`);
     }
     schema?.controls?.forEach(control => {
         const controlDiv = document.createElement('div');
@@ -1505,9 +1515,7 @@ async function loadConfigDirectory(name) {
     }
 
     // rename the tab to the config name
-    active.name = name;
-    active.shaderTab.textContent = name;
-    active.controlTab.textContent = name;
+    active.setName(`${name} ${currentViewIndex + 1}`);
     updateActiveViewUI();
 
     logMessage(`✅ Loaded config "${name}" into tab ${currentViewIndex + 1}`);
@@ -1821,6 +1829,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         for (let idx = 0; idx < shaderBuffers.length; idx++) {
+            if (!cachedShaderData[idx]) cachedShaderData[idx] = { media: {}, urls: {}, objs: {} };
             const sb = shaderBuffers[idx];
             const sourceKey = `${idx};fragmentSource`;
             const src = await resourceCache.get(sourceKey);
