@@ -290,6 +290,252 @@ class Uniforms {
     }
 }
 
+// Main function to create the advanced media input interface.
+function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
+    const cacheKey = `${shaderIndex};${slotIndex}`;
+    LOG(`${cacheKey} ${shaderIndex}`);
+
+    const container = document.createElement('div');
+    container.className = 'advanced-media-input';
+
+    const slotLabel = document.createElement('span');
+    slotLabel.className = 'texture-slot-label';
+    slotLabel.textContent = `Texture ${slotIndex}`;
+    container.appendChild(slotLabel);
+
+    const infoIcon = document.createElement('span');
+    infoIcon.className = 'texture-slot-description';
+    infoIcon.innerText = '*';
+    infoIcon.title = 'help';
+    infoIcon.hidden = true; // default to invisible
+    container.appendChild(infoIcon);
+    container.appendChild(document.createElement('br'));
+
+    // Highlight required fields when unset
+    function updateRequiredHighlight() {
+        const inputTexInfo = (shaderBuffer?.controlSchema?.inputs || [])[slotIndex] || {};
+        const isRequired = Boolean(inputTexInfo.required);
+
+        if (isRequired && !shaderBuffer.sampleMedia[slotIndex]) {
+            container.style.backgroundColor = 'rgba(255, 0, 0, 0.2)';
+        } else {
+            container.style.backgroundColor = '';
+        }
+    }
+
+    const sourceSelect = document.createElement('select');
+    sourceSelect.innerHTML = `
+    <option value="none">None</option>
+    <option value="file">File Upload</option>
+    <option value="url">URL</option>
+    <option value="mic">Microphone</option>
+    <option value="webcam">Webcam</option>
+    <option value="tab">Tab Sample</option>
+    `;
+    container.appendChild(sourceSelect);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = 'Remove';
+    removeBtn.addEventListener('click', async () => {
+        try {
+            await resourceCache.delete(cacheKey);
+            logMessage(`Removed cache entry ${cacheKey}`);
+        } catch (err) {
+            logError(`Error deleting ${cacheKey}:`, err);
+        }
+        shaderBuffer.sampleMedia[slotIndex] = null;
+        resetMedia();
+        logMessage(`Slot ${slotIndex} unassigned.`);
+        updateRequiredHighlight();
+        sourceSelect.selectedIndex = 0;
+        sourceSelect.dispatchEvent(new Event('change'));
+    });
+    container.appendChild(removeBtn);
+
+    const inputControlsContainer = document.createElement('div');
+    inputControlsContainer.className = 'media-input-controls';
+    container.appendChild(inputControlsContainer);
+
+    const previewContainer = document.createElement('div');
+    previewContainer.id = `media-preview-${slotIndex}`;
+    previewContainer.className = 'media-preview';
+    container.appendChild(previewContainer);
+
+    function clearPreview() { previewContainer.innerHTML = ''; }
+    function resetMedia() { shaderBuffer.sampleMedia[slotIndex] = null; clearPreview(); resourceCache.delete(cacheKey); }
+
+    function setupFileInput() {
+        inputControlsContainer.innerHTML = '';
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*,video/*,audio/*';
+        fileInput.addEventListener('change', async (event) => {
+            resetMedia();
+            const file = event.target.files[0];
+            if (!file) return;
+            await loadAndCacheMedia(file, shaderBuffer, slotIndex, previewContainer, true, updateRequiredHighlight);
+        });
+        inputControlsContainer.appendChild(fileInput);
+    }
+
+    function setupUrlInput() {
+        inputControlsContainer.innerHTML = '';
+        const form = createUrlForm(async (url) => {
+            // TODO: this causes precached URL input to break
+            const descriptor = { type: "url", url };
+            await resourceCache.put(cacheKey, JSON.stringify(descriptor));
+
+            resetMedia();
+            const lowerUrl = url.toLowerCase();
+            await loadAndCacheMedia(lowerUrl, shaderBuffer, slotIndex, previewContainer, true, updateRequiredHighlight);
+        });
+        inputControlsContainer.appendChild(form);
+    }
+
+    function setupMicInput() {
+        inputControlsContainer.innerHTML = '';
+        const micBtn = document.createElement('button');
+        micBtn.textContent = 'Enable Microphone';
+        micBtn.addEventListener('click', () => {
+            resetMedia();
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    const audioContext = new AudioContext();
+                    const source = audioContext.createMediaStreamSource(stream);
+                    const analyser = audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    source.connect(analyser);
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    shaderBuffer.sampleMedia[slotIndex] = { type: "audio", element: null, analyser, dataArray };
+                    clearPreview();
+                    previewContainer.innerHTML = 'Microphone Enabled';
+                })
+                .catch(err => { logError("Error accessing microphone:", err); });
+            updateRequiredHighlight();
+        });
+        inputControlsContainer.appendChild(micBtn);
+    }
+
+    function setupTabSampleInput() {
+        inputControlsContainer.innerHTML = '';
+        const tabSelect = document.createElement('select');
+        // Add a default placeholder option.
+        const defaultOption = document.createElement('option');
+        defaultOption.value = "";
+        defaultOption.textContent = "-- Select a Shader Tab --";
+        tabSelect.appendChild(defaultOption);
+
+        // List available shader buffers.
+        let opts = [];
+        shaderBuffers.forEach((shaderBuf, idx) => {
+            const opt = document.createElement('option');
+            opt.value = idx;  // use the tab index as the value.
+            opt.textContent = shaderBuf.name; // TODO: refactor this read to update when shaderBuf.name changes
+            tabSelect.appendChild(opt);
+            opts.push(opt);
+        });
+        tabSelect.addEventListener('change', () => {
+            const idx = parseInt(tabSelect.value);
+            if (isNaN(idx)) return;
+            const descriptor = { type: "tab", tabIndex: idx };
+            resourceCache.put(cacheKey, JSON.stringify(descriptor));
+
+            // Store a reference to the target tab.
+            shaderBuffer.sampleMedia[slotIndex] = descriptor;
+            LOG(`sampling shaderBuffer ${shaderBuffer.sampleMedia[slotIndex].tabIndex}`)
+            clearPreview();
+            // Update preview area with simple text info.
+            const info = document.createElement('div');
+            // info.textContent = `Sampling from tab: ${shaderBuffers[shaderIndex].name}`;
+            previewContainer.appendChild(info);
+            updateRequiredHighlight();
+            // refresh selector names here if needed
+            // TODO: make this its own class function updateTabSelectorNames
+            for (let i = 0; i < opts.length; i++) {
+                opts[i].textContent = shaderBuffers[i].name;
+            }
+        });
+        inputControlsContainer.appendChild(tabSelect);
+        inputControlsContainer.tabSelect = tabSelect;
+    }
+
+    function setupWebcamInput() {
+        inputControlsContainer.innerHTML = '';
+        const camBtn = document.createElement('button');
+        camBtn.textContent = 'Enable Webcam';
+        camBtn.addEventListener('click', () => {
+            resetMedia();
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then(stream => {
+                    const video = loadVideoFromSource(null, shaderBuffer, slotIndex, previewContainer);
+                    shaderBuffer.sampleMedia[slotIndex] = null; // not ready yet
+                    video.srcObject = stream;
+                    video.autoplay = true;
+                    video.setAttribute('playsinline', '');
+                    video.addEventListener('loadeddata', () => {
+                        function updateLoop() {
+                            updateRequiredHighlight();
+                            if (shaderBuffer.sampleMedia[slotIndex]?.type === 'webcam') {
+                                requestAnimationFrame(updateLoop);
+                            }
+                        }
+                        clearPreview();
+                        previewContainer.appendChild(video);
+                        shaderBuffer.sampleMedia[slotIndex] = { type: 'webcam', element: video }; // ready now
+                        updateLoop();
+                    });
+                })
+                .catch(err => {
+                    logError("Error accessing webcam:", err);
+                });
+        });
+        inputControlsContainer.appendChild(camBtn);
+    }
+
+    sourceSelect.addEventListener('change', () => {
+        shaderBuffer.sampleMedia[slotIndex] = null;
+        clearPreview();
+        const val = sourceSelect.value;
+        if (val === 'file') setupFileInput();
+        else if (val === 'url') setupUrlInput();
+        else if (val === 'mic') setupMicInput();
+        else if (val === 'webcam') setupWebcamInput();
+        else if (val === 'tab') setupTabSampleInput();
+        else inputControlsContainer.innerHTML = '';
+        updateRequiredHighlight();
+    });
+    container.refreshHl = () => { updateRequiredHighlight(); };
+    container.setDescription = (desc) => {
+        if (desc) {
+            infoIcon.hidden = false;
+            infoIcon.title = desc;
+        } else {
+            infoIcon.hidden = true;
+        }
+    };
+    container.setInputName = (label) => { slotLabel.innerText = label; };
+    container.removeTexture = () => { removeBtn.dispatchEvent(new Event('click')); };
+    container.selectTab = (i) => {
+        const tabIdx = 5; // index 
+        sourceSelect.selectedIndex = tabIdx;
+        sourceSelect.dispatchEvent(new Event('change'));
+        inputControlsContainer.tabSelect.selectedIndex = i + 1;
+        inputControlsContainer.tabSelect.dispatchEvent(new Event('change'));
+        updateRequiredHighlight();
+    }
+    container.selectMediaTab = (i) => {
+        sourceSelect.selectedIndex = i;
+        sourceSelect.dispatchEvent(new Event('change'));
+        updateRequiredHighlight();
+        updateRequiredHighlight();
+    }
+
+    // Initial highlight
+    updateRequiredHighlight();
+
+    return container;
+}
+
 class ShaderBuffer {
     constructor(name, program, controlSchema, shaderIndex) {
         this.name = name;
@@ -326,9 +572,12 @@ class ShaderBuffer {
         this._reallocateFramebuffersAndTextures(canvas.width, canvas.height);
 
         // Initialize advanced media inputs for each texture slot
+        this.inputSlots = [];
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-            let advancedInput = createAdvancedMediaInput(this, shaderIndex, i);
-            this.advancedInputsContainer.appendChild(advancedInput);
+            let inp = new AdvancedMediaInput(this, shaderIndex, i);
+            // let inp = createAdvancedMediaInput(this, shaderIndex, i);
+            this.inputSlots.push(inp);
+            this.advancedInputsContainer.appendChild(inp.getElement());
         }
     }
 
@@ -740,252 +989,6 @@ function createUrlForm(callback) {
     return form;
 }
 
-// Main function to create the advanced media input interface.
-function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
-    const cacheKey = `${shaderIndex};${slotIndex}`;
-    LOG(`${cacheKey} ${shaderIndex}`);
-
-    const container = document.createElement('div');
-    container.className = 'advanced-media-input';
-
-    const slotLabel = document.createElement('span');
-    slotLabel.className = 'texture-slot-label';
-    slotLabel.textContent = `Texture ${slotIndex}`;
-    container.appendChild(slotLabel);
-
-    const infoIcon = document.createElement('span');
-    infoIcon.className = 'texture-slot-description';
-    infoIcon.innerText = '*';
-    infoIcon.title = 'help';
-    infoIcon.hidden = true; // default to invisible
-    container.appendChild(infoIcon);
-    container.appendChild(document.createElement('br'));
-
-    // Highlight required fields when unset
-    function updateRequiredHighlight() {
-        const inputTexInfo = (shaderBuffer?.controlSchema?.inputs || [])[slotIndex] || {};
-        const isRequired = Boolean(inputTexInfo.required);
-
-        if (isRequired && !shaderBuffer.sampleMedia[slotIndex]) {
-            container.style.backgroundColor = 'rgba(255, 0, 0, 0.2)';
-        } else {
-            container.style.backgroundColor = '';
-        }
-    }
-
-    const sourceSelect = document.createElement('select');
-    sourceSelect.innerHTML = `
-    <option value="none">None</option>
-    <option value="file">File Upload</option>
-    <option value="url">URL</option>
-    <option value="mic">Microphone</option>
-    <option value="webcam">Webcam</option>
-    <option value="tab">Tab Sample</option>
-    `;
-    container.appendChild(sourceSelect);
-
-    const removeBtn = document.createElement('button');
-    removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', async () => {
-        try {
-            await resourceCache.delete(cacheKey);
-            logMessage(`Removed cache entry ${cacheKey}`);
-        } catch (err) {
-            logError(`Error deleting ${cacheKey}:`, err);
-        }
-        shaderBuffer.sampleMedia[slotIndex] = null;
-        resetMedia();
-        logMessage(`Slot ${slotIndex} unassigned.`);
-        updateRequiredHighlight();
-        sourceSelect.selectedIndex = 0;
-        sourceSelect.dispatchEvent(new Event('change'));
-    });
-    container.appendChild(removeBtn);
-
-    const inputControlsContainer = document.createElement('div');
-    inputControlsContainer.className = 'media-input-controls';
-    container.appendChild(inputControlsContainer);
-
-    const previewContainer = document.createElement('div');
-    previewContainer.id = `media-preview-${slotIndex}`;
-    previewContainer.className = 'media-preview';
-    container.appendChild(previewContainer);
-
-    function clearPreview() { previewContainer.innerHTML = ''; }
-    function resetMedia() { shaderBuffer.sampleMedia[slotIndex] = null; clearPreview(); resourceCache.delete(cacheKey); }
-
-    function setupFileInput() {
-        inputControlsContainer.innerHTML = '';
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.accept = 'image/*,video/*,audio/*';
-        fileInput.addEventListener('change', async (event) => {
-            resetMedia();
-            const file = event.target.files[0];
-            if (!file) return;
-            await loadAndCacheMedia(file, shaderBuffer, slotIndex, previewContainer, true, updateRequiredHighlight);
-        });
-        inputControlsContainer.appendChild(fileInput);
-    }
-
-    function setupUrlInput() {
-        inputControlsContainer.innerHTML = '';
-        const form = createUrlForm(async (url) => {
-            // TODO: this causes precached URL input to break
-            const descriptor = { type: "url", url };
-            await resourceCache.put(cacheKey, JSON.stringify(descriptor));
-
-            resetMedia();
-            const lowerUrl = url.toLowerCase();
-            await loadAndCacheMedia(lowerUrl, shaderBuffer, slotIndex, previewContainer, true, updateRequiredHighlight);
-        });
-        inputControlsContainer.appendChild(form);
-    }
-
-    function setupMicInput() {
-        inputControlsContainer.innerHTML = '';
-        const micBtn = document.createElement('button');
-        micBtn.textContent = 'Enable Microphone';
-        micBtn.addEventListener('click', () => {
-            resetMedia();
-            navigator.mediaDevices.getUserMedia({ audio: true })
-                .then(stream => {
-                    const audioContext = new AudioContext();
-                    const source = audioContext.createMediaStreamSource(stream);
-                    const analyser = audioContext.createAnalyser();
-                    analyser.fftSize = 256;
-                    source.connect(analyser);
-                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                    shaderBuffer.sampleMedia[slotIndex] = { type: "audio", element: null, analyser, dataArray };
-                    clearPreview();
-                    previewContainer.innerHTML = 'Microphone Enabled';
-                })
-                .catch(err => { logError("Error accessing microphone:", err); });
-            updateRequiredHighlight();
-        });
-        inputControlsContainer.appendChild(micBtn);
-    }
-
-    function setupTabSampleInput() {
-        inputControlsContainer.innerHTML = '';
-        const tabSelect = document.createElement('select');
-        // Add a default placeholder option.
-        const defaultOption = document.createElement('option');
-        defaultOption.value = "";
-        defaultOption.textContent = "-- Select a Shader Tab --";
-        tabSelect.appendChild(defaultOption);
-
-        // List available shader buffers.
-        let opts = [];
-        shaderBuffers.forEach((shaderBuf, idx) => {
-            const opt = document.createElement('option');
-            opt.value = idx;  // use the tab index as the value.
-            opt.textContent = shaderBuf.name; // TODO: refactor this read to update when shaderBuf.name changes
-            tabSelect.appendChild(opt);
-            opts.push(opt);
-        });
-        tabSelect.addEventListener('change', () => {
-            const idx = parseInt(tabSelect.value);
-            if (isNaN(idx)) return;
-            const descriptor = { type: "tab", tabIndex: idx };
-            resourceCache.put(cacheKey, JSON.stringify(descriptor));
-
-            // Store a reference to the target tab.
-            shaderBuffer.sampleMedia[slotIndex] = descriptor;
-            LOG(`sampling shaderBuffer ${shaderBuffer.sampleMedia[slotIndex].tabIndex}`)
-            clearPreview();
-            // Update preview area with simple text info.
-            const info = document.createElement('div');
-            // info.textContent = `Sampling from tab: ${shaderBuffers[shaderIndex].name}`;
-            previewContainer.appendChild(info);
-            updateRequiredHighlight();
-            // refresh selector names here if needed
-            // TODO: make this its own class function updateTabSelectorNames
-            for (let i = 0; i < opts.length; i++) {
-                opts[i].textContent = shaderBuffers[i].name;
-            }
-        });
-        inputControlsContainer.appendChild(tabSelect);
-        inputControlsContainer.tabSelect = tabSelect;
-    }
-
-    function setupWebcamInput() {
-        inputControlsContainer.innerHTML = '';
-        const camBtn = document.createElement('button');
-        camBtn.textContent = 'Enable Webcam';
-        camBtn.addEventListener('click', () => {
-            resetMedia();
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(stream => {
-                    const video = loadVideoFromSource(null, shaderBuffer, slotIndex, previewContainer);
-                    shaderBuffer.sampleMedia[slotIndex] = null; // not ready yet
-                    video.srcObject = stream;
-                    video.autoplay = true;
-                    video.setAttribute('playsinline', '');
-                    video.addEventListener('loadeddata', () => {
-                        function updateLoop() {
-                            updateRequiredHighlight();
-                            if (shaderBuffer.sampleMedia[slotIndex]?.type === 'webcam') {
-                                requestAnimationFrame(updateLoop);
-                            }
-                        }
-                        clearPreview();
-                        previewContainer.appendChild(video);
-                        shaderBuffer.sampleMedia[slotIndex] = { type: 'webcam', element: video }; // ready now
-                        updateLoop();
-                    });
-                })
-                .catch(err => {
-                    logError("Error accessing webcam:", err);
-                });
-        });
-        inputControlsContainer.appendChild(camBtn);
-    }
-
-    sourceSelect.addEventListener('change', () => {
-        shaderBuffer.sampleMedia[slotIndex] = null;
-        clearPreview();
-        const val = sourceSelect.value;
-        if (val === 'file') setupFileInput();
-        else if (val === 'url') setupUrlInput();
-        else if (val === 'mic') setupMicInput();
-        else if (val === 'webcam') setupWebcamInput();
-        else if (val === 'tab') setupTabSampleInput();
-        else inputControlsContainer.innerHTML = '';
-        updateRequiredHighlight();
-    });
-    container.refreshHl = () => { updateRequiredHighlight(); };
-    container.setDescription = (desc) => {
-        if (desc) {
-            infoIcon.hidden = false;
-            infoIcon.title = desc;
-        } else {
-            infoIcon.hidden = true;
-        }
-    };
-    container.setInputName = (label) => { slotLabel.innerText = label; };
-    container.removeTexture = () => { removeBtn.dispatchEvent(new Event('click')); };
-    container.selectTab = (i) => {
-        const tabIdx = 5; // index 
-        sourceSelect.selectedIndex = tabIdx;
-        sourceSelect.dispatchEvent(new Event('change'));
-        inputControlsContainer.tabSelect.selectedIndex = i + 1;
-        inputControlsContainer.tabSelect.dispatchEvent(new Event('change'));
-        updateRequiredHighlight();
-    }
-    container.selectMediaTab = (i) => {
-        sourceSelect.selectedIndex = i;
-        sourceSelect.dispatchEvent(new Event('change'));
-        updateRequiredHighlight();
-        updateRequiredHighlight();
-    }
-
-    // Initial highlight
-    updateRequiredHighlight();
-
-    return container;
-}
-
 /**
  * Load one media asset into a shader slot, optionally caching it.
  *
@@ -1346,7 +1349,8 @@ function renderControlsForShader(shaderBuffer, schema) {
     for (let i = 0; i < schema.inputs?.length; i++) {
         const input = schema.inputs[i];
         const label = input.name;
-        const inputController = shaderBuffer.advancedInputsContainer.children[i];
+        const inputController = shaderBuffer.inputSlots[i];
+        // const inputController = shaderBuffer.advancedInputsContainer.children[i];
         inputController.setInputName(label);
         const desc = input.description;
         inputController.setDescription(desc);
@@ -1355,7 +1359,7 @@ function renderControlsForShader(shaderBuffer, schema) {
         if (input.autoAssign == 'self') {
             inputController.selectTab(tabIdx);
         }
-        inputController.refreshHl();
+        inputController.updateRequiredHighlight();
     }
     shaderBuffer.controlSchema = schema;
 }
@@ -1852,17 +1856,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (dat.shader) sb.setFragmentShader(dat.shader);
 
             for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-                const previewContainer = sb
-                    .advancedInputsContainer
-                    .children[i]
-                    .querySelector('.media-preview');
+                const previewContainer = sb.inputSlots[i].previewContainer;
                 if (dat.media[i]) {
                     await loadAndCacheMedia(dat.media[i], sb, i, previewContainer, false);
                 }
                 if (dat.objs[i]) {
                     const o = dat.objs[i];
                     if (o.type === 'tab') {
-                        sb.advancedInputsContainer.children[i].selectTab(o.tabIndex);
+                        sb.inputSlots[i].selectTab(o.tabIndex);
                     } else if (o.type === 'url') {
                         await loadAndCacheMedia(o.url, sb, i, previewContainer, false);
                     }
