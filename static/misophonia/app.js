@@ -290,250 +290,257 @@ class Uniforms {
     }
 }
 
-// Main function to create the advanced media input interface.
-function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
-    const cacheKey = `${shaderIndex};${slotIndex}`;
-    LOG(`${cacheKey} ${shaderIndex}`);
+class AdvancedMediaInput {
+    constructor(shaderBuffer, shaderIndex, slotIndex) {
+        this.shaderBuffer = shaderBuffer;
+        this.shaderIndex = shaderIndex;
+        this.slotIndex = slotIndex;
+        this.cacheKey = `${shaderIndex};${slotIndex}`;
+        this.container = document.createElement('div');
+        this.container.className = 'advanced-media-input';
 
-    const container = document.createElement('div');
-    container.className = 'advanced-media-input';
-
-    const slotLabel = document.createElement('span');
-    slotLabel.className = 'texture-slot-label';
-    slotLabel.textContent = `Texture ${slotIndex}`;
-    container.appendChild(slotLabel);
-
-    const infoIcon = document.createElement('span');
-    infoIcon.className = 'texture-slot-description';
-    infoIcon.innerText = '*';
-    infoIcon.title = 'help';
-    infoIcon.hidden = true; // default to invisible
-    container.appendChild(infoIcon);
-    container.appendChild(document.createElement('br'));
-
-    // Highlight required fields when unset
-    function updateRequiredHighlight() {
-        const inputTexInfo = (shaderBuffer?.controlSchema?.inputs || [])[slotIndex] || {};
-        const isRequired = Boolean(inputTexInfo.required);
-
-        if (isRequired && !shaderBuffer.sampleMedia[slotIndex]) {
-            container.style.backgroundColor = 'rgba(255, 0, 0, 0.2)';
-        } else {
-            container.style.backgroundColor = '';
-        }
+        this.buildUI();
+        this.updateRequiredHighlight();
     }
 
-    const sourceSelect = document.createElement('select');
-    sourceSelect.innerHTML = `
-    <option value="none">None</option>
-    <option value="file">File Upload</option>
-    <option value="url">URL</option>
-    <option value="mic">Microphone</option>
-    <option value="webcam">Webcam</option>
-    <option value="tab">Tab Sample</option>
-    `;
-    container.appendChild(sourceSelect);
+    buildUI() {
+        const { slotIndex } = this;
 
-    const removeBtn = document.createElement('button');
-    removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', async () => {
+        this.slotLabel = document.createElement('span');
+        this.slotLabel.className = 'texture-slot-label';
+        this.slotLabel.textContent = `Texture ${slotIndex}`;
+
+        this.infoIcon = document.createElement('span');
+        this.infoIcon.className = 'texture-slot-description';
+        this.infoIcon.innerText = '*';
+        this.infoIcon.title = 'help';
+        this.infoIcon.hidden = true;
+
+        this.container.append(this.slotLabel, this.infoIcon, document.createElement('br'));
+
+        this.sourceSelect = document.createElement('select');
+        this.sourceSelect.innerHTML = `
+            <option value="none">None</option>
+            <option value="file">File Upload</option>
+            <option value="url">URL</option>
+            <option value="mic">Microphone</option>
+            <option value="webcam">Webcam</option>
+            <option value="tab">Tab Sample</option>
+        `;
+        this.sourceSelect.addEventListener('change', () => this.handleSourceChange());
+        this.container.appendChild(this.sourceSelect);
+
+        this.removeBtn = document.createElement('button');
+        this.removeBtn.textContent = 'Remove';
+        this.removeBtn.addEventListener('click', () => this.removeTexture());
+        this.container.appendChild(this.removeBtn);
+
+        this.inputControlsContainer = document.createElement('div');
+        this.inputControlsContainer.className = 'media-input-controls';
+        this.container.appendChild(this.inputControlsContainer);
+
+        this.previewContainer = document.createElement('div');
+        this.previewContainer.id = `media-preview-${slotIndex}`;
+        this.previewContainer.className = 'media-preview';
+        this.container.appendChild(this.previewContainer);
+    }
+
+    updateRequiredHighlight() {
+        const inputTexInfo = (this.shaderBuffer?.controlSchema?.inputs || [])[this.slotIndex] || {};
+        const isRequired = Boolean(inputTexInfo.required);
+        const hasMedia = this.shaderBuffer.sampleMedia[this.slotIndex];
+        this.container.style.backgroundColor = isRequired && !hasMedia ? 'rgba(255, 0, 0, 0.2)' : '';
+    }
+
+    clearPreview() {
+        this.previewContainer.innerHTML = '';
+    }
+
+    resetMedia() {
+        this.shaderBuffer.sampleMedia[this.slotIndex] = null;
+        this.clearPreview();
+        resourceCache.delete(this.cacheKey);
+    }
+
+    handleSourceChange() {
+        this.shaderBuffer.sampleMedia[this.slotIndex] = null;
+        this.clearPreview();
+        const val = this.sourceSelect.value;
+        if (val === 'file') this.setupFileInput();
+        else if (val === 'url') this.setupUrlInput();
+        else if (val === 'mic') this.setupMicInput();
+        else if (val === 'webcam') this.setupWebcamInput();
+        else if (val === 'tab') this.setupTabSampleInput();
+        else this.inputControlsContainer.innerHTML = '';
+        this.updateRequiredHighlight();
+    }
+
+    async removeTexture() {
         try {
-            await resourceCache.delete(cacheKey);
-            logMessage(`Removed cache entry ${cacheKey}`);
+            await resourceCache.delete(this.cacheKey);
+            logMessage(`Removed cache entry ${this.cacheKey}`);
         } catch (err) {
-            logError(`Error deleting ${cacheKey}:`, err);
+            logError(`Error deleting ${this.cacheKey}:`, err);
         }
-        shaderBuffer.sampleMedia[slotIndex] = null;
-        resetMedia();
-        logMessage(`Slot ${slotIndex} unassigned.`);
-        updateRequiredHighlight();
-        sourceSelect.selectedIndex = 0;
-        sourceSelect.dispatchEvent(new Event('change'));
-    });
-    container.appendChild(removeBtn);
+        this.shaderBuffer.sampleMedia[this.slotIndex] = null;
+        this.resetMedia();
+        logMessage(`Slot ${this.slotIndex} unassigned.`);
+        this.sourceSelect.selectedIndex = 0;
+        this.sourceSelect.dispatchEvent(new Event('change'));
+    }
 
-    const inputControlsContainer = document.createElement('div');
-    inputControlsContainer.className = 'media-input-controls';
-    container.appendChild(inputControlsContainer);
-
-    const previewContainer = document.createElement('div');
-    previewContainer.id = `media-preview-${slotIndex}`;
-    previewContainer.className = 'media-preview';
-    container.appendChild(previewContainer);
-
-    function clearPreview() { previewContainer.innerHTML = ''; }
-    function resetMedia() { shaderBuffer.sampleMedia[slotIndex] = null; clearPreview(); resourceCache.delete(cacheKey); }
-
-    function setupFileInput() {
-        inputControlsContainer.innerHTML = '';
+    setupFileInput() {
+        this.inputControlsContainer.innerHTML = '';
         const fileInput = document.createElement('input');
         fileInput.type = 'file';
         fileInput.accept = 'image/*,video/*,audio/*';
         fileInput.addEventListener('change', async (event) => {
-            resetMedia();
+            this.resetMedia();
             const file = event.target.files[0];
             if (!file) return;
-            await loadAndCacheMedia(file, shaderBuffer, slotIndex, previewContainer, true, updateRequiredHighlight);
+            await loadAndCacheMedia(file, this.shaderBuffer, this.slotIndex, this.previewContainer, true, () => this.updateRequiredHighlight());
         });
-        inputControlsContainer.appendChild(fileInput);
+        this.inputControlsContainer.appendChild(fileInput);
     }
 
-    function setupUrlInput() {
-        inputControlsContainer.innerHTML = '';
+    setupUrlInput() {
+        this.inputControlsContainer.innerHTML = '';
         const form = createUrlForm(async (url) => {
-            // TODO: this causes precached URL input to break
             const descriptor = { type: "url", url };
-            await resourceCache.put(cacheKey, JSON.stringify(descriptor));
-
-            resetMedia();
-            const lowerUrl = url.toLowerCase();
-            await loadAndCacheMedia(lowerUrl, shaderBuffer, slotIndex, previewContainer, true, updateRequiredHighlight);
+            await resourceCache.put(this.cacheKey, JSON.stringify(descriptor));
+            this.resetMedia();
+            await loadAndCacheMedia(url.toLowerCase(), this.shaderBuffer, this.slotIndex, this.previewContainer, true, () => this.updateRequiredHighlight());
         });
-        inputControlsContainer.appendChild(form);
+        this.inputControlsContainer.appendChild(form);
     }
 
-    function setupMicInput() {
-        inputControlsContainer.innerHTML = '';
+    setupMicInput() {
+        this.inputControlsContainer.innerHTML = '';
         const micBtn = document.createElement('button');
         micBtn.textContent = 'Enable Microphone';
         micBtn.addEventListener('click', () => {
-            resetMedia();
+            this.resetMedia();
             navigator.mediaDevices.getUserMedia({ audio: true })
                 .then(stream => {
                     const audioContext = new AudioContext();
                     const source = audioContext.createMediaStreamSource(stream);
                     const analyser = audioContext.createAnalyser();
                     analyser.fftSize = 256;
-                    source.connect(analyser);
                     const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                    shaderBuffer.sampleMedia[slotIndex] = { type: "audio", element: null, analyser, dataArray };
-                    clearPreview();
-                    previewContainer.innerHTML = 'Microphone Enabled';
+                    source.connect(analyser);
+                    this.shaderBuffer.sampleMedia[this.slotIndex] = { type: "audio", element: null, analyser, dataArray };
+                    this.clearPreview();
+                    this.previewContainer.innerHTML = 'Microphone Enabled';
+                    this.updateRequiredHighlight();
                 })
-                .catch(err => { logError("Error accessing microphone:", err); });
-            updateRequiredHighlight();
+                .catch(err => logError("Error accessing microphone:", err));
         });
-        inputControlsContainer.appendChild(micBtn);
+        this.inputControlsContainer.appendChild(micBtn);
     }
 
-    function setupTabSampleInput() {
-        inputControlsContainer.innerHTML = '';
+    setupTabSampleInput() {
+        this.inputControlsContainer.innerHTML = '';
         const tabSelect = document.createElement('select');
-        // Add a default placeholder option.
         const defaultOption = document.createElement('option');
         defaultOption.value = "";
         defaultOption.textContent = "-- Select a Shader Tab --";
         tabSelect.appendChild(defaultOption);
 
-        // List available shader buffers.
         let opts = [];
+        const refreshOptsNames = () => {
+            for (let i = 0; i < opts.length; i++) {
+                opts[i].textContent = shaderBuffers[i].name;
+            }
+        }
         shaderBuffers.forEach((shaderBuf, idx) => {
             const opt = document.createElement('option');
-            opt.value = idx;  // use the tab index as the value.
-            opt.textContent = shaderBuf.name; // TODO: refactor this read to update when shaderBuf.name changes
+            opt.value = idx;
+            opt.textContent = shaderBuf.name;
             tabSelect.appendChild(opt);
             opts.push(opt);
         });
+
         tabSelect.addEventListener('change', () => {
             const idx = parseInt(tabSelect.value);
             if (isNaN(idx)) return;
             const descriptor = { type: "tab", tabIndex: idx };
-            resourceCache.put(cacheKey, JSON.stringify(descriptor));
-
-            // Store a reference to the target tab.
-            shaderBuffer.sampleMedia[slotIndex] = descriptor;
-            LOG(`sampling shaderBuffer ${shaderBuffer.sampleMedia[slotIndex].tabIndex}`)
-            clearPreview();
-            // Update preview area with simple text info.
+            resourceCache.put(this.cacheKey, JSON.stringify(descriptor));
+            this.shaderBuffer.sampleMedia[this.slotIndex] = descriptor;
+            this.clearPreview();
             const info = document.createElement('div');
-            // info.textContent = `Sampling from tab: ${shaderBuffers[shaderIndex].name}`;
-            previewContainer.appendChild(info);
-            updateRequiredHighlight();
-            // refresh selector names here if needed
-            // TODO: make this its own class function updateTabSelectorNames
-            for (let i = 0; i < opts.length; i++) {
-                opts[i].textContent = shaderBuffers[i].name;
-            }
+            this.previewContainer.appendChild(info);
+            refreshOptsNames();
+            this.updateRequiredHighlight();
         });
-        inputControlsContainer.appendChild(tabSelect);
-        inputControlsContainer.tabSelect = tabSelect;
+        tabSelect.addEventListener('click', () => {
+            refreshOptsNames();
+            this.updateRequiredHighlight()
+        });
+
+        this.inputControlsContainer.appendChild(tabSelect);
+        this.inputControlsContainer.tabSelect = tabSelect;
     }
 
-    function setupWebcamInput() {
-        inputControlsContainer.innerHTML = '';
+    setupWebcamInput() {
+        this.inputControlsContainer.innerHTML = '';
         const camBtn = document.createElement('button');
         camBtn.textContent = 'Enable Webcam';
         camBtn.addEventListener('click', () => {
-            resetMedia();
+            this.resetMedia();
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then(stream => {
-                    const video = loadVideoFromSource(null, shaderBuffer, slotIndex, previewContainer);
-                    shaderBuffer.sampleMedia[slotIndex] = null; // not ready yet
+                    const video = loadVideoFromSource(null, this.shaderBuffer, this.slotIndex, this.previewContainer);
                     video.srcObject = stream;
                     video.autoplay = true;
                     video.setAttribute('playsinline', '');
                     video.addEventListener('loadeddata', () => {
-                        function updateLoop() {
-                            updateRequiredHighlight();
-                            if (shaderBuffer.sampleMedia[slotIndex]?.type === 'webcam') {
+                        const updateLoop = () => {
+                            this.updateRequiredHighlight();
+                            if (this.shaderBuffer.sampleMedia[this.slotIndex]?.type === 'webcam') {
                                 requestAnimationFrame(updateLoop);
                             }
-                        }
-                        clearPreview();
-                        previewContainer.appendChild(video);
-                        shaderBuffer.sampleMedia[slotIndex] = { type: 'webcam', element: video }; // ready now
+                        };
+                        this.clearPreview();
+                        this.previewContainer.appendChild(video);
+                        this.shaderBuffer.sampleMedia[this.slotIndex] = { type: 'webcam', element: video };
                         updateLoop();
                     });
                 })
-                .catch(err => {
-                    logError("Error accessing webcam:", err);
-                });
+                .catch(err => logError("Error accessing webcam:", err));
         });
-        inputControlsContainer.appendChild(camBtn);
+        this.inputControlsContainer.appendChild(camBtn);
     }
 
-    sourceSelect.addEventListener('change', () => {
-        shaderBuffer.sampleMedia[slotIndex] = null;
-        clearPreview();
-        const val = sourceSelect.value;
-        if (val === 'file') setupFileInput();
-        else if (val === 'url') setupUrlInput();
-        else if (val === 'mic') setupMicInput();
-        else if (val === 'webcam') setupWebcamInput();
-        else if (val === 'tab') setupTabSampleInput();
-        else inputControlsContainer.innerHTML = '';
-        updateRequiredHighlight();
-    });
-    container.refreshHl = () => { updateRequiredHighlight(); };
-    container.setDescription = (desc) => {
+    setDescription(desc) {
         if (desc) {
-            infoIcon.hidden = false;
-            infoIcon.title = desc;
+            this.infoIcon.hidden = false;
+            this.infoIcon.title = desc;
         } else {
-            infoIcon.hidden = true;
+            this.infoIcon.hidden = true;
         }
-    };
-    container.setInputName = (label) => { slotLabel.innerText = label; };
-    container.removeTexture = () => { removeBtn.dispatchEvent(new Event('click')); };
-    container.selectTab = (i) => {
-        const tabIdx = 5; // index 
-        sourceSelect.selectedIndex = tabIdx;
-        sourceSelect.dispatchEvent(new Event('change'));
-        inputControlsContainer.tabSelect.selectedIndex = i + 1;
-        inputControlsContainer.tabSelect.dispatchEvent(new Event('change'));
-        updateRequiredHighlight();
-    }
-    container.selectMediaTab = (i) => {
-        sourceSelect.selectedIndex = i;
-        sourceSelect.dispatchEvent(new Event('change'));
-        updateRequiredHighlight();
-        updateRequiredHighlight();
     }
 
-    // Initial highlight
-    updateRequiredHighlight();
+    setInputName(label) {
+        this.slotLabel.innerText = label;
+    }
 
-    return container;
+    selectTab(i) {
+        this.sourceSelect.selectedIndex = 5;
+        this.sourceSelect.dispatchEvent(new Event('change'));
+        this.inputControlsContainer.tabSelect.selectedIndex = i + 1;
+        this.inputControlsContainer.tabSelect.dispatchEvent(new Event('change'));
+        this.updateRequiredHighlight();
+    }
+
+    selectMediaTab(i) {
+        this.sourceSelect.selectedIndex = i;
+        this.sourceSelect.dispatchEvent(new Event('change'));
+        this.updateRequiredHighlight();
+    }
+
+    getElement() {
+        return this.container;
+    }
 }
 
 class ShaderBuffer {
