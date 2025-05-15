@@ -290,7 +290,7 @@ class Uniforms {
     }
 }
 
-class AdvancedMediaInput {
+class MediaInput {
     constructor(shaderBuffer, shaderIndex, slotIndex) {
         this.shaderBuffer = shaderBuffer;
         this.shaderIndex = shaderIndex;
@@ -348,6 +348,7 @@ class AdvancedMediaInput {
     updateRequiredHighlight() {
         const inputTexInfo = (this.shaderBuffer?.controlSchema?.inputs || [])[this.slotIndex] || {};
         const isRequired = Boolean(inputTexInfo.required);
+        // TODO: refactor to use shaderBuffer.hasMedia(slot);
         const hasMedia = this.shaderBuffer.sampleMedia[this.slotIndex];
         this.container.style.backgroundColor = isRequired && !hasMedia ? 'rgba(255, 0, 0, 0.2)' : '';
     }
@@ -357,13 +358,13 @@ class AdvancedMediaInput {
     }
 
     resetMedia() {
-        this.shaderBuffer.sampleMedia[this.slotIndex] = null;
+        this.setMedia(null);
         this.clearPreview();
         resourceCache.delete(this.cacheKey);
     }
 
     handleSourceChange() {
-        this.shaderBuffer.sampleMedia[this.slotIndex] = null;
+        this.setMedia(null);
         this.clearPreview();
         const val = this.sourceSelect.value;
         if (val === 'file') this.setupFileInput();
@@ -382,7 +383,7 @@ class AdvancedMediaInput {
         } catch (err) {
             logError(`Error deleting ${this.cacheKey}:`, err);
         }
-        this.shaderBuffer.sampleMedia[this.slotIndex] = null;
+        this.setMedia(null);
         this.resetMedia();
         logMessage(`Slot ${this.slotIndex} unassigned.`);
         this.sourceSelect.selectedIndex = 0;
@@ -428,7 +429,8 @@ class AdvancedMediaInput {
                     analyser.fftSize = 256;
                     const dataArray = new Uint8Array(analyser.frequencyBinCount);
                     source.connect(analyser);
-                    this.shaderBuffer.sampleMedia[this.slotIndex] = { type: "audio", element: null, analyser, dataArray };
+                    this.setMedia({ type: "audio", element: null, analyser, dataArray });
+                    // this.shaderBuffer.sampleMedia[this.slotIndex] = { type: "audio", element: null, analyser, dataArray };
                     this.clearPreview();
                     this.previewContainer.innerHTML = 'Microphone Enabled';
                     this.updateRequiredHighlight();
@@ -465,7 +467,8 @@ class AdvancedMediaInput {
             if (isNaN(idx)) return;
             const descriptor = { type: "tab", tabIndex: idx };
             resourceCache.put(this.cacheKey, JSON.stringify(descriptor));
-            this.shaderBuffer.sampleMedia[this.slotIndex] = descriptor;
+            // this.shaderBuffer.sampleMedia[this.slotIndex] = descriptor;
+            this.setMedia(descriptor);
             this.clearPreview();
             const info = document.createElement('div');
             this.previewContainer.appendChild(info);
@@ -496,19 +499,25 @@ class AdvancedMediaInput {
                     video.addEventListener('loadeddata', () => {
                         const updateLoop = () => {
                             this.updateRequiredHighlight();
+                            // TODO: refactor
                             if (this.shaderBuffer.sampleMedia[this.slotIndex]?.type === 'webcam') {
                                 requestAnimationFrame(updateLoop);
                             }
                         };
                         this.clearPreview();
                         this.previewContainer.appendChild(video);
-                        this.shaderBuffer.sampleMedia[this.slotIndex] = { type: 'webcam', element: video };
+                        // this.shaderBuffer.sampleMedia[this.slotIndex] = { type: 'webcam', element: video };
+                        this.setMedia({ type: 'webcam', element: video });
                         updateLoop();
                     });
                 })
                 .catch(err => logError("Error accessing webcam:", err));
         });
         this.inputControlsContainer.appendChild(camBtn);
+    }
+
+    setMedia(desc) {
+        this.shaderBuffer.sampleMedia[this.slotIndex] = desc;
     }
 
     setDescription(desc) {
@@ -581,7 +590,7 @@ class ShaderBuffer {
         // Initialize advanced media inputs for each texture slot
         this.inputSlots = [];
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-            let inp = new AdvancedMediaInput(this, shaderIndex, i);
+            let inp = new MediaInput(this, shaderIndex, i);
             // let inp = createAdvancedMediaInput(this, shaderIndex, i);
             this.inputSlots.push(inp);
             this.advancedInputsContainer.appendChild(inp.getElement());
@@ -1078,8 +1087,8 @@ async function getControlState(shaderBuffer) {
     }
     return null;
 }
-async function loadControlState(shaderBuffer) {
-    const uniforms = await getControlState(shaderBuffer);
+async function loadControlState(shaderBuffer, uniforms = null) {
+    if (uniforms === null) uniforms = await getControlState(shaderBuffer);
     if (uniforms)
         shaderBuffer.customUniforms = uniforms;
 }
@@ -1503,6 +1512,15 @@ async function handleConfigsUpload(event) {
     // save the list of names and repopulate the menu
     await resourceCache.put('configsList', JSON.stringify(names));
     populateConfigsMenu(names);
+
+    for (const name of names) {
+        const fragKey = `config;${name};fragmentSource`;
+        const src = await resourceCache.get(fragKey);
+        if (typeof src === 'string') {
+            myShaderLibrary[name] = src;
+        }
+    }
+
     logMessage(`✅ Cached ${names.length} configs: ${names.join(', ')}`);
 }
 
@@ -1609,7 +1627,7 @@ function stopRecording() {
 }
 
 // Shader Editor State Editor muX
-let editorSEX = {};
+let editorSEX = { close: () => { } };
 function setupShaderEditor() {
     const editBtn = document.getElementById('edit-shader-btn');
     const editShower = document.getElementById('shader-editor-hideshow');
@@ -1675,6 +1693,23 @@ function setupShaderEditor() {
         await resourceCache.put(`${currentViewIndex};fragmentSource`, newSource);
         logMessage('✅ Shader updated.');
     });
+}
+
+const myShaderLibrary = {};
+async function populateMyShaderLibrary() {
+    const savedList = await resourceCache.get('configsList');
+    if (typeof savedList === 'string') {
+        const names = JSON.parse(savedList);
+        for (const name of names) {
+            const fragKey = `config;${name};fragmentSource`;
+            const src = await resourceCache.get(fragKey);
+            const controlKey = `config;${name};controlSchema`;
+            const controlSchema = await resourceCache.get(controlKey);
+            if (typeof src === 'string') {
+                myShaderLibrary[name] = { frag: src, control: controlSchema };
+            }
+        }
+    }
 }
 
 // =====================================
@@ -1808,6 +1843,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
+    await populateMyShaderLibrary();
+
     // update renderers
     updateCanvasDimensions();
     initDefaultShaderBuffers();
@@ -1893,4 +1930,159 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateActiveViewUI();
 
     requestAnimationFrame(render);
+});
+
+function tokenize(str) {
+    return (
+        str
+            // strip CL-style comments
+            .replace(/;.*$/gm, '')
+            // pad parens so they're separate tokens
+            .replace(/\(/g, ' ( ')
+            .replace(/\)/g, ' ) ')
+            // grab strings, parens, or atoms
+            .match(/"(?:\\.|[^"])*"|[^\s()]+|[()]/g) || []
+    )
+        .map(tok =>
+            // turn JSON-style strings into JS strings
+            tok[0] === '"' ? JSON.parse(tok) : tok
+        );
+}
+
+function parseSexp(tokens) {
+    // const t = tokens.slice(); // copy
+    const t = tokens;
+    function walk() {
+        if (t.length === 0) throw new SyntaxError('Unexpected EOF');
+        const tok = t.shift();
+        if (tok === '(') {
+            const L = [];
+            while (t[0] !== ')') {
+                if (t.length === 0) throw new SyntaxError('Missing )');
+                L.push(walk());
+            }
+            t.shift(); // pop ')'
+            return L;
+        }
+        if (tok === ')') throw new SyntaxError('Unexpected )');
+        // atom: number or symbol
+        return isFinite(tok) ? Number(tok) : tok;
+    }
+    const out = [];
+    while (t.length) out.push(walk());
+    return out.length === 1 ? out[0] : out;
+}
+
+function parseDSL(str) {
+    const tokens = tokenize(str);
+    const expr = parseSexp(tokens);
+    if (tokens.length) console.warn("Extra tokens after first expr", tokens);
+    return expr;
+}
+function evalDSL(tree) {
+    // Expect: [ 'shader', shaderName, ...clauses ]
+    if (tree[0] !== 'shader') throw new Error("DSL must start with (shader …)");
+    const cfg = { name: tree[1], uniforms: {}, textures: [] };
+    for (let i = 2; i < tree.length; i++) {
+        const clause = tree[i];
+        const [kw, ...rest] = clause;
+        switch (kw) {
+            case 'uniform':
+                // [ 'uniform', name, value ]
+                cfg.uniforms[rest[0]] = rest[1];
+                break;
+            case 'texture':
+                // [ 'texture', slot, 'file'|'shader', arg ]
+                cfg.textures.push({ slot: rest[0], [rest[1]]: rest[2] });
+                break;
+            default:
+                console.warn("Unknown DSL clause", kw);
+        }
+    }
+    return cfg;
+}
+
+/*
+(let* ((shad-0 (shader "color-invert" :texture-0 (select-shader-tab 1)))
+       (shad-1 (shader "color-invert" :texture-0 shad-0))
+       (main-shader (shader "demo-moire"
+                            :texture-0 shad-0
+                            :texture-1 shad-1)))
+  main-shader							; render main moire shader
+  )
+
+
+(shader "demo-moire"
+(uniform u_mode 2)
+(uniform u_colInv1 false)
+(texture 0 shader 2)
+(texture 1 shader 1)
+)
+*/
+
+document.getElementById('run-dsl').addEventListener('click', () => {
+    const txt = document.getElementById('dsl-editor').value;
+    let tree, config;
+    try {
+        tree = parseDSL(txt);
+        config = evalDSL(tree);
+    } catch (e) {
+        return logError("DSL parse error:", e.message);
+    }
+
+    // 2) apply the fragment shader if you have a lookup by name
+    //    (you could map names to URLs or inline strings)
+    const o = myShaderLibrary[config.name];
+    let tabIndex = currentViewIndex;
+    applyShader(tabIndex, o.frag, vertexShaderSource);
+
+    // 1) find or create the named tab
+    // let tabIndex = shaderBuffers.findIndex(sb => sb.name.startsWith(config.name));
+    if (tabIndex < 0) {
+        tabIndex = shaderBuffers.length;
+        // create a fresh ShaderBuffer with your default schema
+        const sb = new ShaderBuffer(config.name,
+            new ShaderProgram(vertexShaderSource, o.frag, gl),
+            o.control,
+            tabIndex);
+        shaderBuffers.push(sb);
+        shaderBuffers[tabIndex] = sb;
+        createShaderTabs();
+        createControlSchemeTabs();
+    }
+    shaderBuffers[tabIndex].controlSchema = o.control;
+    console.log(o);
+    console.log(shaderBuffers[tabIndex].controlSchema);
+
+    // 3) override uniforms & schema so they show up as controls
+    // const uniformControls = Object.entries(config.uniforms).map(([k, v]) => ({
+    //     type: 'slider',
+    //     label: k,
+    //     uniform: k,
+    //     default: v,
+    //     min: 0,    // you can expand DSL to let users specify
+    //     max: 1,
+    //     step: 0.01
+    // }));
+    // const defaultInputs = [];
+    // applyControlSchema(tabIndex, { controls: uniformControls, inputs: defaultInputs });
+
+    // 4) seed the values and update UI
+    // shaderBuffers[tabIndex].customUniforms = { ...config.uniforms };
+    Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].customUniforms[k] = config.uniforms[k]);
+    renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].controlSchema);
+
+    console.log(config.uniforms);
+
+    // 5) bind textures
+    for (let t of config.textures) {
+        const inp = shaderBuffers[tabIndex].inputSlots[t.slot];
+        if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
+        if (t.shader !== undefined) inp.selectTab(t.shader);
+    }
+
+    // 6) switch view to your new tab
+    currentViewIndex = tabIndex;
+    updateActiveViewUI();
+    updateActiveControlUI();
 });
