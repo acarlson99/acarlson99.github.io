@@ -74,6 +74,18 @@
                 <div id="shader-editor-container" style="border:1px solid #ccc;"></div>
             </div>
             <div id="shader-tabs"></div>
+            <div id="dsl-panel" style="margin-bottom:1em;">
+                <textarea id="dsl-editor" rows="6" style="width:100%;font-family:monospace;">
+              ;(example)
+              (shader "displacement"
+                (uniform speed     0.2)
+                (uniform intensity 1.5)
+                (texture 0 file "textures/noise.png")
+                (texture 1 shader 2)
+              )
+                </textarea>
+                <button id="run-dsl">Run DSL →</button>
+            </div>
             <div id="canvas-settings">
                 <label for="canvas-width">Canvas Width:</label>
                 <input id="canvas-width" type="number" value="800" min="1" max="8000">

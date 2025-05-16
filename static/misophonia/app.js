@@ -1182,7 +1182,7 @@ function renderControlsForShader(shaderBuffer, schema) {
         // Use default value from the schema (or cached value); store in the shader's custom uniforms
         const saved = shaderBuffer.customUniforms[control.uniform];
         const initialValue = (saved !== undefined) ? saved : control.default;
-        LOG(shaderBuffer.customUniforms, `render control ${shaderBuffer.name} ${initialValue} ${saved} ${control.uniform} ${control.default}`);
+        LOG(`render control ${control.uniform} initial value ${initialValue} saved: ${saved} default: ${control.default}`);
         shaderBuffer.customUniforms[control.uniform] = initialValue;
         switch (control.type) {
             case 'knob':
@@ -1630,7 +1630,6 @@ function stopRecording() {
 let editorSEX = { close: () => { } };
 function setupShaderEditor() {
     const editBtn = document.getElementById('edit-shader-btn');
-    const editShower = document.getElementById('shader-editor-hideshow');
     const editor = document.getElementById('shader-editor');
     const applyBtn = document.getElementById('apply-shader-edit');
     const cancelBtn = document.getElementById('cancel-shader-edit');
@@ -1643,7 +1642,7 @@ function setupShaderEditor() {
     const openEditor = () => {
         const textarea = document.getElementById('shader-editor-container');
         const sb = shaderBuffers[currentViewIndex];
-        textarea.value = sb.fragmentSrc || '';
+        textarea.value = sb.program.fsSrc || '';
         editor.style.display = 'block';
 
         if (!editor._cmInstance) {
@@ -1655,12 +1654,12 @@ function setupShaderEditor() {
             // Set editor size larger
             editor._cmInstance.setSize('100%', '100%');
         } else {
-            editor._cmInstance.setValue(sb.fragmentSrc || '');
+            editor._cmInstance.setValue(sb.program.fsSrc || '');
             editor._cmInstance.refresh();
         }
         editorOpen = true;
     };
-
+ 
     editorSEX.close = closeEditor;
     editorSEX.open = openEditor;
 
@@ -1676,22 +1675,15 @@ function setupShaderEditor() {
     applyBtn.addEventListener('click', async () => {
         const sb = shaderBuffers[currentViewIndex];
         //           this doesnt work V
-        const newSource = editor._cmInstance.getValue() || sb.fragmentSrc;
+        const newSource = editor._cmInstance.getValue() || sb.program.fsSrc;
         editor._cmInstance.refresh();
 
-        const prog = createProgram(vertexShaderSource, newSource);
-        if (!prog) {
+        if (!sb.setFragmentShader(newSource)) {
             logMessage('❌ Shader compilation failed. See console for errors.');
             return;
+        } else {
+            logMessage('✅ Shader compiled successfully.');
         }
-
-        // Assign the new program
-        sb.shaderProgram = prog;
-        sb.fragmentSrc = newSource;
-        sb.updateUniformLocations();
-
-        await resourceCache.put(`${currentViewIndex};fragmentSource`, newSource);
-        logMessage('✅ Shader updated.');
     });
 }
 
@@ -1989,7 +1981,8 @@ function evalDSL(tree) {
         switch (kw) {
             case 'uniform':
                 // [ 'uniform', name, value ]
-                cfg.uniforms[rest[0]] = rest[1];
+                const val = rest[1];
+                cfg.uniforms[rest[0]] = (val === 'true' || val === 'false') ? (val === 'true') : val;
                 break;
             case 'texture':
                 // [ 'texture', slot, 'file'|'shader', arg ]
@@ -2015,6 +2008,7 @@ function evalDSL(tree) {
 (shader "demo-moire"
 (uniform u_mode 2)
 (uniform u_colInv1 false)
+(uniform u_colInv0 true)
 (texture 0 shader 2)
 (texture 1 shader 1)
 )
@@ -2032,9 +2026,11 @@ document.getElementById('run-dsl').addEventListener('click', () => {
 
     // 2) apply the fragment shader if you have a lookup by name
     //    (you could map names to URLs or inline strings)
+    LOG(`generated config`, config);
     const o = myShaderLibrary[config.name];
     let tabIndex = currentViewIndex;
-    applyShader(tabIndex, o.frag, vertexShaderSource);
+    if (!o?.frag) logError(`uh oh ${config.name} not found`);
+    else applyShader(tabIndex, o.frag, vertexShaderSource);
 
     // 1) find or create the named tab
     // let tabIndex = shaderBuffers.findIndex(sb => sb.name.startsWith(config.name));
