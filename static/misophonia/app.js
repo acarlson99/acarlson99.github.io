@@ -1628,44 +1628,61 @@ function stopRecording() {
 
 // Shader Editor State Editor muX
 let editorSEX = { close: () => { } };
+
+const dslDefaultText = '\
+(shader "demo-moire"\n\
+    (uniform u_mode 2)\n\
+    (uniform u_colInv1 true)\n\
+    (uniform u_colInv0 false)\n\
+    (texture 0 (shader 1))\n\
+    (texture 1 (shader 1)))\n\
+'
+
+let currentDSLText = dslDefaultText;
 function setupShaderEditor() {
-    const editBtn = document.getElementById('edit-shader-btn');
     const editor = document.getElementById('shader-editor');
     const applyBtn = document.getElementById('apply-shader-edit');
     const cancelBtn = document.getElementById('cancel-shader-edit');
 
     const closeEditor = () => {
-        editor.style.display = 'none';
+        editorSEX.editor.style.display = 'none';
         editorOpen = false;
     };
 
-    const openEditor = () => {
-        const textarea = document.getElementById('shader-editor-container');
+    const openEditor = (type) => {
         const sb = shaderBuffers[currentViewIndex];
-        textarea.value = sb.program.fsSrc || '';
+        const textarea = document.getElementById('shader-editor-container');
+        console.log(type, sb.program.fsSrc);
         editor.style.display = 'block';
-
+        textarea.value = type === 'glsl' ? (sb.program.fsSrc || '') : currentDSLText;
         if (!editor._cmInstance) {
             editor._cmInstance = CodeMirror.fromTextArea(textarea, {
-                mode: 'x-shader/x-fragment',
+                mode: type === 'glsl' ? 'x-shader/x-fragment' : 'text/plain',
                 lineNumbers: true,
                 theme: 'default'
             });
             // Set editor size larger
             editor._cmInstance.setSize('100%', '100%');
         } else {
-            editor._cmInstance.setValue(sb.program.fsSrc || '');
+            editor._cmInstance.setValue(type === 'glsl' ? (sb.program.fsSrc || '') : currentDSLText);
             editor._cmInstance.refresh();
         }
+        editorSEX.editor = editor;
+        editorSEX.type = type;
         editorOpen = true;
     };
- 
-    editorSEX.close = closeEditor;
-    editorSEX.open = openEditor;
 
-    editBtn.addEventListener('click', () => {
+    editorSEX.close = closeEditor;
+    editorSEX.openShaderEditor = openEditor.bind(null, 'glsl');
+    editorSEX.openDslEditor = openEditor.bind(null, 'dsl');
+
+    document.getElementById('edit-shader-btn').addEventListener('click', () => {
         if (editorOpen) closeEditor();
-        else openEditor();
+        else editorSEX.openShaderEditor();
+    });
+    document.getElementById('edit-dsl-btn').addEventListener('click', () => {
+        if (editorOpen) closeEditor();
+        else editorSEX.openDslEditor();
     });
 
     cancelBtn.addEventListener('click', () => {
@@ -1675,16 +1692,73 @@ function setupShaderEditor() {
     applyBtn.addEventListener('click', async () => {
         const sb = shaderBuffers[currentViewIndex];
         //           this doesnt work V
-        const newSource = editor._cmInstance.getValue() || sb.program.fsSrc;
+        const newSource = editor._cmInstance.getValue();
         editor._cmInstance.refresh();
 
-        if (!sb.setFragmentShader(newSource)) {
-            logMessage('❌ Shader compilation failed. See console for errors.');
-            return;
+        if (editorSEX.type === 'glsl') {
+            if (!sb.setFragmentShader(newSource)) {
+                logMessage('❌ Shader compilation failed. See console for errors.');
+                return;
+            } else {
+                logMessage('✅ Shader compiled successfully.');
+            }
         } else {
-            logMessage('✅ Shader compiled successfully.');
+            applyDsl(newSource);
         }
     });
+}
+
+function applyDsl(txt) {
+    let tree, config;
+    try {
+        tree = parseDSL(txt);
+        config = evalDSL(tree);
+    } catch (e) {
+        console.error(e);
+        return logError("DSL parse error:", e.message);
+    }
+
+    // 2) apply the fragment shader if you have a lookup by name
+    //    (you could map names to URLs or inline strings)
+    LOG(`generated config`, config);
+    const o = myShaderLibrary[config.name];
+    let tabIndex = currentViewIndex;
+    if (!o?.frag) logError(`uh oh ${config.name} not found`);
+    else applyShader(tabIndex, o.frag, vertexShaderSource);
+
+    // 1) find or create the named tab
+    // let tabIndex = shaderBuffers.findIndex(sb => sb.name.startsWith(config.name));
+    if (tabIndex < 0) {
+        tabIndex = shaderBuffers.length;
+        // create a fresh ShaderBuffer with your default schema
+        const sb = new ShaderBuffer(config.name,
+            new ShaderProgram(vertexShaderSource, o.frag, gl),
+            o.control,
+            tabIndex);
+        shaderBuffers.push(sb);
+        shaderBuffers[tabIndex] = sb;
+        createShaderTabs();
+        createControlSchemeTabs();
+    }
+    shaderBuffers[tabIndex].controlSchema = o.control;
+    console.log(o);
+    console.log(config.uniforms);
+    console.log(shaderBuffers[tabIndex].controlSchema);
+    // update uniform defaults given args
+    Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].customUniforms[k] = config.uniforms[k]);
+    renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].controlSchema);
+
+    // 5) bind textures
+    for (let t of config.textures) {
+        const inp = shaderBuffers[tabIndex].inputSlots[t.slot];
+        if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
+        if (t.shader !== undefined) inp.selectTab(t.shader);
+    }
+
+    // 6) switch view to your new tab
+    currentViewIndex = tabIndex;
+    updateActiveViewUI();
+    updateActiveControlUI();
 }
 
 const myShaderLibrary = {};
@@ -1944,6 +2018,21 @@ function tokenize(str) {
 function parseSexp(tokens) {
     // const t = tokens.slice(); // copy
     const t = tokens;
+    function parseStr() { // does not work with current tokenizer
+        t.shift(); // "
+        let str = '';
+        let escaped = false;
+        while (t[0] !== '"' || escaped) {
+            const tok = t.shift();
+            if (tok === '\\') escaped = true;
+            else {
+                str += tok;
+                escaped = false;
+            }
+        }
+        t.shift(); // "
+        return str;
+    }
     function walk() {
         if (t.length === 0) throw new SyntaxError('Unexpected EOF');
         const tok = t.shift();
@@ -1985,8 +2074,8 @@ function evalDSL(tree) {
                 cfg.uniforms[rest[0]] = (val === 'true' || val === 'false') ? (val === 'true') : val;
                 break;
             case 'texture':
-                // [ 'texture', slot, 'file'|'shader', arg ]
-                cfg.textures.push({ slot: rest[0], [rest[1]]: rest[2] });
+                // [ 'texture', slot, ['file'|'shader', arg] ]
+                cfg.textures.push({ slot: rest[0], [rest[1][0]]: rest[1][1] });
                 break;
             default:
                 console.warn("Unknown DSL clause", kw);
@@ -2013,72 +2102,3 @@ function evalDSL(tree) {
 (texture 1 shader 1)
 )
 */
-
-document.getElementById('run-dsl').addEventListener('click', () => {
-    const txt = document.getElementById('dsl-editor').value;
-    let tree, config;
-    try {
-        tree = parseDSL(txt);
-        config = evalDSL(tree);
-    } catch (e) {
-        return logError("DSL parse error:", e.message);
-    }
-
-    // 2) apply the fragment shader if you have a lookup by name
-    //    (you could map names to URLs or inline strings)
-    LOG(`generated config`, config);
-    const o = myShaderLibrary[config.name];
-    let tabIndex = currentViewIndex;
-    if (!o?.frag) logError(`uh oh ${config.name} not found`);
-    else applyShader(tabIndex, o.frag, vertexShaderSource);
-
-    // 1) find or create the named tab
-    // let tabIndex = shaderBuffers.findIndex(sb => sb.name.startsWith(config.name));
-    if (tabIndex < 0) {
-        tabIndex = shaderBuffers.length;
-        // create a fresh ShaderBuffer with your default schema
-        const sb = new ShaderBuffer(config.name,
-            new ShaderProgram(vertexShaderSource, o.frag, gl),
-            o.control,
-            tabIndex);
-        shaderBuffers.push(sb);
-        shaderBuffers[tabIndex] = sb;
-        createShaderTabs();
-        createControlSchemeTabs();
-    }
-    shaderBuffers[tabIndex].controlSchema = o.control;
-    console.log(o);
-    console.log(shaderBuffers[tabIndex].controlSchema);
-
-    // 3) override uniforms & schema so they show up as controls
-    // const uniformControls = Object.entries(config.uniforms).map(([k, v]) => ({
-    //     type: 'slider',
-    //     label: k,
-    //     uniform: k,
-    //     default: v,
-    //     min: 0,    // you can expand DSL to let users specify
-    //     max: 1,
-    //     step: 0.01
-    // }));
-    // const defaultInputs = [];
-    // applyControlSchema(tabIndex, { controls: uniformControls, inputs: defaultInputs });
-
-    // 4) seed the values and update UI
-    // shaderBuffers[tabIndex].customUniforms = { ...config.uniforms };
-    Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].customUniforms[k] = config.uniforms[k]);
-    renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].controlSchema);
-
-    console.log(config.uniforms);
-
-    // 5) bind textures
-    for (let t of config.textures) {
-        const inp = shaderBuffers[tabIndex].inputSlots[t.slot];
-        if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
-        if (t.shader !== undefined) inp.selectTab(t.shader);
-    }
-
-    // 6) switch view to your new tab
-    currentViewIndex = tabIndex;
-    updateActiveViewUI();
-    updateActiveControlUI();
-});
