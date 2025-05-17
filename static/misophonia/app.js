@@ -7,9 +7,7 @@ const STORE_NAME = 'asset-cache';
 
 const resourceCache = new CacheManager(DB_NAME, STORE_NAME, DB_VERSION);
 
-// =====================================
-// Part 1.5: Hotkey Helpers
-// =====================================
+//#region hotkey
 
 // top‑level, alongside your other globals
 const hotkeyBindings = {};
@@ -31,15 +29,17 @@ window.addEventListener('keydown', e => {
     saveControlState(shaderBuffer);
 });
 
-// =====================================
-// Part 2: Global Setup & State
-// =====================================
+//#endregion
+
+//#region setup-global-state
+
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById('shader-canvas');
 /** @type {WebGL2RenderingContext} */
 const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false });
 if (!gl) alert('WebGL is not supported by your browser.');
 
+// variables
 const devMode = document.URL.startsWith('http://localhost');
 const MAX_TEXTURE_SLOTS = 4;
 const maxLines = 100;
@@ -73,6 +73,7 @@ function hexToRgb(hex) {
     const n = parseInt(hex, 16);
     return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
+
 /**
  * Clamp a canvas element's CSS size while maintaining aspect ratio
  * @param {HTMLElement} canvas - The canvas element
@@ -93,6 +94,8 @@ function clampPreviewSize(canvas, maxWidth = 300, maxHeight = 300) {
     canvas.style.width = displayWidth + 'px';
     canvas.style.height = displayHeight + 'px';
 }
+
+//#endregion
 
 class Uniforms {
     constructor() {
@@ -432,6 +435,7 @@ class MediaInput {
             this.resetMedia();
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then(stream => {
+                    // TODO: move this logic into the Uniforms class-- it should take a message { type: 'webcam', i: this.slotIndex, container: this.previewContainer }
                     const video = loadVideoFromSource(null, this.shaderBuffer, this.slotIndex, this.previewContainer);
                     video.srcObject = stream;
                     video.autoplay = true;
@@ -457,6 +461,7 @@ class MediaInput {
     }
 
     setMedia(desc) {
+        // TODO: this should not modify `sampleMedia` directly
         this.shaderBuffer.sampleMedia[this.slotIndex] = desc;
     }
 
@@ -629,9 +634,6 @@ class ShaderBuffer {
     }
 }
 
-// =====================================
-// Part 3: WebGL Helpers & Quad Setup
-// =====================================
 class ShaderProgram {
     constructor(vsSrc, fsSrc, gl_) {
         /** @type {WebGL2RenderingContext} */
@@ -696,6 +698,8 @@ class ShaderProgram {
     // TODO: maybe move uniforms into the ShaderProgram
 }
 
+//#region shader-buffer-and-quad-setup
+
 //                   goofy trick to preserve type information
 let shaderBuffers = [new ShaderBuffer()]; shaderBuffers = [];
 
@@ -737,9 +741,63 @@ gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
 const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
 
-// =====================================
-// Part 4: Canvas Dimension Updates
-// =====================================
+const vertexShaderSource = `#version 300 es
+  in vec2 a_position;
+  void main() {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+  }
+`;
+let fragmentShaderSource = `#version 300 es
+  #ifdef GL_ES
+  precision mediump float;
+  #endif
+  #ifdef GL_FRAGMENT_PRECISION_HIGH
+  precision highp float;
+  #else
+  precision mediump float;
+  #endif
+
+  uniform float u_time;
+  uniform vec2 u_resolution;
+  uniform sampler2D u_texture0;
+  uniform sampler2D u_texture1;
+  uniform sampler2D u_texture2;
+  uniform sampler2D u_texture3;
+  uniform float u_test;
+  uniform float u_test2;
+
+  out vec4 outColor;
+
+  void main(void) {
+    vec2 uv = gl_FragCoord.xy / u_resolution;
+    uv = uv - 0.5;
+    uv.x *= u_resolution.x / u_resolution.y;
+    float dist = length(uv);
+    float wave = sin(dist * 10.0 * u_test2 - u_time * 3.0 * u_test);
+    float intensity = smoothstep(0.3, 0.0, abs(wave));
+    vec3 color = mix(vec3(0.2, 0.1, 0.5), vec3(1.0, 0.8, 0.3), intensity);
+    outColor = vec4(color, 1.0);
+  }
+`;
+
+const defaultControlSchema = {
+    controls: [
+        { type: 'slider', label: 'Speed', uniform: 'u_test', default: 0.5, min: 0, max: 1, step: 0.01 },
+        { type: 'slider', label: 'Num Rings', uniform: 'u_test2', default: 1.0, min: 0, max: 6, step: 0.25 }
+    ]
+};
+
+let MAX_TAB_SLOTS = 8;
+function initDefaultShaderBuffers() {
+    let buffers = [];
+    for (let i = 0; i < MAX_TAB_SLOTS; i++) {
+        buffers.push(new ShaderBuffer(`Shader ${i + 1}`, new ShaderProgram(vertexShaderSource, fragmentShaderSource, gl), defaultControlSchema, i));
+    }
+    shaderBuffers = buffers;
+}
+
+//#endregion
+
 function updateCanvasDimensions() {
     const width = parseInt(document.getElementById('canvas-width').value, 10);
     const height = parseInt(document.getElementById('canvas-height').value, 10);
@@ -793,70 +851,6 @@ function createAudioSource(src) {
 
 function toggleMute(media, mute) {
     if (media.outputGain) media.outputGain.gain.value = mute ? 0 : 1;
-}
-
-// =====================================
-// Part 6: Default Shader Sources
-// =====================================
-
-const vertexShaderSource = `#version 300 es
-  in vec2 a_position;
-  void main() {
-    gl_Position = vec4(a_position, 0.0, 1.0);
-  }
-`;
-let fragmentShaderSource = `#version 300 es
-  #ifdef GL_ES
-  precision mediump float;
-  #endif
-  #ifdef GL_FRAGMENT_PRECISION_HIGH
-  precision highp float;
-  #else
-  precision mediump float;
-  #endif
-
-  uniform float u_time;
-  uniform vec2 u_resolution;
-  uniform sampler2D u_texture0;
-  uniform sampler2D u_texture1;
-  uniform sampler2D u_texture2;
-  uniform sampler2D u_texture3;
-  uniform float u_test;
-  uniform float u_test2;
-
-  out vec4 outColor;
-
-  void main(void) {
-    vec2 uv = gl_FragCoord.xy / u_resolution;
-    uv = uv - 0.5;
-    uv.x *= u_resolution.x / u_resolution.y;
-    float dist = length(uv);
-    float wave = sin(dist * 10.0 * u_test2 - u_time * 3.0 * u_test);
-    float intensity = smoothstep(0.3, 0.0, abs(wave));
-    vec3 color = mix(vec3(0.2, 0.1, 0.5), vec3(1.0, 0.8, 0.3), intensity);
-    outColor = vec4(color, 1.0);
-  }
-`;
-
-// =====================================
-// Part 7: ShaderBuffer Creation & Management
-// =====================================
-
-const defaultControlSchema = {
-    controls: [
-        { type: 'slider', label: 'Speed', uniform: 'u_test', default: 0.5, min: 0, max: 1, step: 0.01 },
-        { type: 'slider', label: 'Num Rings', uniform: 'u_test2', default: 1.0, min: 0, max: 6, step: 0.25 }
-    ]
-};
-
-let MAX_TAB_SLOTS = 8;
-function initDefaultShaderBuffers() {
-    // For demonstration, create two shader buffers (tabs)
-    let buffers = [];
-    for (let i = 0; i < MAX_TAB_SLOTS; i++) {
-        buffers.push(new ShaderBuffer(`Shader ${i + 1}`, new ShaderProgram(vertexShaderSource, fragmentShaderSource, gl), defaultControlSchema, i));
-    }
-    shaderBuffers = buffers;
 }
 
 // =====================================
