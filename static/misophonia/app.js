@@ -270,7 +270,7 @@ function toggleMute(media, mute) {
 }
 
 // Helper to load audio from a source URL.
-function loadAudioFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
+function loadAudioFromSource(src, cb) {
     const audioSource = createAudioSource(src);
     if (!isPaused && typeof audioSource.audio.play === 'function') {
         audioSource.audio.play();
@@ -305,18 +305,12 @@ function loadAudioFromSource(src, shaderBuffer, slotIndex, previewContainer, cb)
 
 //#region image
 
-function loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
+function loadImageFromSource(src, cb) {
     const img = new Image();
     img.crossOrigin = "anonymous";
     let o = new Media({ type: 'image', element: img });
     img.onload = () => {
-        logMessage(`Slot ${slotIndex} loaded (image).`);
         clampPreviewSize(img);
-        // shaderBuffer.sampleMedia[slotIndex] = o;
-        // if (previewContainer) {
-        //     previewContainer.innerHTML = '';
-        //     previewContainer.appendChild(img);
-        // }
         if (cb) cb();
     };
     img.src = src;
@@ -420,7 +414,7 @@ async function loadAndCacheMedia(
 
     // 3) dispatch to the right loader
     if (blobType === 'image') {
-        const o = loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
+        const o = loadImageFromSource(url, cb);
         shaderBuffer.sampleMedia[slotIndex] = o;
         bindPreview(previewContainer, o.element);
     }
@@ -430,7 +424,7 @@ async function loadAndCacheMedia(
         bindPreview(previewContainer, o.element);
     }
     else if (blobType === 'audio') {
-        const o = loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
+        const o = loadAudioFromSource(url, cb);
         shaderBuffer.sampleMedia[slotIndex] = o;
         bindPreview(previewContainer, o.element);
         previewContainer.appendChild(o.muteBtn);
