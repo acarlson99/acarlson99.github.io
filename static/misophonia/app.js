@@ -97,12 +97,6 @@ function clampPreviewSize(canvas, maxWidth = 300, maxHeight = 300) {
 
 //#endregion
 
-class Media {
-    constructor(obj) {
-        Object.assign(this, obj);
-    }
-}
-
 //#region uniforms
 
 class Uniforms {
@@ -244,6 +238,12 @@ class Uniforms {
 //#endregion
 
 //#region media
+
+class Media {
+    constructor(obj) {
+        Object.assign(this, obj);
+    }
+}
 
 //#region audio
 
@@ -441,11 +441,10 @@ function bindPreview(container, e) {
 
 //#endregion
 
-//#endregion
-
-//#region media-input
+//#region input
 
 class MediaInput {
+    // handles media UI
     constructor(shaderBuffer, shaderIndex, slotIndex) {
         this.shaderBuffer = shaderBuffer;
         this.shaderIndex = shaderIndex;
@@ -620,7 +619,7 @@ class MediaInput {
         tabSelect.addEventListener('change', () => {
             const idx = parseInt(tabSelect.value);
             if (isNaN(idx)) return;
-            const descriptor = { type: "tab", tabIndex: idx };
+            const descriptor = new Media({ type: "tab", tabIndex: idx });
             resourceCache.put(this.cacheKey, JSON.stringify(descriptor));
             // this.shaderBuffer.sampleMedia[this.slotIndex] = descriptor;
             this.setMedia(descriptor);
@@ -675,8 +674,7 @@ class MediaInput {
     }
 
     setMedia(desc) {
-        // TODO: this should not modify `sampleMedia` directly
-        this.shaderBuffer.sampleMedia[this.slotIndex] = desc;
+        this.shaderBuffer.setMediaSlot(this.slotIndex, desc);
     }
 
     setDescription(desc) {
@@ -710,6 +708,8 @@ class MediaInput {
         return this.container;
     }
 }
+
+//#endregion
 
 //#endregion
 
@@ -785,6 +785,10 @@ class ShaderBuffer {
         this.updateUniformLocations();
         if (this.controlContainer) renderControlsForShader(this, this.controlSchema);
         return true;
+    }
+
+    setMediaSlot(idx, desc) {
+        this.sampleMedia[idx] = desc;
     }
 
     updateUniformLocations() {
