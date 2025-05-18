@@ -97,6 +97,14 @@ function clampPreviewSize(canvas, maxWidth = 300, maxHeight = 300) {
 
 //#endregion
 
+class Media {
+    constructor(obj) {
+        Object.assign(this, obj);
+    }
+}
+
+//#region uniforms
+
 class Uniforms {
     constructor() {
         this.customLocations = {};
@@ -232,6 +240,216 @@ class Uniforms {
         this.updateCustomLocations(prog, customNames);
     }
 }
+
+//#endregion
+
+//#region media
+
+//#region audio
+
+function createAudioSource(src) {
+    const audio = document.createElement('audio');
+    audio.controls = true;
+    audio.loop = true;
+    audio.src = src;
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaElementSource(audio);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+    const outputGain = audioContext.createGain();
+    outputGain.gain.value = 1;
+    source.connect(outputGain);
+    outputGain.connect(audioContext.destination);
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    return { audio, analyser, dataArray, outputGain };
+}
+
+function toggleMute(media, mute) {
+    if (media.outputGain) media.outputGain.gain.value = mute ? 0 : 1;
+}
+
+// Helper to load audio from a source URL.
+function loadAudioFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
+    const audioSource = createAudioSource(src);
+    if (!isPaused && typeof audioSource.audio.play === 'function') {
+        audioSource.audio.play();
+    } else {
+        audioSource.audio.pause();
+    }
+    audioSource.audio.style.maxWidth = "300px";
+
+    const muteBtn = document.createElement('button');
+    const o = new Media({
+        type: 'audio',
+        element: audioSource.audio,
+        analyser: audioSource.analyser,
+        dataArray: audioSource.dataArray,
+        outputGain: audioSource.outputGain,
+        muteBtn: muteBtn
+    });
+
+    let muted = true;
+    muteBtn.textContent = "Unmute";
+    toggleMute(o, muted);
+    muteBtn.addEventListener('click', () => {
+        muted = !muted;
+        toggleMute(o, muted);
+        muteBtn.textContent = muted ? "Unmute" : "Mute";
+        if (cb) cb();
+    });
+    return o;
+}
+
+//#endregion
+
+//#region image
+
+function loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    let o = new Media({ type: 'image', element: img });
+    img.onload = () => {
+        logMessage(`Slot ${slotIndex} loaded (image).`);
+        clampPreviewSize(img);
+        // shaderBuffer.sampleMedia[slotIndex] = o;
+        // if (previewContainer) {
+        //     previewContainer.innerHTML = '';
+        //     previewContainer.appendChild(img);
+        // }
+        if (cb) cb();
+    };
+    img.src = src;
+    return o;
+}
+
+//#endregion
+
+//#region video
+
+// Helper to load a video from a source URL.
+function loadVideoFromSource(src, cb) {
+    const video = document.createElement('video');
+    video.controls = true;
+    video.setAttribute('playsinline', '');
+    video.loop = true;
+    video.muted = true;
+    if (src) video.src = src;
+    video.addEventListener('loadeddata', () => {
+        // Match the shader's pause state.
+        if (!isPaused) { video.play(); } else { video.pause(); }
+        // logMessage(`Slot ${slotIndex} loaded (video).`);
+        clampPreviewSize(video);
+        if (cb) cb();
+    });
+    const o = { type: 'video', element: video };
+    return o;
+}
+
+//#endregion
+
+//#region url
+
+function createUrlForm(callback) {
+    const form = document.createElement('form');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Enter media URL...';
+    form.appendChild(input);
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const url = input.value.trim();
+        if (url) {
+            callback(url);
+        }
+    });
+    return form;
+}
+
+//#endregion
+
+//#region loader
+
+/**
+ * Load one media asset into a shader slot, optionally caching it.
+ *
+ * @param {File|Blob|string} source
+ *    - If string: treated as a URL (won’t be cached).  
+ *    - If File/Blob: creates an ObjectURL.  
+ * @param {object} shaderBuffer
+ * @param {number} slotIndex
+ * @param {HTMLElement} previewContainer
+ * @param {boolean} [cache=true]
+ */
+async function loadAndCacheMedia(
+    source,
+    shaderBuffer,
+    slotIndex,
+    previewContainer,
+    cache = true,
+    cb = undefined
+) {
+    // 1) compute which shader we’re in
+    const shaderIndex = shaderBuffers.indexOf(shaderBuffer);
+    const cacheKey = `${shaderIndex};${slotIndex}`;
+    LOG(`loadandcache ${cacheKey} ${shaderIndex}`);
+
+    // 2) figure out URL and type
+    let url, blobType;
+    if (typeof source === 'string') {
+        url = source;
+        cache = false; // remote URLs don’t get cached
+        const ext = source.split('.').pop().toLowerCase();
+        blobType = ext.match(/jpe?g|png|gif/) ? 'image'
+            : ext.match(/mp4|webm|ogg/) ? 'video'
+                : ext.match(/mp3|wav|ogg/) ? 'audio'
+                    : null;
+    } else {
+        // File or Blob
+        url = URL.createObjectURL(source);
+        blobType = source.type.startsWith('image/') ? 'image'
+            : source.type.startsWith('video/') ? 'video'
+                : source.type.startsWith('audio/') ? 'audio'
+                    : null;
+
+        if (cache) {
+            // write into IndexedDB under our new key:
+            await resourceCache.put(cacheKey, source);
+        }
+    }
+
+    // 3) dispatch to the right loader
+    if (blobType === 'image') {
+        const o = loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
+        shaderBuffer.sampleMedia[slotIndex] = o;
+        bindPreview(previewContainer, o.element);
+    }
+    else if (blobType === 'video') {
+        const o = loadVideoFromSource(url, cb);
+        shaderBuffer.sampleMedia[slotIndex] = o;
+        bindPreview(previewContainer, o.element);
+    }
+    else if (blobType === 'audio') {
+        const o = loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
+        shaderBuffer.sampleMedia[slotIndex] = o;
+        bindPreview(previewContainer, o.element);
+        previewContainer.appendChild(o.muteBtn);
+    }
+    else {
+        console.warn('Unknown media type for', source);
+    }
+}
+
+function bindPreview(container, e) {
+    container.innerHTML = '';
+    container.appendChild(e);
+}
+
+//#endregion
+
+//#endregion
+
+//#region media-input
 
 class MediaInput {
     constructor(shaderBuffer, shaderIndex, slotIndex) {
@@ -436,7 +654,9 @@ class MediaInput {
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then(stream => {
                     // TODO: move this logic into the Uniforms class-- it should take a message { type: 'webcam', i: this.slotIndex, container: this.previewContainer }
-                    const video = loadVideoFromSource(null, this.shaderBuffer, this.slotIndex, this.previewContainer);
+                    const video = loadVideoFromSource(null).element;
+                    this.shaderBuffer.sampleMedia[this.slotIndex] = new Media({ type: 'video', element: video });
+                    bindPreview(this.previewContainer, video);
                     video.srcObject = stream;
                     video.autoplay = true;
                     video.setAttribute('playsinline', '');
@@ -496,6 +716,10 @@ class MediaInput {
         return this.container;
     }
 }
+
+//#endregion
+
+//#region shader-buffer
 
 class ShaderBuffer {
     constructor(name, program, controlSchema, shaderIndex) {
@@ -634,6 +858,10 @@ class ShaderBuffer {
     }
 }
 
+//#endregion
+
+//#region shader-program
+
 class ShaderProgram {
     constructor(vsSrc, fsSrc, gl_) {
         /** @type {WebGL2RenderingContext} */
@@ -697,6 +925,8 @@ class ShaderProgram {
 
     // TODO: maybe move uniforms into the ShaderProgram
 }
+
+//#endregion
 
 //#region shader-buffer-and-quad-setup
 
@@ -798,6 +1028,8 @@ function initDefaultShaderBuffers() {
 
 //#endregion
 
+//#region canvas-source-helpers
+
 function updateCanvasDimensions() {
     const width = parseInt(document.getElementById('canvas-width').value, 10);
     const height = parseInt(document.getElementById('canvas-height').value, 10);
@@ -828,184 +1060,9 @@ function presetCanvasDimensions(w, h) {
     };
 }
 
-// =====================================
-// Part 5: Audio & Audio-Texture Helpers
-// =====================================
-function createAudioSource(src) {
-    const audio = document.createElement('audio');
-    audio.controls = true;
-    audio.loop = true;
-    audio.src = src;
-    const audioContext = new AudioContext();
-    const source = audioContext.createMediaElementSource(audio);
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
-    const outputGain = audioContext.createGain();
-    outputGain.gain.value = 1;
-    source.connect(outputGain);
-    outputGain.connect(audioContext.destination);
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    return { audio, analyser, dataArray, outputGain };
-}
+//#endregion
 
-function toggleMute(media, mute) {
-    if (media.outputGain) media.outputGain.gain.value = mute ? 0 : 1;
-}
-
-// =====================================
-// Part 8: Advanced Media Input & Loader
-// =====================================
-// Helper to load an image from a source URL.
-function loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-        logMessage(`Slot ${slotIndex} loaded (image).`);
-        clampPreviewSize(img);
-        shaderBuffer.sampleMedia[slotIndex] = { type: 'image', element: img };
-        if (previewContainer) {
-            previewContainer.innerHTML = '';
-            previewContainer.appendChild(img);
-        }
-        if (cb) cb();
-    };
-    img.src = src;
-}
-
-// Helper to load a video from a source URL.
-function loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
-    const video = document.createElement('video');
-    video.controls = true;
-    video.setAttribute('playsinline', '');
-    video.loop = true;
-    video.muted = true;
-    if (src) video.src = src;
-    video.addEventListener('loadeddata', () => {
-        // Match the shader's pause state.
-        if (!isPaused) { video.play(); } else { video.pause(); }
-        logMessage(`Slot ${slotIndex} loaded (video).`);
-        clampPreviewSize(video);
-        if (cb) cb();
-    });
-    shaderBuffer.sampleMedia[slotIndex] = { type: 'video', element: video };
-    previewContainer.innerHTML = '';
-    previewContainer.appendChild(video);
-    return video;
-}
-
-// Helper to load audio from a source URL.
-function loadAudioFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
-    const audioSource = createAudioSource(src);
-    if (!isPaused && typeof audioSource.audio.play === 'function') {
-        audioSource.audio.play();
-    } else {
-        audioSource.audio.pause();
-    }
-    shaderBuffer.sampleMedia[slotIndex] = {
-        type: 'audio',
-        element: audioSource.audio,
-        analyser: audioSource.analyser,
-        dataArray: audioSource.dataArray,
-        outputGain: audioSource.outputGain
-    };
-    audioSource.audio.style.maxWidth = "300px";
-    previewContainer.innerHTML = '';
-    previewContainer.appendChild(audioSource.audio);
-
-    // Add a mute/unmute button.
-    const muteBtn = document.createElement('button');
-    let muted = true;
-    muteBtn.textContent = "Unmute";
-    toggleMute(shaderBuffer.sampleMedia[slotIndex], muted);
-    muteBtn.addEventListener('click', () => {
-        muted = !muted;
-        toggleMute(shaderBuffer.sampleMedia[slotIndex], muted);
-        muteBtn.textContent = muted ? "Unmute" : "Mute";
-        if (cb) cb();
-    });
-    previewContainer.appendChild(muteBtn);
-}
-
-// Helper to create a URL form that triggers on Enter.
-function createUrlForm(callback) {
-    const form = document.createElement('form');
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.placeholder = 'Enter media URL...';
-    form.appendChild(input);
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const url = input.value.trim();
-        if (url) {
-            callback(url);
-        }
-    });
-    return form;
-}
-
-/**
- * Load one media asset into a shader slot, optionally caching it.
- *
- * @param {File|Blob|string} source
- *    - If string: treated as a URL (won’t be cached).  
- *    - If File/Blob: creates an ObjectURL.  
- * @param {object} shaderBuffer
- * @param {number} slotIndex
- * @param {HTMLElement} previewContainer
- * @param {boolean} [cache=true]
- */
-async function loadAndCacheMedia(
-    source,
-    shaderBuffer,
-    slotIndex,
-    previewContainer,
-    cache = true,
-    cb = undefined
-) {
-    // 1) compute which shader we’re in
-    const shaderIndex = shaderBuffers.indexOf(shaderBuffer);
-    const cacheKey = `${shaderIndex};${slotIndex}`;
-    LOG(`loadandcache ${cacheKey} ${shaderIndex}`);
-
-    // 2) figure out URL and type
-    let url, blobType;
-    if (typeof source === 'string') {
-        url = source;
-        cache = false; // remote URLs don’t get cached
-        const ext = source.split('.').pop().toLowerCase();
-        blobType = ext.match(/jpe?g|png|gif/) ? 'image'
-            : ext.match(/mp4|webm|ogg/) ? 'video'
-                : ext.match(/mp3|wav|ogg/) ? 'audio'
-                    : null;
-    } else {
-        // File or Blob
-        url = URL.createObjectURL(source);
-        blobType = source.type.startsWith('image/') ? 'image'
-            : source.type.startsWith('video/') ? 'video'
-                : source.type.startsWith('audio/') ? 'audio'
-                    : null;
-
-        if (cache) {
-            // write into IndexedDB under our new key:
-            await resourceCache.put(cacheKey, source);
-        }
-    }
-
-    // 3) dispatch to the right loader
-    if (blobType === 'image') {
-        loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
-    }
-    else if (blobType === 'video') {
-        loadVideoFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
-    }
-    else if (blobType === 'audio') {
-        loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
-    }
-    else {
-        console.warn('Unknown media type for', source);
-    }
-}
+//#region state management
 
 async function saveControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
@@ -1032,9 +1089,10 @@ async function loadControlState(shaderBuffer, uniforms = null) {
         shaderBuffer.customUniforms = uniforms;
 }
 
-// =====================================
-// Part 9: UI: Shader & Control Tabs + Texture Refresh
-// =====================================
+//#endregion
+
+//#region UI
+
 function updateActiveViewUI() {
     // nothing to show/hide in the DOM here (canvas is always visible),
     // but we still want to log it:
@@ -1097,9 +1155,8 @@ function createControlSchemeTabs() {
     });
 }
 
-// =====================================
-// Part 10: Control Panel Rendering
-// =====================================
+//#region render-controls
+
 function renderControlsForShader(shaderBuffer, schema) {
     LOG(`Rendering controls for ${shaderBuffer.name}`);
     shaderBuffer.controlContainer.innerHTML = ''; // Clear previous controls
@@ -1319,9 +1376,10 @@ function renderControlsForShader(shaderBuffer, schema) {
     shaderBuffer.controlSchema = schema;
 }
 
-// =====================================
-// Part 11: Directory Upload (JSON & Shader Files)
-// =====================================
+//#endregion
+
+//#region state
+
 async function applyControlSchema(viewIndex, schema) {
     const ok = shaderBuffers[viewIndex].setControlSchema(schema);
     if (!ok) return ok;
@@ -1489,9 +1547,12 @@ async function loadConfigDirectory(name) {
     logMessage(`✅ Loaded config "${name}" into tab ${currentViewIndex + 1}`);
 }
 
-// =====================================
-// Part 12: Main Render Loop
-// =====================================
+//#endregion
+
+//#endregion
+
+//#region render
+
 // TODO: only update shaders either in use or sampled by other shaders
 function updateAllShaderBuffers() {
     shaderBuffers.forEach(sb => sb.draw(effectiveTime));
@@ -1528,9 +1589,10 @@ function render(time) {
     requestAnimationFrame(render);
 }
 
-// =====================================
-// Part 13: Main Controls & Recording
-// =====================================
+//#endregion
+
+//#region record
+
 const canvasStream = canvas.captureStream(60);
 let mediaRecorder;
 let recordedChunks = [];
@@ -1565,6 +1627,190 @@ function stopRecording() {
     }
 }
 
+//#endregion
+
+//#region dsl
+
+function tokenize(str) {
+    return (
+        str
+            // strip CL-style comments
+            .replace(/;.*$/gm, '')
+            // pad parens so they're separate tokens
+            .replace(/\(/g, ' ( ')
+            .replace(/\)/g, ' ) ')
+            // grab strings, parens, or atoms
+            .match(/"(?:\\.|[^"])*"|[^\s()]+|[()]/g) || []
+    )
+        .map(tok =>
+            // turn JSON-style strings into JS strings
+            tok[0] === '"' ? JSON.parse(tok) : tok
+        );
+}
+
+function parseSexp(tokens) {
+    // const t = tokens.slice(); // copy
+    const t = tokens;
+    function parseStr() { // does not work with current tokenizer
+        t.shift(); // "
+        let str = '';
+        let escaped = false;
+        while (t[0] !== '"' || escaped) {
+            const tok = t.shift();
+            if (tok === '\\') escaped = true;
+            else {
+                str += tok;
+                escaped = false;
+            }
+        }
+        t.shift(); // "
+        return str;
+    }
+    function walk() {
+        if (t.length === 0) throw new SyntaxError('Unexpected EOF');
+        const tok = t.shift();
+        if (tok === '(') {
+            const L = [];
+            while (t[0] !== ')') {
+                if (t.length === 0) throw new SyntaxError('Missing )');
+                L.push(walk());
+            }
+            t.shift(); // pop ')'
+            return L;
+        }
+        if (tok === ')') throw new SyntaxError('Unexpected )');
+        // atom: number or symbol
+        return isFinite(tok) ? Number(tok) : tok;
+    }
+    const out = [];
+    while (t.length) out.push(walk());
+    return out.length === 1 ? out[0] : out;
+}
+
+function parseDSL(str) {
+    const tokens = tokenize(str);
+    const expr = parseSexp(tokens);
+    if (tokens.length) console.warn("Extra tokens after first expr", tokens);
+    return expr;
+}
+function evalDSL(tree) {
+    // Expect: [ 'shader', shaderName, ...clauses ]
+    if (tree[0] !== 'shader') throw new Error("DSL must start with (shader …)");
+    const cfg = { name: tree[1], uniforms: {}, textures: [] };
+    for (let i = 2; i < tree.length; i++) {
+        const clause = tree[i];
+        const [kw, ...rest] = clause;
+        switch (kw) {
+            case 'uniform':
+                // [ 'uniform', name, value ]
+                const val = rest[1];
+                cfg.uniforms[rest[0]] = (val === 'true' || val === 'false') ? (val === 'true') : val;
+                break;
+            case 'texture':
+                // TODO: parse (file|shader arg) to an object which returns a texture handle
+                // [ 'texture', slot, ['file'|'shader', arg] ]
+                cfg.textures.push({ slot: rest[0], [rest[1][0]]: rest[1][1] });
+                break;
+            default:
+                console.warn("Unknown DSL clause", kw);
+        }
+    }
+    return cfg;
+}
+
+/*
+(let* ((shad-0 (shader "color-invert" :texture-0 (select-shader-tab 1)))
+       (shad-1 (shader "color-invert" :texture-0 shad-0))
+       (main-shader (shader "demo-moire"
+                            :texture-0 shad-0
+                            :texture-1 shad-1)))
+  main-shader							; render main moire shader
+  )
+
+
+(shader "demo-moire"
+(uniform u_mode 2)
+(uniform u_colInv1 false)
+(uniform u_colInv0 true)
+(texture 0 shader 2)
+(texture 1 shader 1)
+)
+*/
+
+const myShaderLibrary = {};
+async function populateMyShaderLibrary() {
+    const savedList = await resourceCache.get('configsList');
+    if (typeof savedList === 'string') {
+        const names = JSON.parse(savedList);
+        for (const name of names) {
+            const fragKey = `config;${name};fragmentSource`;
+            const src = await resourceCache.get(fragKey);
+            const controlKey = `config;${name};controlSchema`;
+            const controlSchema = await resourceCache.get(controlKey);
+            if (typeof src === 'string') {
+                myShaderLibrary[name] = { frag: src, control: controlSchema };
+            }
+        }
+    }
+}
+
+function applyDsl(txt) {
+    let tree, config;
+    try {
+        tree = parseDSL(txt);
+        config = evalDSL(tree);
+    } catch (e) {
+        console.error(e);
+        return logError("DSL parse error:", e.message);
+    }
+
+    // 2) apply the fragment shader if you have a lookup by name
+    //    (you could map names to URLs or inline strings)
+    LOG(`generated config`, config);
+    const o = myShaderLibrary[config.name];
+    let tabIndex = currentViewIndex;
+    if (!o?.frag) logError(`uh oh ${config.name} not found`);
+    else applyShader(tabIndex, o.frag, vertexShaderSource);
+
+    // 1) find or create the named tab
+    // let tabIndex = shaderBuffers.findIndex(sb => sb.name.startsWith(config.name));
+    if (tabIndex < 0) {
+        tabIndex = shaderBuffers.length;
+        // create a fresh ShaderBuffer with your default schema
+        const sb = new ShaderBuffer(config.name,
+            new ShaderProgram(vertexShaderSource, o.frag, gl),
+            o.control,
+            tabIndex);
+        shaderBuffers.push(sb);
+        shaderBuffers[tabIndex] = sb;
+        createShaderTabs();
+        createControlSchemeTabs();
+    }
+    shaderBuffers[tabIndex].controlSchema = o.control;
+    console.log(o);
+    console.log(config.uniforms);
+    console.log(shaderBuffers[tabIndex].controlSchema);
+    // update uniform defaults given args
+    Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].customUniforms[k] = config.uniforms[k]);
+    renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].controlSchema);
+
+    // 5) bind textures
+    for (let t of config.textures) {
+        const inp = shaderBuffers[tabIndex].inputSlots[t.slot];
+        if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
+        if (t.shader !== undefined) inp.selectTab(t.shader);
+    }
+
+    // 6) switch view to your new tab
+    currentViewIndex = tabIndex;
+    updateActiveViewUI();
+    updateActiveControlUI();
+}
+
+//#endregion
+
+//#region editor
+
 // Shader Editor State Editor muX
 let editorSEX = { close: () => { } };
 
@@ -1584,7 +1830,7 @@ function setupShaderEditor() {
     const cancelBtn = document.getElementById('cancel-shader-edit');
 
     const closeEditor = () => {
-        editorSEX.editor.style.display = 'none';
+        if (editorSEX.editor) editorSEX.editor.style.display = 'none';
         editorOpen = false;
     };
 
@@ -1647,75 +1893,9 @@ function setupShaderEditor() {
     });
 }
 
-function applyDsl(txt) {
-    let tree, config;
-    try {
-        tree = parseDSL(txt);
-        config = evalDSL(tree);
-    } catch (e) {
-        console.error(e);
-        return logError("DSL parse error:", e.message);
-    }
+//#endregion
 
-    // 2) apply the fragment shader if you have a lookup by name
-    //    (you could map names to URLs or inline strings)
-    LOG(`generated config`, config);
-    const o = myShaderLibrary[config.name];
-    let tabIndex = currentViewIndex;
-    if (!o?.frag) logError(`uh oh ${config.name} not found`);
-    else applyShader(tabIndex, o.frag, vertexShaderSource);
-
-    // 1) find or create the named tab
-    // let tabIndex = shaderBuffers.findIndex(sb => sb.name.startsWith(config.name));
-    if (tabIndex < 0) {
-        tabIndex = shaderBuffers.length;
-        // create a fresh ShaderBuffer with your default schema
-        const sb = new ShaderBuffer(config.name,
-            new ShaderProgram(vertexShaderSource, o.frag, gl),
-            o.control,
-            tabIndex);
-        shaderBuffers.push(sb);
-        shaderBuffers[tabIndex] = sb;
-        createShaderTabs();
-        createControlSchemeTabs();
-    }
-    shaderBuffers[tabIndex].controlSchema = o.control;
-    console.log(o);
-    console.log(config.uniforms);
-    console.log(shaderBuffers[tabIndex].controlSchema);
-    // update uniform defaults given args
-    Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].customUniforms[k] = config.uniforms[k]);
-    renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].controlSchema);
-
-    // 5) bind textures
-    for (let t of config.textures) {
-        const inp = shaderBuffers[tabIndex].inputSlots[t.slot];
-        if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
-        if (t.shader !== undefined) inp.selectTab(t.shader);
-    }
-
-    // 6) switch view to your new tab
-    currentViewIndex = tabIndex;
-    updateActiveViewUI();
-    updateActiveControlUI();
-}
-
-const myShaderLibrary = {};
-async function populateMyShaderLibrary() {
-    const savedList = await resourceCache.get('configsList');
-    if (typeof savedList === 'string') {
-        const names = JSON.parse(savedList);
-        for (const name of names) {
-            const fragKey = `config;${name};fragmentSource`;
-            const src = await resourceCache.get(fragKey);
-            const controlKey = `config;${name};controlSchema`;
-            const controlSchema = await resourceCache.get(controlKey);
-            if (typeof src === 'string') {
-                myShaderLibrary[name] = { frag: src, control: controlSchema };
-            }
-        }
-    }
-}
+//#region setup
 
 // =====================================
 // Part 14: Event Listener Setup
@@ -1937,108 +2117,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     requestAnimationFrame(render);
 });
 
-function tokenize(str) {
-    return (
-        str
-            // strip CL-style comments
-            .replace(/;.*$/gm, '')
-            // pad parens so they're separate tokens
-            .replace(/\(/g, ' ( ')
-            .replace(/\)/g, ' ) ')
-            // grab strings, parens, or atoms
-            .match(/"(?:\\.|[^"])*"|[^\s()]+|[()]/g) || []
-    )
-        .map(tok =>
-            // turn JSON-style strings into JS strings
-            tok[0] === '"' ? JSON.parse(tok) : tok
-        );
-}
-
-function parseSexp(tokens) {
-    // const t = tokens.slice(); // copy
-    const t = tokens;
-    function parseStr() { // does not work with current tokenizer
-        t.shift(); // "
-        let str = '';
-        let escaped = false;
-        while (t[0] !== '"' || escaped) {
-            const tok = t.shift();
-            if (tok === '\\') escaped = true;
-            else {
-                str += tok;
-                escaped = false;
-            }
-        }
-        t.shift(); // "
-        return str;
-    }
-    function walk() {
-        if (t.length === 0) throw new SyntaxError('Unexpected EOF');
-        const tok = t.shift();
-        if (tok === '(') {
-            const L = [];
-            while (t[0] !== ')') {
-                if (t.length === 0) throw new SyntaxError('Missing )');
-                L.push(walk());
-            }
-            t.shift(); // pop ')'
-            return L;
-        }
-        if (tok === ')') throw new SyntaxError('Unexpected )');
-        // atom: number or symbol
-        return isFinite(tok) ? Number(tok) : tok;
-    }
-    const out = [];
-    while (t.length) out.push(walk());
-    return out.length === 1 ? out[0] : out;
-}
-
-function parseDSL(str) {
-    const tokens = tokenize(str);
-    const expr = parseSexp(tokens);
-    if (tokens.length) console.warn("Extra tokens after first expr", tokens);
-    return expr;
-}
-function evalDSL(tree) {
-    // Expect: [ 'shader', shaderName, ...clauses ]
-    if (tree[0] !== 'shader') throw new Error("DSL must start with (shader …)");
-    const cfg = { name: tree[1], uniforms: {}, textures: [] };
-    for (let i = 2; i < tree.length; i++) {
-        const clause = tree[i];
-        const [kw, ...rest] = clause;
-        switch (kw) {
-            case 'uniform':
-                // [ 'uniform', name, value ]
-                const val = rest[1];
-                cfg.uniforms[rest[0]] = (val === 'true' || val === 'false') ? (val === 'true') : val;
-                break;
-            case 'texture':
-                // TODO: parse (file|shader arg) to an object which returns a texture handle
-                // [ 'texture', slot, ['file'|'shader', arg] ]
-                cfg.textures.push({ slot: rest[0], [rest[1][0]]: rest[1][1] });
-                break;
-            default:
-                console.warn("Unknown DSL clause", kw);
-        }
-    }
-    return cfg;
-}
-
-/*
-(let* ((shad-0 (shader "color-invert" :texture-0 (select-shader-tab 1)))
-       (shad-1 (shader "color-invert" :texture-0 shad-0))
-       (main-shader (shader "demo-moire"
-                            :texture-0 shad-0
-                            :texture-1 shad-1)))
-  main-shader							; render main moire shader
-  )
-
-
-(shader "demo-moire"
-(uniform u_mode 2)
-(uniform u_colInv1 false)
-(uniform u_colInv0 true)
-(texture 0 shader 2)
-(texture 1 shader 1)
-)
-*/
+//#endregion
