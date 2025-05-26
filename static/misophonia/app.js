@@ -761,6 +761,28 @@ class ShaderBuffer {
         this.shaderIndex = shaderIndex;
     }
 
+    restoreDefaults() {
+        const defaultProgram = new ShaderProgram(vertexShaderSource, fragmentShaderSource, gl);
+        this.setProgram(defaultProgram);
+
+        this.setControlSchema(defaultControlSchema);
+
+        this.sampleMedia.fill(null);
+        this.inputSlots.forEach((input) => input?.resetMedia?.());
+        renderControlsForShader(this, this.controlSchema);
+
+        const shaderIndex = shaderBuffers.indexOf(this);
+        resourceCache.delete(`${shaderIndex};fragmentSource`);
+        resourceCache.delete(`${shaderIndex};controlSchema`);
+        resourceCache.delete(`controls;${shaderIndex}`);
+
+        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
+            resourceCache.delete(`${shaderIndex};${i}`);
+        }
+
+        logMessage(`Shader "${this.name}" reset to default.`);
+    }
+
     setName(s) {
         this.name = s;
         this.shaderTab.textContent = s;
@@ -1174,6 +1196,16 @@ function renderControlsForShader(shaderBuffer, schema) {
     if (shaderBuffer._autoToggleTimers) {
         shaderBuffer._autoToggleTimers.forEach(id => clearInterval(id));
     }
+
+    const restoreBtn = document.createElement('button');
+    restoreBtn.textContent = 'reset shader';
+    restoreBtn.className = 'restore-defaults-btn';
+    restoreBtn.addEventListener('click', () => {
+        shaderBuffer.restoreDefaults();
+    });
+    shaderBuffer.controlContainer.appendChild(document.createElement('br'));
+    shaderBuffer.controlContainer.appendChild(restoreBtn);
+
     shaderBuffer._autoToggleTimers = [];
     const tabIdx = shaderBuffers.indexOf(shaderBuffer);
     if (schema.name) {
