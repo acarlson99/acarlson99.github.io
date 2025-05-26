@@ -758,12 +758,7 @@ class ShaderBuffer {
 
         // Initialize advanced media inputs for each texture slot
         this.inputSlots = [];
-        for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-            let inp = new MediaInput(this, shaderIndex, i);
-            // let inp = createAdvancedMediaInput(this, shaderIndex, i);
-            this.inputSlots.push(inp);
-            this.advancedInputsContainer.appendChild(inp.getElement());
-        }
+        this.shaderIndex = shaderIndex;
     }
 
     setName(s) {
@@ -799,7 +794,24 @@ class ShaderBuffer {
 
     setControlSchema(controlSchema) {
         this.controlSchema = controlSchema;
-        if (this.controlContainer) renderControlsForShader(this, controlSchema);
+        this.controlSchema = controlSchema;
+
+        // Clear and rebuild advanced inputs
+        this.inputSlots = [];
+        if (this.advancedInputsContainer) this.advancedInputsContainer.innerHTML = '';
+
+        if (controlSchema?.inputs?.length) {
+            for (let i = 0; i < controlSchema.inputs.length; i++) {
+                const mediaInput = new MediaInput(this, this.shaderIndex, i);
+                this.inputSlots.push(mediaInput);
+                if (this.advancedInputsContainer) this.advancedInputsContainer.appendChild(mediaInput.getElement());
+            }
+        }
+
+        // Clear old controls
+        if (this.controlContainer) {
+            renderControlsForShader(this, controlSchema);
+        }
         return true;
     }
 
@@ -1358,9 +1370,11 @@ function renderControlsForShader(shaderBuffer, schema) {
     });
     // name texture slots
     for (let i = 0; i < schema.inputs?.length; i++) {
+        // TODO: this should move into the MediaInput render function
         const input = schema.inputs[i];
         const label = input.name;
         const inputController = shaderBuffer.inputSlots[i];
+        if (!inputController) continue;
         // const inputController = shaderBuffer.advancedInputsContainer.children[i];
         inputController.setInputName(label);
         const desc = input.description;
@@ -2084,7 +2098,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (dat.shader) sb.setFragmentShader(dat.shader);
 
             for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-                const previewContainer = sb.inputSlots[i].previewContainer;
+                const previewContainer = sb.inputSlots[i]?.previewContainer;
+                if (!previewContainer) continue;
                 if (dat.media[i]) {
                     await loadAndCacheMedia(dat.media[i], sb, i, previewContainer, false);
                 }
