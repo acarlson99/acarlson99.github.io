@@ -370,7 +370,7 @@ function createUrlForm(callback) {
  * @param {File|Blob|string} source
  *    - If string: treated as a URL (won’t be cached).  
  *    - If File/Blob: creates an ObjectURL.  
- * @param {object} shaderBuffer
+ * @param {ShaderBuffer} shaderBuffer
  * @param {number} slotIndex
  * @param {HTMLElement} previewContainer
  * @param {boolean} [cache=true]
@@ -415,22 +415,23 @@ async function loadAndCacheMedia(
     // 3) dispatch to the right loader
     if (blobType === 'image') {
         const o = loadImageFromSource(url, cb);
-        shaderBuffer.sampleMedia[slotIndex] = o;
+        shaderBuffer.setMediaSlot(slotIndex, o);
         bindPreview(previewContainer, o.element);
     }
     else if (blobType === 'video') {
         const o = loadVideoFromSource(url, cb);
-        shaderBuffer.sampleMedia[slotIndex] = o;
+        shaderBuffer.setMediaSlot(slotIndex, o);
         bindPreview(previewContainer, o.element);
     }
     else if (blobType === 'audio') {
         const o = loadAudioFromSource(url, cb);
-        shaderBuffer.sampleMedia[slotIndex] = o;
+        shaderBuffer.setMediaSlot(slotIndex, o);
         bindPreview(previewContainer, o.element);
         previewContainer.appendChild(o.muteBtn);
     }
     else {
         console.warn('Unknown media type for', source);
+        return;
     }
 }
 
