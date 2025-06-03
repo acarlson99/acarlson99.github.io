@@ -56,4 +56,49 @@ class CacheManager {
             req.onerror = () => reject(req.error);
         });
     }
+
+    // public
+
+    mediaKey(shaderIndex, slotIndex) {
+        return `${shaderIndex};${slotIndex}`;
+    }
+    putMedia(shaderIndex, slotIndex, val) {
+        return this.put(this.mediaKey(shaderIndex, slotIndex), val);
+    }
+    deleteMedia(shaderIndex, slotIndex) {
+        return this.delete(this.mediaKey(shaderIndex, slotIndex));
+    }
+    getMedia(shaderIndex, slotIndex) {
+        return this.get(this.mediaKey(shaderIndex, slotIndex));
+    }
+
+    putControlSchema(idx, val) {
+        return this.put(`${idx};controlSchema`, val);
+    }
+    deleteControlSchema(shaderIndex) {
+        return this.delete(`${shaderIndex};controlSchema`);
+    }
+    getControlSchema(shaderIndex) {
+        return this.get(`${shaderIndex};controlSchema`);
+    }
+
+    putControlState(shaderIndex, val) {
+        return this.put(`controls;${shaderIndex}`, val);
+    }
+    deleteControlState(shaderIndex) {
+        return this.delete(`controls;${shaderIndex}`);
+    }
+    getControlState(shaderIndex) {
+        return this.get(`controls;${shaderIndex}`);
+    }
+
+    putFragmentSrc(idx, val) {
+        return this.put(`${idx};fragmentSource`, val);
+    }
+    deleteFragmentSrc(shaderIndex) {
+        return this.delete(`${shaderIndex};fragmentSource`);
+    }
+    getFragmentSrc(shaderIndex) {
+        return this.get(`${shaderIndex};fragmentSource`);
+    }
 }

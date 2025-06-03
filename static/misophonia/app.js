@@ -1,6 +1,3 @@
-// =====================================
-// Part 1: IndexedDB Asset Cache
-// =====================================
 const DB_NAME = 'shader-assets-db';
 const DB_VERSION = 1;
 const STORE_NAME = 'asset-cache';
@@ -23,7 +20,7 @@ window.addEventListener('keydown', e => {
     const { shaderBuffer, uniform, input } = binding;
     // flip the stored value
     const newVal = !shaderBuffer.customUniforms[uniform];
-    shaderBuffer.customUniforms[uniform] = newVal;
+    shaderBuffer.setCustomUniform(uniform, newVal);
     // update the UI
     input.checked = newVal;
     saveControlState(shaderBuffer);
@@ -408,7 +405,7 @@ async function loadAndCacheMedia(
 
         if (cache) {
             // write into IndexedDB under our new key:
-            await resourceCache.put(cacheKey, source);
+            resourceCache.putMedia(shaderIndex, slotIndex, source);
         }
     }
 
@@ -515,7 +512,7 @@ class MediaInput {
     resetMedia() {
         this.setMedia(null);
         this.clearPreview();
-        resourceCache.delete(this.cacheKey);
+        resourceCache.deleteMedia(this.shaderIndex, this.slotIndex);
     }
 
     handleSourceChange() {
@@ -533,10 +530,10 @@ class MediaInput {
 
     async removeTexture() {
         try {
-            await resourceCache.delete(this.cacheKey);
-            logMessage(`Removed cache entry ${this.cacheKey}`);
+            await resourceCache.deleteMedia(this.shaderIndex, this.slotIndex);
+            logMessage(`Removed cache entry ${resourceCache.mediaKey(this.shaderIndex, this.slotIndex)}`);
         } catch (err) {
-            logError(`Error deleting ${this.cacheKey}:`, err);
+            logError(`Error deleting ${resourceCache.mediaKey(this.shaderIndex, this.slotIndex)}:`, err);
         }
         this.setMedia(null);
         this.resetMedia();
@@ -563,7 +560,7 @@ class MediaInput {
         this.inputControlsContainer.innerHTML = '';
         const form = createUrlForm(async (url) => {
             const descriptor = { type: "url", url };
-            await resourceCache.put(this.cacheKey, JSON.stringify(descriptor));
+            await resourceCache.putMedia(this.shaderIndex, this.slotIndex, JSON.stringify(descriptor));
             this.resetMedia();
             await loadAndCacheMedia(url.toLowerCase(), this.shaderBuffer, this.slotIndex, this.previewContainer, true, () => this.updateRequiredHighlight());
         });
@@ -621,7 +618,7 @@ class MediaInput {
             const idx = parseInt(tabSelect.value);
             if (isNaN(idx)) return;
             const descriptor = new Media({ type: "tab", tabIndex: idx });
-            resourceCache.put(this.cacheKey, JSON.stringify(descriptor));
+            resourceCache.putMedia(this.shaderIndex, this.slotIndex, JSON.stringify(descriptor));
             // this.shaderBuffer.sampleMedia[this.slotIndex] = descriptor;
             this.setMedia(descriptor);
             this.clearPreview();
@@ -753,6 +750,7 @@ class ShaderBuffer {
         document.getElementById('advanced-inputs').appendChild(this.advancedInputsContainer);
 
         this.customUniforms = {};
+        this.clearCustomUniforms();
 
         this._reallocateFramebuffersAndTextures(canvas.width, canvas.height);
 
@@ -772,12 +770,12 @@ class ShaderBuffer {
         renderControlsForShader(this, this.controlSchema);
 
         const shaderIndex = shaderBuffers.indexOf(this);
-        resourceCache.delete(`${shaderIndex};fragmentSource`);
-        resourceCache.delete(`${shaderIndex};controlSchema`);
-        resourceCache.delete(`controls;${shaderIndex}`);
+        resourceCache.deleteFragmentSrc(shaderIndex);
+        resourceCache.deleteControlSchema(shaderIndex);
+        resourceCache.deleteControlState(shaderIndex);
 
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-            resourceCache.delete(`${shaderIndex};${i}`);
+            resourceCache.deleteMedia(shaderIndex, i);
         }
 
         logMessage(`Shader "${this.name}" reset to default.`);
@@ -797,7 +795,7 @@ class ShaderBuffer {
     setProgram(p) {
         const prog = p.compile();
         if (!prog) return false;
-        this.customUniforms = {}; // TODO: populate custom uniform locations here instead of within renderControls
+        this.clearCustomUniforms();
         this.program = p;
         this.shaderProgram = prog;
         this.updateUniformLocations();
@@ -812,6 +810,14 @@ class ShaderBuffer {
     updateUniformLocations() {
         const us = this.controlSchema?.controls?.map((o) => o.uniform);
         this.uniforms.updateLocations(this.program.program, us);
+    }
+
+    setCustomUniform(k, v) {
+        this.customUniforms[k] = v;
+    }
+
+    clearCustomUniforms() {
+        this.customUniforms = {};
     }
 
     setControlSchema(controlSchema) {
@@ -1099,13 +1105,11 @@ function presetCanvasDimensions(w, h) {
 
 async function saveControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
-    const key = `controls;${idx}`;
-    await resourceCache.put(key, JSON.stringify(shaderBuffer.customUniforms));
+    await resourceCache.putControlState(idx, JSON.stringify(shaderBuffer.customUniforms));
 }
 async function getControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
-    const key = `controls;${idx}`;
-    const str = await resourceCache.get(key);
+    const str = await resourceCache.getControlState(idx);
     if (typeof str === 'string') {
         try {
             return JSON.parse(str);
@@ -1222,7 +1226,7 @@ function renderControlsForShader(shaderBuffer, schema) {
         const saved = shaderBuffer.customUniforms[control.uniform];
         const initialValue = (saved !== undefined) ? saved : control.default;
         LOG(`render control ${control.uniform} initial value ${initialValue} saved: ${saved} default: ${control.default}`);
-        shaderBuffer.customUniforms[control.uniform] = initialValue;
+        shaderBuffer.setCustomUniform(control.uniform, initialValue);
         switch (control.type) {
             case 'knob':
             case 'slider':
@@ -1255,7 +1259,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 // Update uniform and bubble on input
                 inputElement.addEventListener('input', e => {
                     const val = parseFloat(e.target.value);
-                    shaderBuffer.customUniforms[control.uniform] = val;
+                    shaderBuffer.setCustomUniform(control.uniform, val);
                     updateSliderBubble(e);
                     saveControlState(shaderBuffer);
                 });
@@ -1273,7 +1277,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement = document.createElement('button');
                 inputElement.textContent = control.label;
                 inputElement.addEventListener('click', () => {
-                    shaderBuffer.customUniforms[control.uniform] = true;
+                    shaderBuffer.setCustomUniform(control.uniform, true);
                     LOG(`Button action for ${control.uniform} triggered.`);
                     saveControlState(shaderBuffer);
                 });
@@ -1284,13 +1288,13 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement.checked = !!initialValue;
                 inputElement.setAttribute('data-uniform', control.uniform);
                 inputElement.addEventListener('change', e => {
-                    shaderBuffer.customUniforms[control.uniform] = e.target.checked;
+                    shaderBuffer.setCustomUniform(control.uniform, e.target.checked);
                     saveControlState(shaderBuffer);
                 });
 
                 // when user clicks, update uniform & state as before
                 inputElement.addEventListener('change', e => {
-                    shaderBuffer.customUniforms[control.uniform] = e.target.checked;
+                    shaderBuffer.setCustomUniform(control.uniform, e.target.checked);
                     saveControlState(shaderBuffer);
                 });
 
@@ -1341,7 +1345,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                     let x = mix(control.min.x, control.max.x, clampedX / rect.width);
                     let y = mix(control.min.y, control.max.y, 1 - (clampedY / rect.height));
                     LOG("x,y=", x, y);
-                    shaderBuffer.customUniforms[control.uniform] = { x, y };
+                    shaderBuffer.setCustomUniform(control.uniform, { x, y });
                     xyInfo.innerText = `(${x.toFixed(2)}, ${y.toFixed(2)})`;
                     xyInfo.style.left = (clampedX + 50) + 'px';
                     xyInfo.style.top = (clampedY - 25) + 'px';
@@ -1364,7 +1368,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement.type = 'color';
                 inputElement.value = initialValue;
                 inputElement.addEventListener('input', e => {
-                    shaderBuffer.customUniforms[control.uniform] = e.target.value;
+                    shaderBuffer.setCustomUniform(control.uniform, e.target.value);
                     saveControlState(shaderBuffer);
                 });
                 break;
@@ -1379,7 +1383,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 });
                 inputElement.value = String(initialValue);
                 inputElement.addEventListener('change', e => {
-                    shaderBuffer.customUniforms[control.uniform] = e.target.value;
+                    shaderBuffer.setCustomUniform(control.uniform, e.target.value);
                     saveControlState(shaderBuffer);
                 });
                 break;
@@ -1388,7 +1392,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement.type = 'text';
                 inputElement.value = initialValue;
                 inputElement.addEventListener('input', e => {
-                    shaderBuffer.customUniforms[control.uniform] = e.target.value;
+                    shaderBuffer.setCustomUniform(control.uniform, e.target.value);
                     saveControlState(shaderBuffer);
                 });
                 break;
@@ -1429,8 +1433,7 @@ async function applyControlSchema(viewIndex, schema) {
     const ok = shaderBuffers[viewIndex].setControlSchema(schema);
     if (!ok) return ok;
 
-    const key = `${viewIndex};controlSchema`;
-    await resourceCache.put(key, schema);
+    await resourceCache.putControlSchema(viewIndex, schema);
     await loadControlState(shaderBuffers[viewIndex]);
     return true;
 }
@@ -1439,8 +1442,7 @@ async function applyShader(viewIndex, frag, vert) {
     const ok = shaderBuffers[viewIndex].setProgram(new ShaderProgram(vert, frag, gl));
     if (!ok) return false;
 
-    const key = `${currentViewIndex};fragmentSource`;
-    await resourceCache.put(key, frag);
+    await resourceCache.putFragmentSrc(viewIndex, frag);
     return true;
 }
 
@@ -1478,9 +1480,7 @@ function handleFolderUpload(event) {
     reader.onload = async e => {
         newShaderSource = e.target.result;
         // cache the raw text
-        // await resourceCache.put('fragmentSource', newShaderSource);
-        const key = `${currentViewIndex};fragmentSource`;
-        await resourceCache.put(key, newShaderSource);
+        await resourceCache.putFragmentSrc(currentViewIndex, newShaderSource);
         attemptApply();
     };
     reader.readAsText(shaderFile);
@@ -1837,7 +1837,7 @@ function applyDsl(txt) {
     console.log(config.uniforms);
     console.log(shaderBuffers[tabIndex].controlSchema);
     // update uniform defaults given args
-    Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].customUniforms[k] = config.uniforms[k]);
+    Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].setCustomUniform(k, config.uniforms[k]));
     renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].controlSchema);
 
     // 5) bind textures
@@ -2088,36 +2088,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // load cached shaders
     await (async () => {
-        for (const key of await resourceCache.keys()) {
-            if (key.match('fragmentSource') || key.match('controlSchema')) continue;
-            const [sIdx, slotIdx] = key.split(';').map(Number);
-            if (!cachedShaderData[sIdx]) cachedShaderData[sIdx] = { media: {}, urls: {}, objs: {} };
+        for (let i = 0; i < MAX_TAB_SLOTS; i++) {
+            for (let j = 0; j < MAX_TEXTURE_SLOTS; j++) {
+                const cached = await resourceCache.getMedia(i, j);
+                if (!cached) continue;
 
-            const cached = await resourceCache.get(key);
+                if (!cachedShaderData[i]) cachedShaderData[i] = { media: {}, urls: {}, objs: {} };
 
-            if (cached instanceof Blob) {
-                cachedShaderData[sIdx].media[slotIdx] = cached;
-            } else if (typeof cached === 'string') {
-                try {
-                    const obj = JSON.parse(cached);
-                    cachedShaderData[sIdx].objs[slotIdx] = obj;
-                } catch {
-                    cachedShaderData[sIdx].urls[slotIdx] = cached;
+                if (cached instanceof Blob) {
+                    cachedShaderData[i].media[j] = cached;
+                } else if (typeof cached === 'string') {
+                    try {
+                        const obj = JSON.parse(cached);
+                        cachedShaderData[i].objs[j] = obj;
+                    } catch {
+                        cachedShaderData[i].urls[j] = cached;
+                    }
                 }
             }
         }
 
         for (let idx = 0; idx < shaderBuffers.length; idx++) {
             if (!cachedShaderData[idx]) cachedShaderData[idx] = { media: {}, urls: {}, objs: {} };
-            const sb = shaderBuffers[idx];
-            const sourceKey = `${idx};fragmentSource`;
-            const src = await resourceCache.get(sourceKey);
+            const src = await resourceCache.getFragmentSrc(idx);
             if (typeof src === 'string') {
                 cachedShaderData[idx].shader = src;
             }
 
-            const schemaKey = `${idx};controlSchema`;
-            const schema = await resourceCache.get(schemaKey);
+            const schema = await resourceCache.getControlSchema(idx);
             if (schema) cachedShaderData[idx].schema = schema;
         }
 
