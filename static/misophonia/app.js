@@ -810,7 +810,7 @@ class ShaderBuffer {
     }
 
     updateUniformLocations() {
-        const us = this.controlSchema?.controls.map((o) => o.uniform);
+        const us = this.controlSchema?.controls?.map((o) => o.uniform);
         this.uniforms.updateLocations(this.program.program, us);
     }
 
@@ -1661,6 +1661,7 @@ function startRecording() {
     };
     mediaRecorder.start();
     logMessage("Recording started.");
+    isPaused = false;
 }
 
 function stopRecording() {
