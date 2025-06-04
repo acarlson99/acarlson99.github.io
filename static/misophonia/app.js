@@ -129,8 +129,8 @@ class Uniforms {
                 gl.uniform1i(textureLocation, 2 + i);
             } else if (media.type === "tab") {
                 // For tab-sampled shaders, bind the target shader's offscreen texture.
-                const targetShader = shaderBuffers[media.tabIndex];
-                gl.bindTexture(gl.TEXTURE_2D, targetShader.textures[targetShader?.currentFramebufferIndex ^ 1]);
+                const targetBuffer = shaderBuffers[media.tabIndex];
+                gl.bindTexture(gl.TEXTURE_2D, targetBuffer.renderTarget.readTexture);
                 gl.uniform1i(textureLocation, 2 + i);
             } else if (media.type === "video" || media.type === "webcam") {
                 gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
@@ -713,6 +713,83 @@ class MediaInput {
 
 //#region shader-buffer
 
+class RenderTarget {
+    /**
+     * @param {number} width 
+     * @param {number} height 
+     */
+    constructor(width, height) {
+        this.width = width;
+        this.height = height;
+
+        this.curIndex = 0; // 0 or 1
+        this.framebuffers = [null, null];
+        this.textures = [null, null];
+        this._allocate(width, height);
+    }
+
+    _allocate(w, h) {
+        for (let i = 0; i < 2; i++) {
+            if (this.framebuffers[i]) {
+                gl.deleteFramebuffer(this.framebuffers[i]);
+                gl.deleteTexture(this.textures[i]);
+            }
+        }
+        this.framebuffers = [];
+        this.textures = [];
+
+        for (let i = 0; i < 2; i++) {
+            // Create and configure a texture
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            const fb = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+
+            if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+                console.warn('RenderTarget: incomplete framebuffer');
+            }
+
+            this.textures.push(tex);
+            this.framebuffers.push(fb);
+        }
+
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        this.width = w;
+        this.height = h;
+        this.curIndex = 0;
+    }
+
+    resize(w, h) {
+        if (w === this.width && h === this.height) return;
+        this._allocate(w, h);
+    }
+
+    /**
+     * @returns {WebGLTexture}
+     */
+    get writeFramebuffer() {
+        return this.framebuffers[this.curIndex];
+    }
+    /**
+     * @returns {WebGLTexture}
+     */
+    get readTexture() {
+        return this.textures[this.curIndex ^ 1];
+    }
+
+    swap() {
+        this.curIndex ^= 1;
+    }
+}
+
 class ShaderBuffer {
     constructor(name, program, controlSchema, shaderIndex) {
         this.name = name;
@@ -726,14 +803,10 @@ class ShaderBuffer {
         this.width = canvas.width;
         this.height = canvas.height;
 
-        // will hold [fb0, fb1] and [tex0, tex1]
-        this.framebuffers = [];
-        this.textures = [];
-        this.currentFramebufferIndex = 0;
+        this.renderTarget = new RenderTarget(this.width, this.height);
 
         this.uniforms = new Uniforms();
 
-        // this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
         this.sampleMedia = this.uniforms.sampleMedia; // TODO: fix codesmell
 
         /** @type {ShaderProgram} **/
@@ -751,8 +824,6 @@ class ShaderBuffer {
 
         this.customUniforms = {};
         this.clearCustomUniforms();
-
-        this._reallocateFramebuffersAndTextures(canvas.width, canvas.height);
 
         // Initialize advanced media inputs for each texture slot
         this.inputSlots = [];
@@ -820,6 +891,7 @@ class ShaderBuffer {
         this.customUniforms = {};
     }
 
+    // TODO: this logic should move outside of this class
     setControlSchema(controlSchema) {
         this.controlSchema = controlSchema;
         this.controlSchema = controlSchema;
@@ -843,43 +915,16 @@ class ShaderBuffer {
         return true;
     }
 
-    _reallocateFramebuffersAndTextures(w, h) {
-        gl.viewport(0, 0, w, h);
-        const fbObjA = ShaderBuffer.createGLFramebuffer(w, h);
-        const fbObjB = ShaderBuffer.createGLFramebuffer(w, h);
-        this.framebuffers = [fbObjA.framebuffer, fbObjB.framebuffer];
-        this.textures = [fbObjA.texture, fbObjB.texture];
-    }
-
-    static createGLFramebuffer(w, h) {
-        const tex = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        const fb = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) LOG('Warning: incomplete framebuffer');
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        return { framebuffer: fb, texture: tex };
-    }
-
     draw(timeMs) {
         const gl = this.gl;
-        const dstIdx = this.currentFramebufferIndex;
-        const srcIdx = 1 - dstIdx;
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers[dstIdx]);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.renderTarget.writeFramebuffer);
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.useProgram(this.program.program);
 
-        this.updateUniformLocations(); // TODO: this line should go
+        this.updateUniformLocations(); // TODO: this line should go (should be updated elsewhere)
         this.uniforms.updateValues(
             timeMs,
             { width: gl.canvas.width, height: gl.canvas.height },
@@ -888,12 +933,7 @@ class ShaderBuffer {
 
         this.program.drawToPosition(quadBuffer);
 
-        // flip-flop
-        this.currentFramebufferIndex = srcIdx;
-    }
-
-    getOutputTexture() {
-        return this.textures[this.currentFramebufferIndex];
+        this.renderTarget.swap();
     }
 }
 
@@ -915,8 +955,41 @@ class ShaderProgram {
         }
     }
 
+    static fragmentShaderSourcePre = `#version 300 es
+#ifdef GL_ES
+precision mediump float;
+#endif
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+uniform float u_time;
+uniform vec2 u_resolution;
+uniform sampler2D u_texture0;
+uniform sampler2D u_texture1;
+uniform sampler2D u_texture2;
+uniform sampler2D u_texture3;
+
+#define iChannel0 u_texture0
+#define iChannel1 u_texture1
+#define iChannel2 u_texture2
+#define iChannel3 u_texture3
+#define iTime u_time
+#define iResolution u_resolution
+
+out vec4 fragColor;
+`;
+    static fragmentShaderSourcePost = `
+void main(void) {
+    mainImage(fragColor, gl_FragCoord.xy);
+}
+`;
+
     static createShader(type, src) {
         const s = gl.createShader(type);
+        if (type === gl.FRAGMENT_SHADER) src = ShaderProgram.fragmentShaderSourcePre + src + ShaderProgram.fragmentShaderSourcePost;
         gl.shaderSource(s, src);
         gl.compileShader(s);
         if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
@@ -978,30 +1051,19 @@ function createProgram(vsSrc, fsSrc) {
 
 const quadVertexShaderSource = `#version 300 es
   in vec2 a_position;
-  out vec2 v_texCoord;
+  out vec2 fragCoord;
 
   void main() {
     gl_Position = vec4(a_position, 0.0, 1.0);
-    v_texCoord = a_position * 0.5 + 0.5;
+    fragCoord = a_position * 0.5 + 0.5;
   }
 `;
-const quadFragmentShaderSource = `#version 300 es
-  #ifdef GL_ES
-  precision mediump float;
-  #endif
-  #ifdef GL_FRAGMENT_PRECISION_HIGH
-  precision highp float;
-  #else
-  precision mediump float;
-  #endif
-
-  precision mediump float;
+const quadFragmentShaderSource = `
   uniform sampler2D u_texture;
-  in vec2 v_texCoord;
-  out vec4 outColor;
+  in vec2 fragCoord;
 
-  void main() {
-    outColor = texture(u_texture, v_texCoord);
+  void mainImage( out vec4 fragColor, in vec2 fc ) {
+    fragColor = texture(u_texture, fragCoord);
   }
 `;
 const quadProgram = createProgram(quadVertexShaderSource, quadFragmentShaderSource);
@@ -1016,36 +1078,19 @@ const vertexShaderSource = `#version 300 es
     gl_Position = vec4(a_position, 0.0, 1.0);
   }
 `;
-let fragmentShaderSource = `#version 300 es
-  #ifdef GL_ES
-  precision mediump float;
-  #endif
-  #ifdef GL_FRAGMENT_PRECISION_HIGH
-  precision highp float;
-  #else
-  precision mediump float;
-  #endif
-
-  uniform float u_time;
-  uniform vec2 u_resolution;
-  uniform sampler2D u_texture0;
-  uniform sampler2D u_texture1;
-  uniform sampler2D u_texture2;
-  uniform sampler2D u_texture3;
+let fragmentShaderSource = `
   uniform float u_test;
   uniform float u_test2;
 
-  out vec4 outColor;
-
-  void main(void) {
-    vec2 uv = gl_FragCoord.xy / u_resolution;
+  void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+    vec2 uv = fragCoord.xy / u_resolution;
     uv = uv - 0.5;
     uv.x *= u_resolution.x / u_resolution.y;
     float dist = length(uv);
     float wave = sin(dist * 10.0 * u_test2 - u_time * 3.0 * u_test);
     float intensity = smoothstep(0.3, 0.0, abs(wave));
     vec3 color = mix(vec3(0.2, 0.1, 0.5), vec3(1.0, 0.8, 0.3), intensity);
-    outColor = vec4(color, 1.0);
+    fragColor = vec4(color, 1.0);
   }
 `;
 
@@ -1626,7 +1671,7 @@ function render(time) {
     const quadTextureLocation = gl.getUniformLocation(quadProgram, "u_texture");
     gl.activeTexture(gl.TEXTURE0);
     // Use the currently active shader buffer’s updated offscreen texture.
-    const target = shaderBuffers[currentViewIndex].getOutputTexture();
+    const target = shaderBuffers[currentViewIndex].renderTarget.readTexture;
     gl.bindTexture(gl.TEXTURE_2D, target);
     gl.uniform1i(quadTextureLocation, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
