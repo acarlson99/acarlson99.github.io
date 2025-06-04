@@ -1676,6 +1676,8 @@ function render(time) {
     gl.uniform1i(quadTextureLocation, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
+    document.getElementById('current-frame').innerText = `${(effectiveTime / 1000.0).toPrecision(3)}`;
+
     requestAnimationFrame(render);
 }
 
