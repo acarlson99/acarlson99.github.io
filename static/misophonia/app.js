@@ -1130,8 +1130,7 @@ function updateCanvasDimensions() {
     // Clamp the CSS display size
     clampPreviewSize(canvas, 1000, 1000);
 
-    // Recreate framebuffers/textures with new dimensions
-    shaderBuffers.forEach(sb => sb._reallocateFramebuffersAndTextures(width, height));
+    shaderBuffers.forEach(sb => sb.renderTarget.resize(width, height));
     LOG(`Canvas dimensions set to ${width}x${height}`);
 }
 
