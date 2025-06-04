@@ -828,6 +828,8 @@ class ShaderBuffer {
         // Initialize advanced media inputs for each texture slot
         this.inputSlots = [];
         this.shaderIndex = shaderIndex;
+
+        if (this.program) this.updateUniformLocations();
     }
 
     restoreDefaults() {
@@ -924,7 +926,7 @@ class ShaderBuffer {
 
         gl.useProgram(this.program.program);
 
-        this.updateUniformLocations(); // TODO: this line should go (should be updated elsewhere)
+        // this.updateUniformLocations(); // TODO: this line should go (should be updated elsewhere)
         this.uniforms.updateValues(
             timeMs,
             { width: gl.canvas.width, height: gl.canvas.height },
@@ -1857,16 +1859,12 @@ function applyDsl(txt) {
         return logError("DSL parse error:", e.message);
     }
 
-    // 2) apply the fragment shader if you have a lookup by name
-    //    (you could map names to URLs or inline strings)
     LOG(`generated config`, config);
     const o = myShaderLibrary[config.name];
     let tabIndex = currentViewIndex;
     if (!o?.frag) logError(`uh oh ${config.name} not found`);
     else applyShader(tabIndex, o.frag, vertexShaderSource);
 
-    // 1) find or create the named tab
-    // let tabIndex = shaderBuffers.findIndex(sb => sb.name.startsWith(config.name));
     if (tabIndex < 0) {
         tabIndex = shaderBuffers.length;
         // create a fresh ShaderBuffer with your default schema
@@ -1887,14 +1885,12 @@ function applyDsl(txt) {
     Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].setCustomUniform(k, config.uniforms[k]));
     renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].controlSchema);
 
-    // 5) bind textures
     for (let t of config.textures) {
         const inp = shaderBuffers[tabIndex].inputSlots[t.slot];
         if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
         if (t.shader !== undefined) inp.selectTab(t.shader);
     }
 
-    // 6) switch view to your new tab
     currentViewIndex = tabIndex;
     updateActiveViewUI();
     updateActiveControlUI();
