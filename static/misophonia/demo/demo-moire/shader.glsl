@@ -1,18 +1,3 @@
-#version 300 es
-#ifdef GL_ES
-precision mediump float;
-#endif
-#define iTime u_time
-#define iResolution u_resolution
-// #define texture(s,p) texture2D(s,p)
-#define iChannel0 u_texture0
-#define iChannel1 u_texture1
-
-uniform float u_time;
-uniform vec2 u_resolution;
-uniform sampler2D u_texture0;
-uniform sampler2D u_texture1;
-
 #define PI 3.141592653589
 
 uniform vec2 u_mv;          // move morie
@@ -31,8 +16,6 @@ uniform float u_timeMod;
 
 uniform float u_tmxa; // [0 .. 1] mix texture0 into texture1
 uniform float u_tmxb; // [0 .. 1] mix texture1 into texture0
-
-out vec4 FragColor;
 
 mat2 rot(float theta) {
   float s = sin(theta);
@@ -89,5 +72,3 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // Output to screen
   fragColor = C;
 }
-
-void main() { mainImage(FragColor, gl_FragCoord.xy); }

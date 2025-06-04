@@ -1,22 +1,12 @@
-#version 300 es
-#ifdef GL_ES
-precision mediump float;
-#endif
-
-uniform float u_time;
-uniform vec2 u_resolution;
-
 uniform vec3 u_color;
 uniform vec2 u_position;
 uniform float u_speed;
 uniform bool u_mode;
 uniform float u_intensity;
 
-out vec4 FragColor;
-
-void main(void) {
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // Normalize pixel coordinates (0.0 to 1.0)
-  vec2 uv = gl_FragCoord.xy / u_resolution;
+  vec2 uv = fragCoord.xy / u_resolution;
 
   // Center the coordinates (-0.5 to 0.5) and adjust for aspect ratio
   uv = uv - u_position;
@@ -34,5 +24,5 @@ void main(void) {
     color = 1.0 - color;
   }
 
-  FragColor = vec4(color, 1.0);
+  fragColor = vec4(color, 1.0);
 }
