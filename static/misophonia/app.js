@@ -101,12 +101,9 @@ class Uniforms {
         this.customLocations = {};
         this.sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
         this.sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
-        // TODO: instead of assigning media to sampleMedia slots this should provide a way to easily assign media
-        this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
             this.sampleTextures[i] = gl.createTexture();
         }
-
     }
 
     /**
@@ -821,6 +818,10 @@ class RenderTarget {
 }
 
 class ShaderBuffer {
+    /**
+     * @param {String} name
+     * @param {ShaderProgram} program
+     */
     constructor(name, program, controlSchema, shaderIndex) {
         this.name = name;
         this.gl = gl;
@@ -837,9 +838,11 @@ class ShaderBuffer {
 
         this.uniforms = new Uniforms();
 
-        this.sampleMedia = this.uniforms.sampleMedia; // TODO: fix codesmell
+        // TODO: instead of assigning media to sampleMedia slots this should provide a way to easily assign media
+        this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
+        this.customUniforms = {};
+        this.clearCustomUniforms();
 
-        /** @type {ShaderProgram} **/
         if (program) this.setProgram(program);
         console.log(`setting control schema to`, controlSchema);
         this.setControlSchema(controlSchema);
@@ -851,9 +854,6 @@ class ShaderBuffer {
         this.advancedInputsContainer = document.createElement('div');
         this.advancedInputsContainer.className = 'advanced-inputs-container';
         document.getElementById('advanced-inputs').appendChild(this.advancedInputsContainer);
-
-        this.customUniforms = {};
-        this.clearCustomUniforms();
 
         // Initialize advanced media inputs for each texture slot
         this.inputSlots = [];
