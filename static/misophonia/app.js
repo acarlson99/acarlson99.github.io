@@ -239,6 +239,7 @@ class Uniforms {
         gl.useProgram(prog);
         this.updateBuiltinLocations(prog);
         this.updateCustomLocations(prog, customNames);
+        gl.useProgram(null);
     }
 }
 
@@ -856,7 +857,7 @@ class ShaderBuffer {
         document.getElementById('advanced-inputs').appendChild(this.advancedInputsContainer);
 
         // Initialize advanced media inputs for each texture slot
-        this.inputSlots = [];
+        this.mediaInputs = [];
         this.shaderIndex = shaderIndex;
 
         if (this.program) this.updateUniformLocations();
@@ -869,7 +870,7 @@ class ShaderBuffer {
         this.setControlSchema(defaultControlSchema);
 
         this.sampleMedia.fill(null);
-        this.inputSlots.forEach((input) => input?.resetMedia?.());
+        this.mediaInputs.forEach((input) => input?.resetMedia?.());
         renderControlsForShader(this, this.controlSchema);
 
         const shaderIndex = shaderBuffers.indexOf(this);
@@ -929,13 +930,13 @@ class ShaderBuffer {
         this.controlSchema = controlSchema;
 
         // Clear and rebuild advanced inputs
-        this.inputSlots = [];
+        this.mediaInputs = [];
         if (this.advancedInputsContainer) this.advancedInputsContainer.innerHTML = '';
 
         if (controlSchema?.inputs?.length) {
             for (let i = 0; i < controlSchema.inputs.length; i++) {
                 const mediaInput = new MediaInput(this, this.shaderIndex, i);
-                this.inputSlots.push(mediaInput);
+                this.mediaInputs.push(mediaInput);
                 if (this.advancedInputsContainer) this.advancedInputsContainer.appendChild(mediaInput.getElement());
             }
         }
@@ -1486,7 +1487,7 @@ function renderControlsForShader(shaderBuffer, schema) {
         // TODO: this should move into the MediaInput render function
         const input = schema.inputs[i];
         const label = input.name;
-        const inputController = shaderBuffer.inputSlots[i];
+        const inputController = shaderBuffer.mediaInputs[i];
         if (!inputController) continue;
         // const inputController = shaderBuffer.advancedInputsContainer.children[i];
         inputController.setInputName(label);
@@ -1916,7 +1917,7 @@ function applyDsl(txt) {
     renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].controlSchema);
 
     for (let t of config.textures) {
-        const inp = shaderBuffers[tabIndex].inputSlots[t.slot];
+        const inp = shaderBuffers[tabIndex].mediaInputs[t.slot];
         if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
         if (t.shader !== undefined) inp.selectTab(t.shader);
     }
@@ -2202,7 +2203,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (dat.shader) sb.setFragmentShader(dat.shader);
 
             for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-                const previewContainer = sb.inputSlots[i]?.previewContainer;
+                const previewContainer = sb.mediaInputs[i]?.previewContainer;
                 if (!previewContainer) continue;
                 if (dat.media[i]) {
                     await loadAndCacheMedia(dat.media[i], sb, i, previewContainer, false);
@@ -2210,7 +2211,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (dat.objs[i]) {
                     const o = dat.objs[i];
                     if (o.type === 'tab') {
-                        sb.inputSlots[i].selectTab(o.tabIndex);
+                        sb.mediaInputs[i].selectTab(o.tabIndex);
                     } else if (o.type === 'url') {
                         await loadAndCacheMedia(o.url, sb, i, previewContainer, false);
                     }
