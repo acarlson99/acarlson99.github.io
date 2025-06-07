@@ -307,25 +307,36 @@ class Media {
         return new Media("tab", { tabIndex: idx });
     }
 
-    // static async Microphone(cb) {
-    //     try {
-    //         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    //         const audioContext = new AudioContext();
-    //         const source = audioContext.createMediaStreamSource(stream);
-    //         const analyser = audioContext.createAnalyser();
-    //         analyser.fftSize = 256;
-    //         const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    //         source.connect(analyser);
-    //         const o = new Media("audio", { element: audio, analyser, dataArray, outputGain: null });
-    //         if (cb) cb(o);
-    //         return o;
-    //     } catch (err) {
-    //         return logError("Error accessing microphone:", err);
-    //     }
-    // }
+    static async Microphone(cb) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const audioContext = new AudioContext();
+            const source = audioContext.createMediaStreamSource(stream);
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            source.connect(analyser);
+            const o = new Media("audio", { element: null, analyser, dataArray, outputGain: null });
+            if (cb) cb(o);
+            return o;
+        } catch (err) {
+            return logError("Error accessing microphone:", err);
+        }
+    }
 
-    static Webcam() {
-
+    static async Webcam(cb) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const video = Media.Video(null).element;
+            const o = new Media('webcam', { element: video });
+            video.srcObject = stream;
+            video.autoplay = true;
+            video.setAttribute('playsinline', '');
+            if (cb) video.addEventListener('loadeddata', cb);
+            return o;
+        } catch (err) {
+            return logError("Error accessing webcam:", err);
+        }
     }
 
     // static fromUrl(url, cb) {
@@ -595,24 +606,13 @@ class MediaInput {
         this.inputControlsContainer.innerHTML = '';
         const micBtn = document.createElement('button');
         micBtn.textContent = 'Enable Microphone';
-        micBtn.addEventListener('click', () => {
+        micBtn.addEventListener('click', async () => {
             this.resetMedia();
-            // TODO: move this bit to a static Media function
-            navigator.mediaDevices.getUserMedia({ audio: true })
-                .then(stream => {
-                    const audioContext = new AudioContext();
-                    const source = audioContext.createMediaStreamSource(stream);
-                    const analyser = audioContext.createAnalyser();
-                    analyser.fftSize = 256;
-                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                    source.connect(analyser);
-                    this.setMedia(new Media("audio", { element: null, analyser, dataArray }));
-                    // this.shaderBuffer.sampleMedia[this.slotIndex] = { type: "audio", element: null, analyser, dataArray };
-                    this.clearPreview();
-                    this.previewContainer.innerHTML = 'Microphone Enabled';
-                    this.updateRequiredHighlight();
-                })
-                .catch(err => logError("Error accessing microphone:", err));
+            const o = await Media.Microphone();
+            this.setMedia(o);
+            this.clearPreview();
+            this.previewContainer.innerHTML = 'Microphone Enabled';
+            this.updateRequiredHighlight();
         });
         this.inputControlsContainer.appendChild(micBtn);
     }
@@ -665,34 +665,25 @@ class MediaInput {
         this.inputControlsContainer.innerHTML = '';
         const camBtn = document.createElement('button');
         camBtn.textContent = 'Enable Webcam';
-        camBtn.addEventListener('click', () => {
+        camBtn.addEventListener('click', async () => {
             this.resetMedia();
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(stream => {
-                    // TODO: move this bit to a static Media function
-                    const video = Media.Video(null).element;
-                    // const video = loadVideoFromSource(null).element;
-                    this.shaderBuffer.sampleMedia[this.slotIndex] = new Media('video', { element: video });
-                    bindPreview(this.previewContainer, video);
-                    video.srcObject = stream;
-                    video.autoplay = true;
-                    video.setAttribute('playsinline', '');
-                    video.addEventListener('loadeddata', () => {
-                        const updateLoop = () => {
-                            this.updateRequiredHighlight();
-                            // TODO: refactor
-                            if (this.shaderBuffer.sampleMedia[this.slotIndex]?.type === 'webcam') {
-                                requestAnimationFrame(updateLoop);
-                            }
-                        };
-                        this.clearPreview();
-                        this.previewContainer.appendChild(video);
-                        // this.shaderBuffer.sampleMedia[this.slotIndex] = { type: 'webcam', element: video };
-                        this.setMedia({ type: 'webcam', element: video });
-                        updateLoop();
-                    });
-                })
-                .catch(err => logError("Error accessing webcam:", err));
+            let o = await Media.Webcam();
+            // TODO: find another way to bind this callback
+            o.element.addEventListener('loadeddata', () => {
+                const updateLoop = () => {
+                    this.updateRequiredHighlight();
+                    // TODO: refactor
+                    if (this.shaderBuffer.sampleMedia[this.slotIndex]?.type === 'webcam') {
+                        requestAnimationFrame(updateLoop);
+                    }
+                };
+                this.clearPreview();
+                this.previewContainer.appendChild(o.element);
+                this.setMedia(o);
+                updateLoop();
+            });
+            this.shaderBuffer.sampleMedia[this.slotIndex] = o;
+            bindPreview(this.previewContainer, o.element);
         });
         this.inputControlsContainer.appendChild(camBtn);
     }
