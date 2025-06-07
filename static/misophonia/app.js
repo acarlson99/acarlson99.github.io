@@ -109,18 +109,26 @@ class Uniforms {
 
     }
 
-    updateBuiltinValues(timeMs, res) {
+    /**
+     * @param {Number} timeMs 
+     * @param {{width:Number,height:Number}} res 
+     * @param {[Media]} sampleMedia 
+     */
+    updateBuiltinValues(timeMs, res, sampleMedia) {
         if (this.timeLocation) gl.uniform1f(this.timeLocation, timeMs * 0.001);
         if (this.resolutionLocation) gl.uniform2f(this.resolutionLocation, res.width, res.height);
-        this.bindSampledTextures()
+        this.bindSampledTextures(sampleMedia)
     }
 
-    bindSampledTextures() {
+    /**
+     * @param {[Media]} sampleMedia array of media
+     */
+    bindSampledTextures(sampleMedia) {
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
             if (!this.sampleTextures[i] || !this.sampleTextureLocations[i])
                 continue;
             const textureLocation = this.sampleTextureLocations[i];
-            const media = this.sampleMedia[i];
+            const media = sampleMedia[i];
             const treatAsEmpty = !!media || ((media?.type == 'webcam' && media.element.readyState >= 2));
             gl.activeTexture(gl.TEXTURE2 + i);
             if (!treatAsEmpty) {
@@ -176,9 +184,9 @@ class Uniforms {
         }
     }
 
-    updateCustomValues(customs) {
-        for (let name in customs) {
-            const value = customs[name];
+    updateCustomValues(customVals) {
+        for (let name in customVals) {
+            const value = customVals[name];
             const loc = this.customLocations[name];
             if (loc === null) continue;
             if (typeof value === 'number') {
@@ -201,9 +209,14 @@ class Uniforms {
         }
     }
 
-    updateValues(time, res, uniforms) {
-        if (uniforms) this.updateCustomValues(uniforms);
-        this.updateBuiltinValues(time, res);
+    /**
+     * @param {Number} timeMs
+     * @param {{width:Number,height:Number}} resolution
+     * @param {[Media]} media
+     */
+    updateValues(timeMs, resolution, customUniformValues, media) {
+        if (customUniformValues) this.updateCustomValues(customUniformValues);
+        this.updateBuiltinValues(timeMs, resolution, media);
     }
 
     /** @param {[String]} names is a list of uniform names **/
@@ -947,7 +960,8 @@ class ShaderBuffer {
         this.uniforms.updateValues(
             timeMs,
             { width: gl.canvas.width, height: gl.canvas.height },
-            this.customUniforms
+            this.customUniforms,
+            this.sampleMedia
         );
 
         this.program.drawToPosition(quadBuffer);
