@@ -253,37 +253,6 @@ class Media {
         Object.assign(this, params);
     }
 
-    static Audio(src, cb) {
-        const audioSource = createAudioSource(src);
-        if (!isPaused && typeof audioSource.audio.play === 'function') {
-            audioSource.audio.play();
-        } else {
-            audioSource.audio.pause();
-        }
-        audioSource.audio.style.maxWidth = "300px";
-
-        const muteBtn = document.createElement('button');
-        const o = new Media('audio',
-            {
-                element: audioSource.audio,
-                analyser: audioSource.analyser,
-                dataArray: audioSource.dataArray,
-                outputGain: audioSource.outputGain,
-                muteBtn: muteBtn
-            });
-
-        let muted = true;
-        muteBtn.textContent = "Unmute";
-        toggleMute(o, muted);
-        muteBtn.addEventListener('click', () => {
-            muted = !muted;
-            toggleMute(o, muted);
-            muteBtn.textContent = muted ? "Unmute" : "Mute";
-            if (cb) cb();
-        });
-        return o;
-    }
-
     static Image(src, cb) {
         const img = new Image();
         img.crossOrigin = "anonymous";
@@ -316,6 +285,59 @@ class Media {
 
     static Tab(idx) {
         return new Media("tab", { tabIndex: idx });
+    }
+
+    static Audio(src, cb) {
+        const audioSource = Media.createAudioSource(src);
+        if (!isPaused && typeof audioSource.audio.play === 'function') {
+            audioSource.audio.play();
+        } else {
+            audioSource.audio.pause();
+        }
+        audioSource.audio.style.maxWidth = "300px";
+
+        const muteBtn = document.createElement('button');
+        const o = new Media('audio',
+            {
+                element: audioSource.audio,
+                analyser: audioSource.analyser,
+                dataArray: audioSource.dataArray,
+                outputGain: audioSource.outputGain,
+                muteBtn: muteBtn
+            });
+
+        let muted = true;
+        muteBtn.textContent = "Unmute";
+        Media.toggleMute(o, muted);
+        muteBtn.addEventListener('click', () => {
+            muted = !muted;
+            Media.toggleMute(o, muted);
+            muteBtn.textContent = muted ? "Unmute" : "Mute";
+            if (cb) cb();
+        });
+        return o;
+    }
+
+    static createAudioSource(src) {
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.loop = true;
+        audio.src = src;
+        const audioContext = new AudioContext();
+        const source = audioContext.createMediaElementSource(audio);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        const outputGain = audioContext.createGain();
+        outputGain.gain.value = 1;
+        source.connect(outputGain);
+        outputGain.connect(audioContext.destination);
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        return { audio, analyser, dataArray, outputGain };
+    }
+
+    static toggleMute(media, mute) {
+        if (media.outputGain) media.outputGain.gain.value = mute ? 0 : 1;
     }
 
     static async Microphone(cb) {
@@ -358,32 +380,6 @@ class Media {
     //     throw new Error("Unknown URL media type");
     // }
 }
-
-//#region audio
-
-function createAudioSource(src) {
-    const audio = document.createElement('audio');
-    audio.controls = true;
-    audio.loop = true;
-    audio.src = src;
-    const audioContext = new AudioContext();
-    const source = audioContext.createMediaElementSource(audio);
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
-    const outputGain = audioContext.createGain();
-    outputGain.gain.value = 1;
-    source.connect(outputGain);
-    outputGain.connect(audioContext.destination);
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    return { audio, analyser, dataArray, outputGain };
-}
-
-function toggleMute(media, mute) {
-    if (media.outputGain) media.outputGain.gain.value = mute ? 0 : 1;
-}
-
-//#endregion
 
 //#region url
 
