@@ -129,18 +129,18 @@ class Uniforms {
                 continue;
             const textureLocation = this.sampleTextureLocations[i];
             const media = sampleMedia[i];
-            const treatAsEmpty = !!media || ((media?.type == 'webcam' && media.element.readyState >= 2));
+            const treatAsEmpty = !!media || ((media?.type === Media.WebcamT && media.element.readyState >= 2));
             gl.activeTexture(gl.TEXTURE2 + i);
             if (!treatAsEmpty) {
                 // No media: use a fallback texture.
                 gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
                 gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "tab") {
+            } else if (media.type === Media.TabT) {
                 // For tab-sampled shaders, bind the target shader's offscreen texture.
                 const targetBuffer = shaderBuffers[media.tabIndex];
                 gl.bindTexture(gl.TEXTURE_2D, targetBuffer.renderTarget.readTexture);
                 gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "video" || media.type === "webcam") {
+            } else if (media.type === Media.VideoT || media.type === Media.WebcamT) {
                 gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
                 gl.texImage2D(
@@ -151,7 +151,7 @@ class Uniforms {
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
                 gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "audio") {
+            } else if (media.type === Media.AudioT) {
                 const { analyser, dataArray } = media;
                 analyser.getByteFrequencyData(dataArray);
                 gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
@@ -163,7 +163,7 @@ class Uniforms {
                     gl.LUMINANCE, gl.UNSIGNED_BYTE, dataArray
                 );
                 gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "image") {
+            } else if (media.type === Media.ImageT) {
                 gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
                 gl.texImage2D(
@@ -256,10 +256,18 @@ class Media {
         Object.assign(this, params);
     }
 
+    static ImageT = "Image";
+    static VideoT = "Video";
+    static TabT = "Tab";
+    static AudioT = "Audio";
+    static MicrophoneT = "Microphone";
+    static WebcamT = "Webcam";
+    static URLT = "URL"; // TODO: this one should go-- media types should be concrete, and URLs are inferred to another type
+
     static Image(src, cb) {
         const img = new Image();
         img.crossOrigin = "anonymous";
-        let o = new Media('image', { element: img });
+        let o = new Media(Media.ImageT, { element: img });
         img.onload = () => {
             clampPreviewSize(img);
             if (cb) cb();
@@ -282,12 +290,12 @@ class Media {
             clampPreviewSize(video);
             if (cb) cb();
         });
-        const o = new Media('video', { element: video });
+        const o = new Media(Media.VideoT, { element: video });
         return o;
     }
 
     static Tab(idx) {
-        return new Media("tab", { tabIndex: idx });
+        return new Media(Media.TabT, { tabIndex: idx });
     }
 
     static Audio(src, cb) {
@@ -301,7 +309,7 @@ class Media {
 
         const muteBtn = document.createElement('button');
         const el = document.createElement('div');
-        const o = new Media('audio',
+        const o = new Media(Media.AudioT,
             {
                 element: el,
                 audio: audioSource.audio,
@@ -356,7 +364,7 @@ class Media {
             analyser.fftSize = 256;
             const dataArray = new Uint8Array(analyser.frequencyBinCount);
             source.connect(analyser);
-            const o = new Media("audio", { element: null, analyser, dataArray, outputGain: null });
+            const o = new Media(Media.AudioT, { element: null, analyser, dataArray, outputGain: null });
             if (cb) cb(o);
             return o;
         } catch (err) {
@@ -368,7 +376,7 @@ class Media {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
             const video = Media.Video(null).element;
-            const o = new Media('webcam', { element: video });
+            const o = new Media(Media.WebcamT, { element: video });
             video.srcObject = stream;
             video.autoplay = true;
             video.setAttribute('playsinline', '');
@@ -382,13 +390,13 @@ class Media {
     static FromSource(source, cb = undefined) {
         let { type, url } = Media.inferMediaType(source);
         let o;
-        if (type === 'image') {
+        if (type === Media.ImageT) {
             o = Media.Image(url, cb);
         }
-        else if (type === 'video') {
+        else if (type === Media.VideoT) {
             o = Media.Video(url, cb);
         }
-        else if (type === 'audio') {
+        else if (type === Media.AudioT) {
             o = Media.Audio(url, cb);
         }
         else {
@@ -407,16 +415,16 @@ class Media {
         if (typeof source === 'string') {
             url = source;
             const ext = source.split('.').pop().toLowerCase();
-            blobType = ext.match(/jpe?g|png|gif/) ? 'image'
-                : ext.match(/mp4|webm|ogg/) ? 'video'
-                    : ext.match(/mp3|wav|ogg/) ? 'audio'
+            blobType = ext.match(/jpe?g|png|gif/) ? Media.ImageT
+                : ext.match(/mp4|webm|ogg/) ? Media.VideoT
+                    : ext.match(/mp3|wav|ogg/) ? Media.AudioT
                         : null;
         } else {
             // File or Blob
             url = URL.createObjectURL(source);
-            blobType = source.type.startsWith('image/') ? 'image'
-                : source.type.startsWith('video/') ? 'video'
-                    : source.type.startsWith('audio/') ? 'audio'
+            blobType = source.type.startsWith('image/') ? Media.ImageT
+                : source.type.startsWith('video/') ? Media.VideoT
+                    : source.type.startsWith('audio/') ? Media.AudioT
                         : null;
         }
         return { type: blobType, url: url };
@@ -571,7 +579,8 @@ class MediaInput {
     setupUrlInput() {
         this.inputControlsContainer.innerHTML = '';
         const form = createUrlForm(async (url) => {
-            const descriptor = new Media("url", { url });
+            // TODO: this should create a media object with a specific type
+            const descriptor = new Media(Media.URLT, { url });
             await resourceCache.putMedia(this.shaderIndex, this.slotIndex, JSON.stringify(descriptor));
             this.resetMedia();
             this.loadAndCache(url.toLowerCase(), true, () => this.updateRequiredHighlight());
@@ -619,7 +628,7 @@ class MediaInput {
         tabSelect.addEventListener('change', () => {
             const idx = parseInt(tabSelect.value);
             if (isNaN(idx)) return;
-            const descriptor = new Media("tab", { tabIndex: idx });
+            const descriptor = new Media(Media.TabT, { tabIndex: idx });
             resourceCache.putMedia(this.shaderIndex, this.slotIndex, JSON.stringify(descriptor));
             // this.shaderBuffer.sampleMedia[this.slotIndex] = descriptor;
             this.setMedia(descriptor);
@@ -650,7 +659,7 @@ class MediaInput {
                 const updateLoop = () => {
                     this.updateRequiredHighlight();
                     // TODO: refactor
-                    if (this.shaderBuffer.sampleMedia[this.slotIndex]?.type === 'webcam') {
+                    if (this.shaderBuffer.sampleMedia[this.slotIndex]?.type === Media.WebcamT) {
                         requestAnimationFrame(updateLoop);
                     }
                 };
@@ -2190,9 +2199,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
                 if (dat.objs[i]) {
                     const o = dat.objs[i];
-                    if (o.type === 'tab') {
+                    if (o.type === Media.TabT) {
                         sb.mediaInputs[i].selectTab(o.tabIndex);
-                    } else if (o.type === 'url') {
+                    } else if (o.type === Media.URLT) {
                         shaderBuffers[idx].mediaInputs[i].loadAndCache(o.url, false);
                     }
                 }
