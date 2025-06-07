@@ -2,6 +2,9 @@ const DB_NAME = 'shader-assets-db';
 const DB_VERSION = 1;
 const STORE_NAME = 'asset-cache';
 
+/**
+ * @type {CacheManager}
+ */
 const resourceCache = new CacheManager(DB_NAME, STORE_NAME, DB_VERSION);
 
 //#region hotkey
@@ -297,9 +300,11 @@ class Media {
         audioSource.audio.style.maxWidth = "300px";
 
         const muteBtn = document.createElement('button');
+        const el = document.createElement('div');
         const o = new Media('audio',
             {
-                element: audioSource.audio,
+                element: el,
+                audio: audioSource.audio,
                 analyser: audioSource.analyser,
                 dataArray: audioSource.dataArray,
                 outputGain: audioSource.outputGain,
@@ -315,6 +320,8 @@ class Media {
             muteBtn.textContent = muted ? "Unmute" : "Mute";
             if (cb) cb();
         });
+        el.appendChild(audioSource.audio);
+        el.appendChild(muteBtn);
         return o;
     }
 
@@ -372,6 +379,49 @@ class Media {
         }
     }
 
+    static FromSource(source, cb = undefined) {
+        let { type, url } = Media.inferMediaType(source);
+        let o;
+        if (type === 'image') {
+            o = Media.Image(url, cb);
+        }
+        else if (type === 'video') {
+            o = Media.Video(url, cb);
+        }
+        else if (type === 'audio') {
+            o = Media.Audio(url, cb);
+        }
+        else {
+            console.warn('Unknown media type for', source);
+            return;
+        }
+        return o;
+    }
+
+    /**
+     * @param {any} source
+     * @returns {type: String, url: string}
+     */
+    static inferMediaType(source) {
+        let url, blobType;
+        if (typeof source === 'string') {
+            url = source;
+            const ext = source.split('.').pop().toLowerCase();
+            blobType = ext.match(/jpe?g|png|gif/) ? 'image'
+                : ext.match(/mp4|webm|ogg/) ? 'video'
+                    : ext.match(/mp3|wav|ogg/) ? 'audio'
+                        : null;
+        } else {
+            // File or Blob
+            url = URL.createObjectURL(source);
+            blobType = source.type.startsWith('image/') ? 'image'
+                : source.type.startsWith('video/') ? 'video'
+                    : source.type.startsWith('audio/') ? 'audio'
+                        : null;
+        }
+        return { type: blobType, url: url };
+    }
+
     // static fromUrl(url, cb) {
     //     const ext = url.split(".").pop().toLowerCase();
     //     if (ext.match(/jpe?g|png|gif/)) return Media.Image(url, cb);
@@ -397,86 +447,6 @@ function createUrlForm(callback) {
         }
     });
     return form;
-}
-
-//#endregion
-
-//#region loader
-
-/**
- * Load one media asset into a shader slot, optionally caching it.
- *
- * @param {File|Blob|string} source
- *    - If string: treated as a URL (won’t be cached).  
- *    - If File/Blob: creates an ObjectURL.  
- * @param {ShaderBuffer} shaderBuffer
- * @param {number} slotIndex
- * @param {HTMLElement} previewContainer
- * @param {boolean} [cache=true]
- */
-async function loadAndCacheMedia(
-    source,
-    shaderBuffer,
-    slotIndex,
-    previewContainer,
-    cache = true,
-    cb = undefined
-) {
-    // 1) compute which shader we’re in
-    const shaderIndex = shaderBuffers.indexOf(shaderBuffer);
-    const cacheKey = `${shaderIndex};${slotIndex}`;
-    LOG(`loadandcache ${cacheKey} ${shaderIndex}`);
-
-    // 2) figure out URL and type
-    let url, blobType;
-    if (typeof source === 'string') {
-        url = source;
-        cache = false; // remote URLs don’t get cached
-        const ext = source.split('.').pop().toLowerCase();
-        blobType = ext.match(/jpe?g|png|gif/) ? 'image'
-            : ext.match(/mp4|webm|ogg/) ? 'video'
-                : ext.match(/mp3|wav|ogg/) ? 'audio'
-                    : null;
-    } else {
-        // File or Blob
-        url = URL.createObjectURL(source);
-        blobType = source.type.startsWith('image/') ? 'image'
-            : source.type.startsWith('video/') ? 'video'
-                : source.type.startsWith('audio/') ? 'audio'
-                    : null;
-
-        if (cache) {
-            // write into IndexedDB under our new key:
-            resourceCache.putMedia(shaderIndex, slotIndex, source);
-        }
-    }
-
-    // 3) dispatch to the right loader
-    if (blobType === 'image') {
-        const o = Media.Image(url, cb);
-        shaderBuffer.setMediaSlot(slotIndex, o);
-        bindPreview(previewContainer, o.element);
-    }
-    else if (blobType === 'video') {
-        const o = Media.Video(url, cb);
-        shaderBuffer.setMediaSlot(slotIndex, o);
-        bindPreview(previewContainer, o.element);
-    }
-    else if (blobType === 'audio') {
-        const o = Media.Audio(url, cb);
-        shaderBuffer.setMediaSlot(slotIndex, o);
-        bindPreview(previewContainer, o.element);
-        previewContainer.appendChild(o.muteBtn);
-    }
-    else {
-        console.warn('Unknown media type for', source);
-        return;
-    }
-}
-
-function bindPreview(container, e) {
-    container.innerHTML = '';
-    container.appendChild(e);
 }
 
 //#endregion
@@ -593,7 +563,7 @@ class MediaInput {
             this.resetMedia();
             const file = event.target.files[0];
             if (!file) return;
-            await loadAndCacheMedia(file, this.shaderBuffer, this.slotIndex, this.previewContainer, true, () => this.updateRequiredHighlight());
+            this.loadAndCache(file, true, () => this.updateRequiredHighlight());
         });
         this.inputControlsContainer.appendChild(fileInput);
     }
@@ -604,7 +574,7 @@ class MediaInput {
             const descriptor = new Media("url", { url });
             await resourceCache.putMedia(this.shaderIndex, this.slotIndex, JSON.stringify(descriptor));
             this.resetMedia();
-            await loadAndCacheMedia(url.toLowerCase(), this.shaderBuffer, this.slotIndex, this.previewContainer, true, () => this.updateRequiredHighlight());
+            this.loadAndCache(url.toLowerCase(), true, () => this.updateRequiredHighlight());
         });
         this.inputControlsContainer.appendChild(form);
     }
@@ -690,7 +660,7 @@ class MediaInput {
                 updateLoop();
             });
             this.shaderBuffer.sampleMedia[this.slotIndex] = o;
-            bindPreview(this.previewContainer, o.element);
+            this.bindPreview(o.element);
         });
         this.inputControlsContainer.appendChild(camBtn);
     }
@@ -712,6 +682,7 @@ class MediaInput {
         this.slotLabel.innerText = label;
     }
 
+    // select `Tab Sample -> i`
     selectTab(i) {
         this.sourceSelect.selectedIndex = 5;
         this.sourceSelect.dispatchEvent(new Event('change'));
@@ -728,6 +699,19 @@ class MediaInput {
 
     getElement() {
         return this.container;
+    }
+
+    loadAndCache(source, cache = true, cb = undefined) {
+        if (cache) resourceCache.putMedia(this.shaderIndex, this.slotIndex, source);
+
+        let o = Media.FromSource(source, cb);
+        this.shaderBuffer.setMediaSlot(this.slotIndex, o);
+        this.bindPreview(o.element);
+    }
+
+    bindPreview(e) {
+        this.previewContainer.innerHTML = '';
+        this.previewContainer.appendChild(e);
     }
 }
 
@@ -2202,18 +2186,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const previewContainer = sb.mediaInputs[i]?.previewContainer;
                 if (!previewContainer) continue;
                 if (dat.media[i]) {
-                    await loadAndCacheMedia(dat.media[i], sb, i, previewContainer, false);
+                    shaderBuffers[idx].mediaInputs[i].loadAndCache(dat.media[i], false);
                 }
                 if (dat.objs[i]) {
                     const o = dat.objs[i];
                     if (o.type === 'tab') {
                         sb.mediaInputs[i].selectTab(o.tabIndex);
                     } else if (o.type === 'url') {
-                        await loadAndCacheMedia(o.url, sb, i, previewContainer, false);
+                        shaderBuffers[idx].mediaInputs[i].loadAndCache(o.url, false);
                     }
                 }
                 if (dat.urls[i]) {
-                    await loadAndCacheMedia(cached, sb, i, previewContainer, false);
+                    shaderBuffers[idx].mediaInputs[i].loadAndCache(cached, false);
                 }
             }
         }
