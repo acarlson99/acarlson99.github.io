@@ -237,9 +237,104 @@ class Uniforms {
 //#region media
 
 class Media {
-    constructor(obj) {
-        Object.assign(this, obj);
+    constructor(type, params) {
+        this.type = type;
+        Object.assign(this, params);
     }
+
+    static Audio(src, cb) {
+        const audioSource = createAudioSource(src);
+        if (!isPaused && typeof audioSource.audio.play === 'function') {
+            audioSource.audio.play();
+        } else {
+            audioSource.audio.pause();
+        }
+        audioSource.audio.style.maxWidth = "300px";
+
+        const muteBtn = document.createElement('button');
+        const o = new Media('audio',
+            {
+                element: audioSource.audio,
+                analyser: audioSource.analyser,
+                dataArray: audioSource.dataArray,
+                outputGain: audioSource.outputGain,
+                muteBtn: muteBtn
+            });
+
+        let muted = true;
+        muteBtn.textContent = "Unmute";
+        toggleMute(o, muted);
+        muteBtn.addEventListener('click', () => {
+            muted = !muted;
+            toggleMute(o, muted);
+            muteBtn.textContent = muted ? "Unmute" : "Mute";
+            if (cb) cb();
+        });
+        return o;
+    }
+
+    static Image(src, cb) {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        let o = new Media('image', { element: img });
+        img.onload = () => {
+            clampPreviewSize(img);
+            if (cb) cb();
+        };
+        img.src = src;
+        return o;
+    }
+
+    static Video(src, cb) {
+        const video = document.createElement('video');
+        video.controls = true;
+        video.setAttribute('playsinline', '');
+        video.loop = true;
+        video.muted = true;
+        if (src) video.src = src;
+        video.addEventListener('loadeddata', () => {
+            // Match the shader's pause state.
+            if (!isPaused) { video.play(); } else { video.pause(); }
+            // logMessage(`Slot ${slotIndex} loaded (video).`);
+            clampPreviewSize(video);
+            if (cb) cb();
+        });
+        const o = new Media('video', { element: video });
+        return o;
+    }
+
+    static Tab(idx) {
+        return new Media("tab", { tabIndex: idx });
+    }
+
+    // static async Microphone(cb) {
+    //     try {
+    //         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    //         const audioContext = new AudioContext();
+    //         const source = audioContext.createMediaStreamSource(stream);
+    //         const analyser = audioContext.createAnalyser();
+    //         analyser.fftSize = 256;
+    //         const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    //         source.connect(analyser);
+    //         const o = new Media("audio", { element: audio, analyser, dataArray, outputGain: null });
+    //         if (cb) cb(o);
+    //         return o;
+    //     } catch (err) {
+    //         return logError("Error accessing microphone:", err);
+    //     }
+    // }
+
+    static Webcam() {
+
+    }
+
+    // static fromUrl(url, cb) {
+    //     const ext = url.split(".").pop().toLowerCase();
+    //     if (ext.match(/jpe?g|png|gif/)) return Media.Image(url, cb);
+    //     if (ext.match(/mp4|webm|ogg/)) return Media.Video(url, cb);
+    //     if (ext.match(/mp3|wav|ogg/)) return Media.Audio(url, cb);
+    //     throw new Error("Unknown URL media type");
+    // }
 }
 
 //#region audio
@@ -264,77 +359,6 @@ function createAudioSource(src) {
 
 function toggleMute(media, mute) {
     if (media.outputGain) media.outputGain.gain.value = mute ? 0 : 1;
-}
-
-// Helper to load audio from a source URL.
-function loadAudioFromSource(src, cb) {
-    const audioSource = createAudioSource(src);
-    if (!isPaused && typeof audioSource.audio.play === 'function') {
-        audioSource.audio.play();
-    } else {
-        audioSource.audio.pause();
-    }
-    audioSource.audio.style.maxWidth = "300px";
-
-    const muteBtn = document.createElement('button');
-    const o = new Media({
-        type: 'audio',
-        element: audioSource.audio,
-        analyser: audioSource.analyser,
-        dataArray: audioSource.dataArray,
-        outputGain: audioSource.outputGain,
-        muteBtn: muteBtn
-    });
-
-    let muted = true;
-    muteBtn.textContent = "Unmute";
-    toggleMute(o, muted);
-    muteBtn.addEventListener('click', () => {
-        muted = !muted;
-        toggleMute(o, muted);
-        muteBtn.textContent = muted ? "Unmute" : "Mute";
-        if (cb) cb();
-    });
-    return o;
-}
-
-//#endregion
-
-//#region image
-
-function loadImageFromSource(src, cb) {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    let o = new Media({ type: 'image', element: img });
-    img.onload = () => {
-        clampPreviewSize(img);
-        if (cb) cb();
-    };
-    img.src = src;
-    return o;
-}
-
-//#endregion
-
-//#region video
-
-// Helper to load a video from a source URL.
-function loadVideoFromSource(src, cb) {
-    const video = document.createElement('video');
-    video.controls = true;
-    video.setAttribute('playsinline', '');
-    video.loop = true;
-    video.muted = true;
-    if (src) video.src = src;
-    video.addEventListener('loadeddata', () => {
-        // Match the shader's pause state.
-        if (!isPaused) { video.play(); } else { video.pause(); }
-        // logMessage(`Slot ${slotIndex} loaded (video).`);
-        clampPreviewSize(video);
-        if (cb) cb();
-    });
-    const o = { type: 'video', element: video };
-    return o;
 }
 
 //#endregion
@@ -411,17 +435,17 @@ async function loadAndCacheMedia(
 
     // 3) dispatch to the right loader
     if (blobType === 'image') {
-        const o = loadImageFromSource(url, cb);
+        const o = Media.Image(url, cb);
         shaderBuffer.setMediaSlot(slotIndex, o);
         bindPreview(previewContainer, o.element);
     }
     else if (blobType === 'video') {
-        const o = loadVideoFromSource(url, cb);
+        const o = Media.Video(url, cb);
         shaderBuffer.setMediaSlot(slotIndex, o);
         bindPreview(previewContainer, o.element);
     }
     else if (blobType === 'audio') {
-        const o = loadAudioFromSource(url, cb);
+        const o = Media.Audio(url, cb);
         shaderBuffer.setMediaSlot(slotIndex, o);
         bindPreview(previewContainer, o.element);
         previewContainer.appendChild(o.muteBtn);
@@ -559,7 +583,7 @@ class MediaInput {
     setupUrlInput() {
         this.inputControlsContainer.innerHTML = '';
         const form = createUrlForm(async (url) => {
-            const descriptor = { type: "url", url };
+            const descriptor = new Media("url", { url });
             await resourceCache.putMedia(this.shaderIndex, this.slotIndex, JSON.stringify(descriptor));
             this.resetMedia();
             await loadAndCacheMedia(url.toLowerCase(), this.shaderBuffer, this.slotIndex, this.previewContainer, true, () => this.updateRequiredHighlight());
@@ -573,6 +597,7 @@ class MediaInput {
         micBtn.textContent = 'Enable Microphone';
         micBtn.addEventListener('click', () => {
             this.resetMedia();
+            // TODO: move this bit to a static Media function
             navigator.mediaDevices.getUserMedia({ audio: true })
                 .then(stream => {
                     const audioContext = new AudioContext();
@@ -581,7 +606,7 @@ class MediaInput {
                     analyser.fftSize = 256;
                     const dataArray = new Uint8Array(analyser.frequencyBinCount);
                     source.connect(analyser);
-                    this.setMedia({ type: "audio", element: null, analyser, dataArray });
+                    this.setMedia(new Media("audio", { element: null, analyser, dataArray }));
                     // this.shaderBuffer.sampleMedia[this.slotIndex] = { type: "audio", element: null, analyser, dataArray };
                     this.clearPreview();
                     this.previewContainer.innerHTML = 'Microphone Enabled';
@@ -617,7 +642,7 @@ class MediaInput {
         tabSelect.addEventListener('change', () => {
             const idx = parseInt(tabSelect.value);
             if (isNaN(idx)) return;
-            const descriptor = new Media({ type: "tab", tabIndex: idx });
+            const descriptor = new Media("tab", { tabIndex: idx });
             resourceCache.putMedia(this.shaderIndex, this.slotIndex, JSON.stringify(descriptor));
             // this.shaderBuffer.sampleMedia[this.slotIndex] = descriptor;
             this.setMedia(descriptor);
@@ -644,9 +669,10 @@ class MediaInput {
             this.resetMedia();
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then(stream => {
-                    // TODO: move this logic into the Uniforms class-- it should take a message { type: 'webcam', i: this.slotIndex, container: this.previewContainer }
-                    const video = loadVideoFromSource(null).element;
-                    this.shaderBuffer.sampleMedia[this.slotIndex] = new Media({ type: 'video', element: video });
+                    // TODO: move this bit to a static Media function
+                    const video = Media.Video(null).element;
+                    // const video = loadVideoFromSource(null).element;
+                    this.shaderBuffer.sampleMedia[this.slotIndex] = new Media('video', { element: video });
                     bindPreview(this.previewContainer, video);
                     video.srcObject = stream;
                     video.autoplay = true;
