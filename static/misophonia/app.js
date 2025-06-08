@@ -630,7 +630,6 @@ class MediaInput {
             if (isNaN(idx)) return;
             const descriptor = new Media(Media.TabT, { tabIndex: idx });
             resourceCache.putMedia(this.shaderIndex, this.slotIndex, JSON.stringify(descriptor));
-            // this.shaderBuffer.sampleMedia[this.slotIndex] = descriptor;
             this.setMedia(descriptor);
             this.clearPreview();
             const info = document.createElement('div');
@@ -946,7 +945,6 @@ class ShaderBuffer {
 
         gl.useProgram(this.program.program);
 
-        // this.updateUniformLocations(); // TODO: this line should go (should be updated elsewhere)
         this.uniforms.updateValues(
             timeMs,
             { width: gl.canvas.width, height: gl.canvas.height },
@@ -1057,8 +1055,6 @@ void main(void) {
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
-
-    // TODO: maybe move uniforms into the ShaderProgram
 }
 
 //#endregion
@@ -1354,12 +1350,6 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement.type = 'checkbox';
                 inputElement.checked = !!initialValue;
                 inputElement.setAttribute('data-uniform', control.uniform);
-                inputElement.addEventListener('change', e => {
-                    shaderBuffer.setCustomUniform(control.uniform, e.target.checked);
-                    saveControlState(shaderBuffer);
-                });
-
-                // when user clicks, update uniform & state as before
                 inputElement.addEventListener('change', e => {
                     shaderBuffer.setCustomUniform(control.uniform, e.target.checked);
                     saveControlState(shaderBuffer);
@@ -2006,10 +1996,6 @@ function setupShaderEditor() {
 
 //#region setup
 
-// =====================================
-// Part 14: Event Listener Setup
-// =====================================
-// load/render/update things when page loaded
 const cachedShaderData = {};
 document.addEventListener('DOMContentLoaded', async () => {
     await resourceCache.init().then(() => console.log('resource cache loaded')).catch(err => { console.error('THIS SHOULD NOT HAPPEN! Failed to open cache:', err); });
@@ -2127,7 +2113,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 2) Reset all in‑memory media & previews
         shaderBuffers.forEach((sb, sIdx) => {
-            // sb.sampleMedia = sb.sampleMedia.map(() => null);
             for (let i = 0; i < sb.sampleMedia.length; i++) {
                 sb.sampleMedia[i] = null; // TODO: cleanup this
             }
