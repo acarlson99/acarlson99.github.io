@@ -520,9 +520,7 @@ class MediaInput {
     updateRequiredHighlight() {
         const inputTexInfo = (this.shaderBuffer?.controlSchema?.inputs || [])[this.slotIndex] || {};
         const isRequired = Boolean(inputTexInfo.required);
-        // TODO: refactor to use shaderBuffer.hasMedia(slot);
-        const hasMedia = this.shaderBuffer.sampleMedia[this.slotIndex];
-        this.container.style.backgroundColor = isRequired && !hasMedia ? 'rgba(255, 0, 0, 0.2)' : '';
+        this.container.style.backgroundColor = isRequired && !this.hasMedia() ? 'rgba(255, 0, 0, 0.2)' : '';
     }
 
     clearPreview() {
@@ -667,7 +665,7 @@ class MediaInput {
                 this.setMedia(o);
                 updateLoop();
             });
-            this.shaderBuffer.sampleMedia[this.slotIndex] = o;
+            this.setMedia(o);
             this.bindPreview(o.element);
         });
         this.inputControlsContainer.appendChild(camBtn);
@@ -676,6 +674,7 @@ class MediaInput {
     setMedia(desc) {
         this.shaderBuffer.setMediaSlot(this.slotIndex, desc);
     }
+    hasMedia() { return !!this.shaderBuffer.sampleMedia[this.slotIndex]; }
 
     setDescription(desc) {
         if (desc) {
