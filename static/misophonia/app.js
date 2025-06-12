@@ -782,6 +782,10 @@ class RenderTarget {
         this.curIndex = 0;
     }
 
+    reallocate() {
+        this._allocate(this.width, this.height);
+    }
+
     resize(w, h) {
         if (w === this.width && h === this.height) return;
         this._allocate(w, h);
@@ -848,6 +852,19 @@ class ShaderBuffer {
         this.shaderIndex = shaderIndex;
 
         if (this.program) this.updateUniformLocations();
+    }
+
+    restart() {
+        this.sampleMedia.forEach(media => {
+            if (media && media.element) {
+                // Reset time to zero for video/audio elements
+                media.element.currentTime = 0;
+                if (!isPaused && typeof media.element.play === 'function') {
+                    media.element.play();
+                }
+            }
+        });
+        this.renderTarget.reallocate();
     }
 
     restoreDefaults() {
@@ -1030,6 +1047,9 @@ void main(void) {
         if (!fsSrc) fsSrc = this.fsSrc;
         this.vsSrc = vsSrc;
         this.fsSrc = fsSrc;
+
+        if (this.vs) gl.deleteShader(this.vs);
+        if (this.fs) gl.deleteShader(this.fs);
         this.vs = ShaderProgram.createShader(this.gl.VERTEX_SHADER, vsSrc);
         this.fs = ShaderProgram.createShader(this.gl.FRAGMENT_SHADER, fsSrc);
         if (!this.vs || !this.fs) return null;
@@ -1042,6 +1062,7 @@ void main(void) {
             this.gl.deleteProgram(prog);
             return null;
         }
+        if (this.program) gl.deleteProgram(this.program);
         this.program = prog;
         return prog;
     };
@@ -1278,6 +1299,9 @@ function renderControlsForShader(shaderBuffer, schema) {
         shaderBuffer.setName(`${schema.name} ${tabIdx + 1}`);
     }
     schema?.controls?.forEach(control => {
+        if (!control.uniform) { // sanity check
+            logError(`Control ${JSON.stringify(control)} has no uniform`);
+        }
         const controlDiv = document.createElement('div');
         controlDiv.className = 'control';
         const label = document.createElement('label');
@@ -2052,18 +2076,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     document.getElementById('restart').addEventListener('click', function () {
         effectiveTime = 0;
-
-        // For the active shader, reset attached media
-        const currentShader = shaderBuffers[currentViewIndex];
-        currentShader.sampleMedia.forEach(media => {
-            if (media && media.element) {
-                // Reset time to zero for video/audio elements
-                media.element.currentTime = 0;
-                if (!isPaused && typeof media.element.play === 'function') {
-                    media.element.play();
-                }
-            }
-        });
+        shaderBuffers.forEach(sb => sb.restart());
     });
     document.getElementById('start-record').addEventListener('click', startRecording);
     document.getElementById('stop-record').addEventListener('click', stopRecording);
