@@ -129,11 +129,13 @@ class Uniforms {
                 continue;
             const textureLocation = this.sampleTextureLocations[i];
             const media = sampleMedia[i];
-            const treatAsEmpty = !!media || ((media?.type === Media.WebcamT && media.element.readyState >= 2));
+            const isWebcam = media?.type === Media.WebcamT;
+            const isWebcamReady = isWebcam && media.element.readyState >= 2;
+            const treatAsEmpty = !media || (isWebcam && !isWebcamReady);
             gl.activeTexture(gl.TEXTURE2 + i);
-            if (!treatAsEmpty) {
+            if (treatAsEmpty) {
                 // No media: use a fallback texture.
-                gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
+                gl.bindTexture(gl.TEXTURE_2D, emptyTexture);
                 gl.uniform1i(textureLocation, 2 + i);
             } else if (media.type === Media.TabT) {
                 // For tab-sampled shaders, bind the target shader's offscreen texture.
@@ -184,11 +186,18 @@ class Uniforms {
         }
     }
 
+    /**
+     * 
+     * @param {Object} customVals mapping of uniforms to values
+     */
     updateCustomValues(customVals) {
         for (let name in customVals) {
             const value = customVals[name];
             const loc = this.customLocations[name];
-            if (loc === null) continue;
+            if (loc === null) {
+                console.warn(`uniform ${name} has no corresponding location`);
+                continue;
+            }
             if (typeof value === 'number') {
                 gl.uniform1f(loc, value);
             } else if (typeof value === 'boolean') {
@@ -270,7 +279,7 @@ class Media {
         let o = new Media(Media.ImageT, { element: img });
         img.onload = () => {
             clampPreviewSize(img);
-            if (cb) cb();
+            if (cb) cb(o);
         };
         img.src = src;
         return o;
@@ -283,14 +292,14 @@ class Media {
         video.loop = true;
         video.muted = true;
         if (src) video.src = src;
+        const o = new Media(Media.VideoT, { element: video });
         video.addEventListener('loadeddata', () => {
             // Match the shader's pause state.
             if (!isPaused) { video.play(); } else { video.pause(); }
             // logMessage(`Slot ${slotIndex} loaded (video).`);
             clampPreviewSize(video);
-            if (cb) cb();
+            if (cb) cb(o);
         });
-        const o = new Media(Media.VideoT, { element: video });
         return o;
     }
 
@@ -326,7 +335,7 @@ class Media {
             muted = !muted;
             Media.toggleMute(o, muted);
             muteBtn.textContent = muted ? "Unmute" : "Mute";
-            if (cb) cb();
+            if (cb) cb(o);
         });
         el.appendChild(audioSource.audio);
         el.appendChild(muteBtn);
@@ -375,15 +384,29 @@ class Media {
     static async Webcam(cb) {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-            const video = Media.Video(null).element;
-            const o = new Media(Media.WebcamT, { element: video });
+            const o = Media.Video(null, cb);
+            o.type = Media.WebcamT;
+            const video = o.element;
             video.srcObject = stream;
             video.autoplay = true;
-            video.setAttribute('playsinline', '');
-            if (cb) video.addEventListener('loadeddata', cb);
+
             return o;
         } catch (err) {
             return logError("Error accessing webcam:", err);
+        }
+    }
+
+    static async ScreenCapture(cb) {
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            const o = Media.Video(null, cb);
+            const video = o.element;
+            video.srcObject = stream;
+            video.autoplay = true;
+
+            return o;
+        } catch (err) {
+            return logError("Error accessing screen capture:", err);
         }
     }
 
@@ -498,6 +521,7 @@ class MediaInput {
             <option value="mic">Microphone</option>
             <option value="webcam">Webcam</option>
             <option value="tab">Tab Sample</option>
+            <option value="screencap">Screen Share</option>
         `;
         this.sourceSelect.addEventListener('change', () => this.handleSourceChange());
         this.container.appendChild(this.sourceSelect);
@@ -542,7 +566,11 @@ class MediaInput {
         else if (val === 'mic') this.setupMicInput();
         else if (val === 'webcam') this.setupWebcamInput();
         else if (val === 'tab') this.setupTabSampleInput();
-        else this.inputControlsContainer.innerHTML = '';
+        else if (val === 'screencap') this.setupScreenCaptureInput();
+        else {
+            this.inputControlsContainer.innerHTML = '';
+            this.setMedia(null);
+        }
         this.updateRequiredHighlight();
     }
 
@@ -670,6 +698,33 @@ class MediaInput {
         });
         this.inputControlsContainer.appendChild(camBtn);
     }
+
+    setupScreenCaptureInput() {
+        this.inputControlsContainer.innerHTML = '';
+        const capBtn = document.createElement('button');
+        capBtn.textContent = 'Enable Screen Capture';
+        capBtn.addEventListener('click', async () => {
+            this.resetMedia();
+            let o = await Media.ScreenCapture();
+            if (!o) return;
+            o.element.addEventListener('loadeddata', () => {
+                const updateLoop = () => {
+                    this.updateRequiredHighlight();
+                    if (this.shaderBuffer.sampleMedia[this.slotIndex]?.type === Media.VideoT) {
+                        requestAnimationFrame(updateLoop);
+                    }
+                };
+                this.clearPreview();
+                this.previewContainer.appendChild(o.element);
+                this.setMedia(o);
+                updateLoop();
+            });
+            this.setMedia(o);
+            this.bindPreview(o.element);
+        });
+        this.inputControlsContainer.appendChild(capBtn);
+    }
+
 
     setMedia(desc) {
         this.shaderBuffer.setMediaSlot(this.slotIndex, desc);
@@ -1110,6 +1165,12 @@ const quadBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
 const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+const emptyTexture = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, emptyTexture);
+gl.texImage2D(
+    gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0,
+    gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0])
+);
 
 const vertexShaderSource = `#version 300 es
   in vec2 a_position;
@@ -1277,6 +1338,7 @@ function createControlSchemeTabs() {
 
 //#region render-controls
 
+// TODO: create `Controller` object
 function renderControlsForShader(shaderBuffer, schema) {
     LOG(`Rendering controls for ${shaderBuffer.name}`);
     shaderBuffer.controlContainer.innerHTML = ''; // Clear previous controls
