@@ -1,0 +1,194 @@
+#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="style.css">
+#+HTML_HEAD: <style>img { max-width: 25vw; max-height: 25vw; }</style>
+
+this is a work in progress
+
+just some notes and demo shaders
+
+* Waves
+
+https://en.wikipedia.org/wiki/Waveform
+
+** Sin
+
+#+NAME: sin
+#+BEGIN_SRC glsl :file ./static/sin.png :width 1000 :height 200 :exports both
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / iResolution.xy;
+
+      float th = uv.x;
+      float phase = 0.;
+      float amp = .25;
+      float wavelength = (1./3.);
+      float wav = amp * sin((th*3.14*2. - phase) / wavelength);
+      fragColor = vec4(vec3(1.-smoothstep(.1, .11, abs(uv.y-wav))), 1.);
+  }
+#+END_SRC
+
+#+RESULTS: sin
+[[file:./static/sin.png]]
+
+** Square
+
+#+NAME: square
+#+BEGIN_SRC glsl :file ./static/square.png :width 1000 :height 200 :exports both
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / iResolution.xy;
+
+      float wav = sign(sin(uv.x*3.14*2. * 3.))*.25;
+      fragColor = vec4(vec3(1.-smoothstep(.1, .11, abs(uv.y-wav))), 1.);
+  }
+#+END_SRC
+
+#+RESULTS: square
+[[file:./static/square.png]]
+
+** Triangle
+
+#+NAME: triangle
+#+BEGIN_SRC glsl :file ./static/triangle.png :width 1000 :height 200 :exports both
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / iResolution.xy;
+
+      float wav = asin(sin(uv.x*2.*3.14 * 3.)) * (2.*.25/3.14);
+      fragColor = vec4(vec3(1.-smoothstep(.1, .11, abs(uv.y-wav))), 1.);
+  }
+#+END_SRC
+
+#+RESULTS: triangle
+[[file:./static/triangle.png]]
+
+** Sawtooth
+
+#+NAME: sawtooth
+#+BEGIN_SRC glsl :file ./static/sawtooth.png :width 1000 :height 200 :exports both
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / iResolution.xy;
+
+      float wavelength = 1.;
+      float wav = atan(tan((uv.x*2.*3.14 * 3.) / (2.*wavelength))) * (2.*.25/3.14);
+      fragColor = vec4(vec3(1.-smoothstep(.1, .11, abs(uv.y-wav))), 1.);
+  }
+#+END_SRC
+
+#+RESULTS: sawtooth
+[[file:./static/sawtooth.png]]
+
+
+* low-resolution patterns (like for light arrays)
+
+* SDF
+
+* Tips and Tricks
+
+* Colors
+
+TODO: invert, HSV/RGB conversions
+
+* Illusions
+
+** Peripheral Drift
+
+https://en.wikipedia.org/wiki/Peripheral_drift_illusion
+
+#+NAME: peripheral drift
+#+BEGIN_SRC glsl :file ./static/peripheral-drift.png :width 1000 :height 1000 :exports both
+
+  #define PI 3.141592653589
+
+  mat2 rot(float t) { return mat2(cos(t),-sin(t),sin(t),cos(t)); }
+
+  void main() {
+      vec2 uv = gl_FragCoord.xy / iResolution.xy;
+      vec2 uvz = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
+
+      float sc = 30.;
+      vec2 pth = uvz*vec2(1.,.8)*sc;
+      vec2 p = fract(pth)-.5;
+      float blur = sc/iResolution.y;
+
+      vec3 col = vec3(0.);
+      float d = length(abs(p));
+      float d1 = 1.- smoothstep(.3,.3+blur,d);
+      float d2 = 1.-smoothstep(.4,.4+blur,d);
+      vec3 outlineCol = mix(vec3(0.),vec3(1.), d2);
+      if ((rot(atan(uvz.x,uvz.y)*8.+cos(uv.x)+sin(uv.y))*p).y<0.) outlineCol *= .0;
+      col = mix(outlineCol, vec3(0.9,.8,.9), d1);
+      col = mix(vec3(.5), col, d2);
+
+      // Output to screen
+      fragColor = vec4(col,1.0);
+  }
+#+END_SRC
+
+#+RESULTS: peripheral drift
+[[file:./static/peripheral-drift.png]]
+
+#+NAME: peripheral drift 2
+#+BEGIN_SRC glsl :file ./static/peripheral-drift-2.png :width 1000 :height 1000 :exports both
+  #define PI (355./113.)
+
+  mat2 rot(float t) { return mat2(cos(t),-sin(t),sin(t),cos(t)); }
+
+  void main()
+  {
+      vec2 uvz = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
+
+      float w = mix(
+          sin(abs(uvz.y)*5.*PI+abs(uvz.x)*5.*PI -PI/2.),
+          sin(atan(uvz.x,uvz.y)*4.+length(uvz)*8.+sin(length(uvz)*10.)*2.*2.),
+          smoothstep(0.,0.1,-uvz.y)
+          );
+      vec2 p = abs(uvz+w*.01);
+
+      float sc = 20.;
+      float blur = sc/iResolution.y;
+  #if 0
+      float d1 = step(.4, length(fract(uvz*sc)-.5));
+      float d2 = step(.4, length(fract( p *sc)-.5));
+  #else
+      float d1 = smoothstep(.4-blur,.4+blur, length(fract(uvz*sc)-.5));
+      float d2 = smoothstep(.4-blur,.4+blur, length(fract( p *sc)-.5));
+  #endif
+
+
+      vec3 green = vec3(0.0,1.0,0.0);
+      vec3 white = vec3(1.0);
+      vec3 black = vec3(0.0);
+      vec3 blue  = vec3(0.0,0.0,1.0);
+
+      vec3 col = mix(
+          mix(green, white, d1),
+          mix(black,  blue,  d1),
+          d2
+          );
+
+      // Output to screen
+      fragColor = vec4(col,1.0);
+  }
+#+END_SRC
+
+#+RESULTS: peripheral drift 2
+[[file:./static/peripheral-drift-2.png]]
+
+#+NAME: peripheral drift 3
+#+BEGIN_SRC glsl :file ./static/peripheral-drift-3.png :width 1000 :height 1000 :exports both
+  #define PI (355./113.)
+
+  mat2 rot(float t) { return mat2(cos(t),-sin(t),sin(t),cos(t)); }
+
+  void main()
+  {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
+
+      // Time varying pixel color
+      float a = atan(uv.x,uv.y);
+      vec3 col = vec3(0.)+ cos(vec3(0.,.75,1.5)+(sin(a*8.)*PI+length(uv)*PI*16.*1.) * sin(a*8.+PI/2.))*.5+.5;
+
+      // Output to screen
+      fragColor = vec4(col,1.0);
+  }
+#+END_SRC
+
+#+RESULTS: peripheral drift 3
+[[file:./static/peripheral-drift-3.png]]
