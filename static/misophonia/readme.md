@@ -30,3 +30,13 @@ void main() {
     mainImage(outColor, gl_FragCoord.xy);
 }
 ```
+
+sometimes add the following
+
+```
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+```
