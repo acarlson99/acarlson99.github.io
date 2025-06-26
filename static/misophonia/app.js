@@ -1,3 +1,16 @@
+import TinySDF from 'https://cdn.skypack.dev/@mapbox/tiny-sdf';
+import CacheManager from "./cashman.js"
+
+const tinySdf = new TinySDF({
+    fontSize: 24,             // Font size in pixels
+    fontFamily: 'sans-serif', // CSS font-family
+    fontWeight: 'normal',     // CSS font-weight
+    fontStyle: 'normal',      // CSS font-style
+    buffer: 3,                // Whitespace buffer around a glyph in pixels
+    radius: 8,                // How many pixels around the glyph shape to use for encoding distance
+    cutoff: 0.25              // How much of the radius (relative) is used for the inside part of the glyph
+});
+
 const DB_NAME = 'shader-assets-db';
 const DB_VERSION = 1;
 const STORE_NAME = 'asset-cache';
@@ -50,6 +63,158 @@ let isPaused = false;
 let lastFrameTime = 0;
 let effectiveTime = 0;
 let editorOpen = false; // shader editor starts closed
+
+class GlyphSDF {
+    /**
+     * @param {WebGL2RenderingContext} gl
+     * @param {TinySDF} tinySdf       // your TinySDF instance
+     * @param {string} char           // single character to draw
+     * @param {number} texUnit        // which texture unit to bind it to by default
+     */
+    constructor(gl, tinySdf, char, texUnit = 1) {
+        this.gl = gl;
+        this.texUnit = texUnit;
+
+        // 1) Generate the raw SDF data
+        const sdf = tinySdf.draw(char);
+        this.width = sdf.width;
+        this.height = sdf.height;
+
+        // 2) Pack into RGBA so we can use a standard RGBA texture
+        const N = this.width * this.height;
+        const pixels = new Uint8Array(N * 4);
+        for (let i = 0; i < N; i++) {
+            pixels[4 * i + 0] = 255;       // R
+            pixels[4 * i + 1] = 255;       // G
+            pixels[4 * i + 2] = 255;       // B
+            pixels[4 * i + 3] = sdf.data[i]; // A holds your alpha/distances
+        }
+
+        // 3) Create & configure the GL texture
+        this.tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.tex);
+        gl.texImage2D(
+            gl.TEXTURE_2D, 0,
+            gl.RGBA, this.width, this.height, 0,
+            gl.RGBA, gl.UNSIGNED_BYTE,
+            pixels
+        );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+
+    delete() { gl.deleteTexture(this.tex); }
+
+    /**
+     * Call this after you’ve called gl.useProgram(program) and gotten
+     * uniform locations for `u_glyph` and `u_glyphSize`.
+     * 
+     * @param {WebGLUniformLocation} uGlyphLoc
+     * @param {WebGLUniformLocation} uSizeLoc
+     */
+    bind(uGlyphLoc, uSizeLoc) {
+        const gl = this.gl;
+        gl.activeTexture(gl.TEXTURE0 + this.texUnit);
+        gl.bindTexture(gl.TEXTURE_2D, this.tex);
+        gl.uniform1i(uGlyphLoc, this.texUnit);
+        gl.uniform2f(uSizeLoc, this.width, this.height);
+    }
+}
+
+class FontAtlas {
+    /**
+     * @param {WebGL2RenderingContext} gl
+     * @param {TinySDF} tinySdf
+     * @param {string[]} chars   // e.g. Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+     * @param {number} cols      // how many columns in the atlas
+     * @param {number} texUnit   // which texture unit to bind to
+     */
+    constructor(gl, tinySdf, chars, cols = 8, texUnit = 1) {
+        this.gl = gl;
+        this.texUnit = texUnit;
+
+        // 1) render each glyph into its own SDF
+        const glyphs = chars.map(ch => tinySdf.draw(ch));
+        const cellW = glyphs[0].width;
+        const cellH = glyphs[0].height;
+        const rows = Math.ceil(chars.length / cols);
+
+        // 2) composite into one big canvas
+        const atlasW = cellW * cols;
+        const atlasH = cellH * rows;
+        const canvas = document.createElement("canvas");
+        canvas.width = atlasW;
+        canvas.height = atlasH;
+        const ctx = canvas.getContext("2d");
+        const imgData = ctx.createImageData(atlasW, atlasH);
+
+        for (let i = 0; i < glyphs.length; i++) {
+            const { data, width, height } = glyphs[i];
+            const cx = (i % cols) * cellW;
+            const cy = Math.floor(i / cols) * cellH;
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const dstIdx = 4 * ((cy + y) * atlasW + (cx + x));
+                    const a = data[y * width + x];
+                    imgData.data[dstIdx + 0] = 255;
+                    imgData.data[dstIdx + 1] = 255;
+                    imgData.data[dstIdx + 2] = 255;
+                    imgData.data[dstIdx + 3] = a;
+                }
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+
+        // 3) upload atlas to GPU
+        this.texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.texImage2D(
+            gl.TEXTURE_2D, 0, gl.RGBA,
+            atlasW, atlasH, 0,
+            gl.RGBA, gl.UNSIGNED_BYTE,
+            canvas
+        );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
+        // 4) store UV coords for each char
+        this.uvs = Object.fromEntries(
+            chars.map((ch, i) => {
+                const col = i % cols, row = Math.floor(i / cols);
+                return [ch, {
+                    u0: (col * cellW) / atlasW,
+                    v0: (row * cellH) / atlasH,
+                    u1: ((col + 1) * cellW) / atlasW,
+                    v1: ((row + 1) * cellH) / atlasH
+                }];
+            })
+        );
+
+        this.atlasSize = { w: atlasW, h: atlasH };
+        this.cellSize = { w: cellW, h: cellH };
+    }
+
+    /**
+     * @param {WebGLUniformLocation} uSamplerLoc
+     * @param {number} unit             // optional override
+     */
+    bind(uSamplerLoc, unit = this.texUnit) {
+        const gl = this.gl;
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.uniform1i(uSamplerLoc, unit);
+    }
+}
+// 1) pick your character set:
+const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+// 2) make your atlas:
+const fontAtlas = new FontAtlas(gl, tinySdf, alphabet, /*cols=*/8, /*texUnit=*/1);
 
 // Logging
 const LOG = (...args) => { if (devMode) console.log(...args); };
@@ -117,7 +282,10 @@ class Uniforms {
     updateBuiltinValues(timeMs, res, sampleMedia) {
         if (this.timeLocation) gl.uniform1f(this.timeLocation, timeMs * 0.001);
         if (this.resolutionLocation) gl.uniform2f(this.resolutionLocation, res.width, res.height);
-        this.bindSampledTextures(sampleMedia)
+        this.bindSampledTextures(sampleMedia);
+        gl.uniform2f(this.uAtlasSizeLoc, fontAtlas.atlasSize.w, fontAtlas.atlasSize.h);
+        gl.uniform2f(this.uCellSizeLoc, fontAtlas.cellSize.w, fontAtlas.cellSize.h);
+        fontAtlas.bind(this.uSamplerLoc);
     }
 
     /**
@@ -245,6 +413,10 @@ class Uniforms {
             this.sampleTextureLocations[i] =
                 gl.getUniformLocation(prog, `u_texture${i}`);
         }
+
+        this.uSamplerLoc = gl.getUniformLocation(prog, "u_fontAtlas");
+        this.uAtlasSizeLoc = gl.getUniformLocation(prog, "u_atlasSize");
+        this.uCellSizeLoc = gl.getUniformLocation(prog, "u_cellSize");
     }
 
     updateLocations(prog, customNames) {
@@ -1070,6 +1242,10 @@ uniform sampler2D u_texture3;
 #define iChannel3 u_texture3
 #define iTime u_time
 #define iResolution u_resolution
+
+uniform sampler2D u_fontAtlas;
+uniform vec2      u_atlasSize;   // px width/height of the entire atlas
+uniform vec2      u_cellSize;    // px width/height of one glyph cell
 
 out vec4 fragColor;
 `;
@@ -2087,7 +2263,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // bind buttons
     document.getElementById('update-canvas-dimensions').addEventListener('click', updateCanvasDimensions);
-    presetDimensions = [
+    let presetDimensions = [
         { name: "480p", w: 640, h: 480 },
         { name: "720p", w: 1280, h: 720 },
         { name: "1080p", w: 1920, h: 1080 },
