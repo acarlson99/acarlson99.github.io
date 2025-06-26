@@ -67,6 +67,7 @@
         <!-- Right Panel: Canvas and Uploads -->
         <div id="right-panel">
             <button id="edit-shader-btn">Edit Shader</button>
+            <button id="edit-dsl-btn">Edit some Lisp(?)</button>
             <div id="shader-editor" style="display:none; border:none;">
                 <button id="apply-shader-edit">Apply Changes</button>
                 <button id="cancel-shader-edit">Cancel</button>
@@ -91,6 +92,7 @@
                 <button id="preset-dimensions-8K">8K</button>
             </div>
             <canvas id="shader-canvas"></canvas>
+            <div id="current-frame">0</div>
             <button id="play-pause">Pause</button>
             <button id="restart">Restart</button>
             <button id="fullscreen-btn">Enter Fullscreen</button>
@@ -100,7 +102,7 @@
             <button id="save-image">Save Image</button>
         </div>
     </div>
-    <script src="app.js"></script>
+    <script src="app.js" type="module"></script>
 </body>
 
 </html>

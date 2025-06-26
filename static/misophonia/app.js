@@ -1,75 +1,26 @@
-// =====================================
-// Part 1: IndexedDB Asset Cache
-// =====================================
+import TinySDF from 'https://cdn.skypack.dev/@mapbox/tiny-sdf';
+import CacheManager from "./cashman.js"
+
+const tinySdf = new TinySDF({
+    fontSize: 24,             // Font size in pixels
+    fontFamily: 'sans-serif', // CSS font-family
+    fontWeight: 'normal',     // CSS font-weight
+    fontStyle: 'normal',      // CSS font-style
+    buffer: 3,                // Whitespace buffer around a glyph in pixels
+    radius: 8,                // How many pixels around the glyph shape to use for encoding distance
+    cutoff: 0.25              // How much of the radius (relative) is used for the inside part of the glyph
+});
+
 const DB_NAME = 'shader-assets-db';
 const DB_VERSION = 1;
 const STORE_NAME = 'asset-cache';
 
-class CacheManager {
-    constructor(dbName, storeName, dbVersion = 1) {
-        this.dbName = dbName;
-        this.storeName = storeName;
-        this.dbVersion = dbVersion;
-        this.db = null;
-    }
-
-    init() {
-        return new Promise((resolve, reject) => {
-            const req = indexedDB.open(this.dbName, this.dbVersion);
-            req.onupgradeneeded = () => {
-                const db = req.result;
-                if (!db.objectStoreNames.contains(this.storeName)) {
-                    db.createObjectStore(this.storeName);
-                }
-            };
-            req.onsuccess = () => {
-                this.db = req.result;
-                resolve(this.db);
-            };
-            req.onerror = () => reject(req.error);
-        });
-    }
-
-    withStore(mode, callback) {
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(this.storeName, mode);
-            const store = tx.objectStore(this.storeName);
-            callback(store);
-            tx.oncomplete = () => resolve();
-            tx.onerror = () => reject(tx.error);
-        });
-    }
-
-    get(key) {
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(this.storeName, 'readonly');
-            const req = tx.objectStore(this.storeName).get(key);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-    }
-
-    put(key, value) { return this.withStore('readwrite', store => store.put(value, key)); }
-
-    delete(key) { return this.withStore('readwrite', store => store.delete(key)); }
-
-    clear() { return this.withStore('readwrite', store => store.clear()); }
-
-    keys() {
-        return new Promise((resolve, reject) => {
-            const tx = this.db.transaction(this.storeName, 'readonly');
-            const req = tx.objectStore(this.storeName).getAllKeys();
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-    }
-}
-
+/**
+ * @type {CacheManager}
+ */
 const resourceCache = new CacheManager(DB_NAME, STORE_NAME, DB_VERSION);
 
-// =====================================
-// Part 1.5: Hotkey Helpers
-// =====================================
+//#region hotkey
 
 // top‑level, alongside your other globals
 const hotkeyBindings = {};
@@ -85,21 +36,23 @@ window.addEventListener('keydown', e => {
     const { shaderBuffer, uniform, input } = binding;
     // flip the stored value
     const newVal = !shaderBuffer.customUniforms[uniform];
-    shaderBuffer.customUniforms[uniform] = newVal;
+    shaderBuffer.setCustomUniform(uniform, newVal);
     // update the UI
     input.checked = newVal;
     saveControlState(shaderBuffer);
 });
 
-// =====================================
-// Part 2: Global Setup & State
-// =====================================
+//#endregion
+
+//#region setup-global-state
+
 /** @type {HTMLCanvasElement} */
 const canvas = document.getElementById('shader-canvas');
 /** @type {WebGL2RenderingContext} */
 const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false });
 if (!gl) alert('WebGL is not supported by your browser.');
 
+// variables
 const devMode = document.URL.startsWith('http://localhost');
 const MAX_TEXTURE_SLOTS = 4;
 const maxLines = 100;
@@ -110,6 +63,158 @@ let isPaused = false;
 let lastFrameTime = 0;
 let effectiveTime = 0;
 let editorOpen = false; // shader editor starts closed
+
+class GlyphSDF {
+    /**
+     * @param {WebGL2RenderingContext} gl
+     * @param {TinySDF} tinySdf       // your TinySDF instance
+     * @param {string} char           // single character to draw
+     * @param {number} texUnit        // which texture unit to bind it to by default
+     */
+    constructor(gl, tinySdf, char, texUnit = 1) {
+        this.gl = gl;
+        this.texUnit = texUnit;
+
+        // 1) Generate the raw SDF data
+        const sdf = tinySdf.draw(char);
+        this.width = sdf.width;
+        this.height = sdf.height;
+
+        // 2) Pack into RGBA so we can use a standard RGBA texture
+        const N = this.width * this.height;
+        const pixels = new Uint8Array(N * 4);
+        for (let i = 0; i < N; i++) {
+            pixels[4 * i + 0] = 255;       // R
+            pixels[4 * i + 1] = 255;       // G
+            pixels[4 * i + 2] = 255;       // B
+            pixels[4 * i + 3] = sdf.data[i]; // A holds your alpha/distances
+        }
+
+        // 3) Create & configure the GL texture
+        this.tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.tex);
+        gl.texImage2D(
+            gl.TEXTURE_2D, 0,
+            gl.RGBA, this.width, this.height, 0,
+            gl.RGBA, gl.UNSIGNED_BYTE,
+            pixels
+        );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+
+    delete() { gl.deleteTexture(this.tex); }
+
+    /**
+     * Call this after you’ve called gl.useProgram(program) and gotten
+     * uniform locations for `u_glyph` and `u_glyphSize`.
+     * 
+     * @param {WebGLUniformLocation} uGlyphLoc
+     * @param {WebGLUniformLocation} uSizeLoc
+     */
+    bind(uGlyphLoc, uSizeLoc) {
+        const gl = this.gl;
+        gl.activeTexture(gl.TEXTURE0 + this.texUnit);
+        gl.bindTexture(gl.TEXTURE_2D, this.tex);
+        gl.uniform1i(uGlyphLoc, this.texUnit);
+        gl.uniform2f(uSizeLoc, this.width, this.height);
+    }
+}
+
+class FontAtlas {
+    /**
+     * @param {WebGL2RenderingContext} gl
+     * @param {TinySDF} tinySdf
+     * @param {string[]} chars   // e.g. Array.from("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+     * @param {number} cols      // how many columns in the atlas
+     * @param {number} texUnit   // which texture unit to bind to
+     */
+    constructor(gl, tinySdf, chars, cols = 8, texUnit = 1) {
+        this.gl = gl;
+        this.texUnit = texUnit;
+
+        // 1) render each glyph into its own SDF
+        const glyphs = chars.map(ch => tinySdf.draw(ch));
+        const cellW = glyphs[0].width;
+        const cellH = glyphs[0].height;
+        const rows = Math.ceil(chars.length / cols);
+
+        // 2) composite into one big canvas
+        const atlasW = cellW * cols;
+        const atlasH = cellH * rows;
+        const canvas = document.createElement("canvas");
+        canvas.width = atlasW;
+        canvas.height = atlasH;
+        const ctx = canvas.getContext("2d");
+        const imgData = ctx.createImageData(atlasW, atlasH);
+
+        for (let i = 0; i < glyphs.length; i++) {
+            const { data, width, height } = glyphs[i];
+            const cx = (i % cols) * cellW;
+            const cy = Math.floor(i / cols) * cellH;
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const dstIdx = 4 * ((cy + y) * atlasW + (cx + x));
+                    const a = data[y * width + x];
+                    imgData.data[dstIdx + 0] = 255;
+                    imgData.data[dstIdx + 1] = 255;
+                    imgData.data[dstIdx + 2] = 255;
+                    imgData.data[dstIdx + 3] = a;
+                }
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+
+        // 3) upload atlas to GPU
+        this.texture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.texImage2D(
+            gl.TEXTURE_2D, 0, gl.RGBA,
+            atlasW, atlasH, 0,
+            gl.RGBA, gl.UNSIGNED_BYTE,
+            canvas
+        );
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+
+        // 4) store UV coords for each char
+        this.uvs = Object.fromEntries(
+            chars.map((ch, i) => {
+                const col = i % cols, row = Math.floor(i / cols);
+                return [ch, {
+                    u0: (col * cellW) / atlasW,
+                    v0: (row * cellH) / atlasH,
+                    u1: ((col + 1) * cellW) / atlasW,
+                    v1: ((row + 1) * cellH) / atlasH
+                }];
+            })
+        );
+
+        this.atlasSize = { w: atlasW, h: atlasH };
+        this.cellSize = { w: cellW, h: cellH };
+    }
+
+    /**
+     * @param {WebGLUniformLocation} uSamplerLoc
+     * @param {number} unit             // optional override
+     */
+    bind(uSamplerLoc, unit = this.texUnit) {
+        const gl = this.gl;
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, this.texture);
+        gl.uniform1i(uSamplerLoc, unit);
+    }
+}
+// 1) pick your character set:
+const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+// 2) make your atlas:
+const fontAtlas = new FontAtlas(gl, tinySdf, alphabet, /*cols=*/8, /*texUnit=*/1);
 
 // Logging
 const LOG = (...args) => { if (devMode) console.log(...args); };
@@ -133,6 +238,7 @@ function hexToRgb(hex) {
     const n = parseInt(hex, 16);
     return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
+
 /**
  * Clamp a canvas element's CSS size while maintaining aspect ratio
  * @param {HTMLElement} canvas - The canvas element
@@ -154,43 +260,58 @@ function clampPreviewSize(canvas, maxWidth = 300, maxHeight = 300) {
     canvas.style.height = displayHeight + 'px';
 }
 
+//#endregion
+
+//#region uniforms
+
 class Uniforms {
     constructor() {
         this.customLocations = {};
         this.sampleTextures = new Array(MAX_TEXTURE_SLOTS).fill(null);
         this.sampleTextureLocations = new Array(MAX_TEXTURE_SLOTS).fill(null);
-        // TODO: instead of assigning media to sampleMedia slots this should provide a way to easily assign media
-        this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
             this.sampleTextures[i] = gl.createTexture();
         }
-
     }
 
-    updateBuiltinValues(timeMs, res) {
+    /**
+     * @param {Number} timeMs 
+     * @param {{width:Number,height:Number}} res 
+     * @param {[Media]} sampleMedia 
+     */
+    updateBuiltinValues(timeMs, res, sampleMedia) {
         if (this.timeLocation) gl.uniform1f(this.timeLocation, timeMs * 0.001);
         if (this.resolutionLocation) gl.uniform2f(this.resolutionLocation, res.width, res.height);
-        this.bindSampledTextures()
+        this.bindSampledTextures(sampleMedia);
+        glyphSDF.bind(this.uGlyphLoc, this.uGlyphSizeLoc);
+        gl.uniform2f(this.uAtlasSizeLoc, fontAtlas.atlasSize.w, fontAtlas.atlasSize.h);
+        gl.uniform2f(this.uCellSizeLoc, fontAtlas.cellSize.w, fontAtlas.cellSize.h);
+        fontAtlas.bind(this.uSamplerLoc);
     }
 
-    bindSampledTextures() {
+    /**
+     * @param {[Media]} sampleMedia array of media
+     */
+    bindSampledTextures(sampleMedia) {
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
             if (!this.sampleTextures[i] || !this.sampleTextureLocations[i])
                 continue;
             const textureLocation = this.sampleTextureLocations[i];
-            const media = this.sampleMedia[i];
-            const treatAsEmpty = !!media || ((media?.type == 'webcam' && media.element.readyState >= 2));
+            const media = sampleMedia[i];
+            const isWebcam = media?.type === Media.WebcamT;
+            const isWebcamReady = isWebcam && media.element.readyState >= 2;
+            const treatAsEmpty = !media || (isWebcam && !isWebcamReady);
             gl.activeTexture(gl.TEXTURE2 + i);
-            if (!treatAsEmpty) {
+            if (treatAsEmpty) {
                 // No media: use a fallback texture.
-                gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
+                gl.bindTexture(gl.TEXTURE_2D, emptyTexture);
                 gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "tab") {
+            } else if (media.type === Media.TabT) {
                 // For tab-sampled shaders, bind the target shader's offscreen texture.
-                const targetShader = shaderBuffers[media.tabIndex];
-                gl.bindTexture(gl.TEXTURE_2D, targetShader.textures[targetShader?.currentFramebufferIndex ^ 1]);
+                const targetBuffer = shaderBuffers[media.tabIndex];
+                gl.bindTexture(gl.TEXTURE_2D, targetBuffer.renderTarget.readTexture);
                 gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "video" || media.type === "webcam") {
+            } else if (media.type === Media.VideoT || media.type === Media.WebcamT) {
                 gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
                 gl.texImage2D(
@@ -201,7 +322,7 @@ class Uniforms {
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
                 gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "audio") {
+            } else if (media.type === Media.AudioT) {
                 const { analyser, dataArray } = media;
                 analyser.getByteFrequencyData(dataArray);
                 gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
@@ -213,7 +334,7 @@ class Uniforms {
                     gl.LUMINANCE, gl.UNSIGNED_BYTE, dataArray
                 );
                 gl.uniform1i(textureLocation, 2 + i);
-            } else if (media.type === "image") {
+            } else if (media.type === Media.ImageT) {
                 gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
                 gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
                 gl.texImage2D(
@@ -234,11 +355,18 @@ class Uniforms {
         }
     }
 
-    updateCustomValues(customs) {
-        for (let name in customs) {
-            const value = customs[name];
+    /**
+     * 
+     * @param {Object} customVals mapping of uniforms to values
+     */
+    updateCustomValues(customVals) {
+        for (let name in customVals) {
+            const value = customVals[name];
             const loc = this.customLocations[name];
-            if (loc === null) continue;
+            if (loc === null) {
+                console.warn(`uniform ${name} has no corresponding location`);
+                continue;
+            }
             if (typeof value === 'number') {
                 gl.uniform1f(loc, value);
             } else if (typeof value === 'boolean') {
@@ -259,9 +387,14 @@ class Uniforms {
         }
     }
 
-    updateValues(time, res, uniforms) {
-        if (uniforms) this.updateCustomValues(uniforms);
-        this.updateBuiltinValues(time, res);
+    /**
+     * @param {Number} timeMs
+     * @param {{width:Number,height:Number}} resolution
+     * @param {[Media]} media
+     */
+    updateValues(timeMs, resolution, customUniformValues, media) {
+        if (customUniformValues) this.updateCustomValues(customUniformValues);
+        this.updateBuiltinValues(timeMs, resolution, media);
     }
 
     /** @param {[String]} names is a list of uniform names **/
@@ -281,34 +414,655 @@ class Uniforms {
             this.sampleTextureLocations[i] =
                 gl.getUniformLocation(prog, `u_texture${i}`);
         }
+
+        this.uSamplerLoc = gl.getUniformLocation(prog, "u_fontAtlas");
+        this.uAtlasSizeLoc = gl.getUniformLocation(prog, "u_atlasSize");
+        this.uCellSizeLoc = gl.getUniformLocation(prog, "u_cellSize");
     }
 
     updateLocations(prog, customNames) {
         gl.useProgram(prog);
         this.updateBuiltinLocations(prog);
         this.updateCustomLocations(prog, customNames);
+        gl.useProgram(null);
+    }
+}
+
+//#endregion
+
+//#region media
+
+class Media {
+    constructor(type, params) {
+        this.type = type;
+        Object.assign(this, params);
+    }
+
+    static ImageT = "Image";
+    static VideoT = "Video";
+    static TabT = "Tab";
+    static AudioT = "Audio";
+    static MicrophoneT = "Microphone";
+    static WebcamT = "Webcam";
+    static URLT = "URL"; // TODO: this one should go-- media types should be concrete, and URLs are inferred to another type
+
+    static Image(src, cb) {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        let o = new Media(Media.ImageT, { element: img });
+        img.onload = () => {
+            clampPreviewSize(img);
+            if (cb) cb(o);
+        };
+        img.src = src;
+        return o;
+    }
+
+    static Video(src, cb) {
+        const video = document.createElement('video');
+        video.controls = true;
+        video.setAttribute('playsinline', '');
+        video.loop = true;
+        video.muted = true;
+        if (src) video.src = src;
+        const o = new Media(Media.VideoT, { element: video });
+        video.addEventListener('loadeddata', () => {
+            // Match the shader's pause state.
+            if (!isPaused) { video.play(); } else { video.pause(); }
+            // logMessage(`Slot ${slotIndex} loaded (video).`);
+            clampPreviewSize(video);
+            if (cb) cb(o);
+        });
+        return o;
+    }
+
+    static Tab(idx) {
+        return new Media(Media.TabT, { tabIndex: idx });
+    }
+
+    static Audio(src, cb) {
+        const audioSource = Media.createAudioSource(src);
+        if (!isPaused && typeof audioSource.audio.play === 'function') {
+            audioSource.audio.play();
+        } else {
+            audioSource.audio.pause();
+        }
+        audioSource.audio.style.maxWidth = "300px";
+
+        const muteBtn = document.createElement('button');
+        const el = document.createElement('div');
+        const o = new Media(Media.AudioT,
+            {
+                element: el,
+                audio: audioSource.audio,
+                analyser: audioSource.analyser,
+                dataArray: audioSource.dataArray,
+                outputGain: audioSource.outputGain,
+                muteBtn: muteBtn
+            });
+
+        let muted = true;
+        muteBtn.textContent = "Unmute";
+        Media.toggleMute(o, muted);
+        muteBtn.addEventListener('click', () => {
+            muted = !muted;
+            Media.toggleMute(o, muted);
+            muteBtn.textContent = muted ? "Unmute" : "Mute";
+            if (cb) cb(o);
+        });
+        el.appendChild(audioSource.audio);
+        el.appendChild(muteBtn);
+        return o;
+    }
+
+    static createAudioSource(src) {
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.loop = true;
+        audio.src = src;
+        const audioContext = new AudioContext();
+        const source = audioContext.createMediaElementSource(audio);
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        source.connect(analyser);
+        const outputGain = audioContext.createGain();
+        outputGain.gain.value = 1;
+        source.connect(outputGain);
+        outputGain.connect(audioContext.destination);
+        const dataArray = new Uint8Array(analyser.frequencyBinCount);
+        return { audio, analyser, dataArray, outputGain };
+    }
+
+    static toggleMute(media, mute) {
+        if (media.outputGain) media.outputGain.gain.value = mute ? 0 : 1;
+    }
+
+    static async Microphone(cb) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const audioContext = new AudioContext();
+            const source = audioContext.createMediaStreamSource(stream);
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            const dataArray = new Uint8Array(analyser.frequencyBinCount);
+            source.connect(analyser);
+            const o = new Media(Media.AudioT, { element: null, analyser, dataArray, outputGain: null });
+            if (cb) cb(o);
+            return o;
+        } catch (err) {
+            return logError("Error accessing microphone:", err);
+        }
+    }
+
+    static async Webcam(cb) {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const o = Media.Video(null, cb);
+            o.type = Media.WebcamT;
+            const video = o.element;
+            video.srcObject = stream;
+            video.autoplay = true;
+
+            return o;
+        } catch (err) {
+            return logError("Error accessing webcam:", err);
+        }
+    }
+
+    static async ScreenCapture(cb) {
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+            const o = Media.Video(null, cb);
+            const video = o.element;
+            video.srcObject = stream;
+            video.autoplay = true;
+
+            return o;
+        } catch (err) {
+            return logError("Error accessing screen capture:", err);
+        }
+    }
+
+    static FromSource(source, cb = undefined) {
+        let { type, url } = Media.inferMediaType(source);
+        let o;
+        if (type === Media.ImageT) {
+            o = Media.Image(url, cb);
+        }
+        else if (type === Media.VideoT) {
+            o = Media.Video(url, cb);
+        }
+        else if (type === Media.AudioT) {
+            o = Media.Audio(url, cb);
+        }
+        else {
+            console.warn('Unknown media type for', source);
+            return;
+        }
+        return o;
+    }
+
+    /**
+     * @param {any} source
+     * @returns {type: String, url: string}
+     */
+    static inferMediaType(source) {
+        let url, blobType;
+        if (typeof source === 'string') {
+            url = source;
+            const ext = source.split('.').pop().toLowerCase();
+            blobType = ext.match(/jpe?g|png|gif/) ? Media.ImageT
+                : ext.match(/mp4|webm|ogg/) ? Media.VideoT
+                    : ext.match(/mp3|wav|ogg/) ? Media.AudioT
+                        : null;
+        } else {
+            // File or Blob
+            url = URL.createObjectURL(source);
+            blobType = source.type.startsWith('image/') ? Media.ImageT
+                : source.type.startsWith('video/') ? Media.VideoT
+                    : source.type.startsWith('audio/') ? Media.AudioT
+                        : null;
+        }
+        return { type: blobType, url: url };
+    }
+
+    // static fromUrl(url, cb) {
+    //     const ext = url.split(".").pop().toLowerCase();
+    //     if (ext.match(/jpe?g|png|gif/)) return Media.Image(url, cb);
+    //     if (ext.match(/mp4|webm|ogg/)) return Media.Video(url, cb);
+    //     if (ext.match(/mp3|wav|ogg/)) return Media.Audio(url, cb);
+    //     throw new Error("Unknown URL media type");
+    // }
+}
+
+//#region url
+
+function createUrlForm(callback) {
+    const form = document.createElement('form');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Enter media URL...';
+    form.appendChild(input);
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const url = input.value.trim();
+        if (url) {
+            callback(url);
+        }
+    });
+    return form;
+}
+
+//#endregion
+
+//#region input
+
+class MediaInput {
+    // handles media UI
+    constructor(shaderBuffer, shaderIndex, slotIndex) {
+        this.shaderBuffer = shaderBuffer;
+        this.shaderIndex = shaderIndex;
+        this.slotIndex = slotIndex;
+        this.cacheKey = `${shaderIndex};${slotIndex}`;
+        this.container = document.createElement('div');
+        this.container.className = 'advanced-media-input';
+
+        this.buildUI();
+        this.updateRequiredHighlight();
+    }
+
+    buildUI() {
+        const { slotIndex } = this;
+
+        this.slotLabel = document.createElement('span');
+        this.slotLabel.className = 'texture-slot-label';
+        this.slotLabel.textContent = `Texture ${slotIndex}`;
+
+        this.infoIcon = document.createElement('span');
+        this.infoIcon.className = 'texture-slot-description';
+        this.infoIcon.innerText = '*';
+        this.infoIcon.title = 'help';
+        this.infoIcon.hidden = true;
+
+        this.container.append(this.slotLabel, this.infoIcon, document.createElement('br'));
+
+        this.sourceSelect = document.createElement('select');
+        this.sourceSelect.innerHTML = `
+            <option value="none">None</option>
+            <option value="file">File Upload</option>
+            <option value="url">URL</option>
+            <option value="mic">Microphone</option>
+            <option value="webcam">Webcam</option>
+            <option value="tab">Tab Sample</option>
+            <option value="screencap">Screen Share</option>
+        `;
+        this.sourceSelect.addEventListener('change', () => this.handleSourceChange());
+        this.container.appendChild(this.sourceSelect);
+
+        this.removeBtn = document.createElement('button');
+        this.removeBtn.textContent = 'Remove';
+        this.removeBtn.addEventListener('click', () => this.removeTexture());
+        this.container.appendChild(this.removeBtn);
+
+        this.inputControlsContainer = document.createElement('div');
+        this.inputControlsContainer.className = 'media-input-controls';
+        this.container.appendChild(this.inputControlsContainer);
+
+        this.previewContainer = document.createElement('div');
+        this.previewContainer.id = `media-preview-${slotIndex}`;
+        this.previewContainer.className = 'media-preview';
+        this.container.appendChild(this.previewContainer);
+    }
+
+    updateRequiredHighlight() {
+        const inputTexInfo = (this.shaderBuffer?.controlSchema?.inputs || [])[this.slotIndex] || {};
+        const isRequired = Boolean(inputTexInfo.required);
+        this.container.style.backgroundColor = isRequired && !this.hasMedia() ? 'rgba(255, 0, 0, 0.2)' : '';
+    }
+
+    clearPreview() {
+        this.previewContainer.innerHTML = '';
+    }
+
+    resetMedia() {
+        this.setMedia(null);
+        this.clearPreview();
+        resourceCache.deleteMedia(this.shaderIndex, this.slotIndex);
+    }
+
+    handleSourceChange() {
+        this.setMedia(null);
+        this.clearPreview();
+        const val = this.sourceSelect.value;
+        if (val === 'file') this.setupFileInput();
+        else if (val === 'url') this.setupUrlInput();
+        else if (val === 'mic') this.setupMicInput();
+        else if (val === 'webcam') this.setupWebcamInput();
+        else if (val === 'tab') this.setupTabSampleInput();
+        else if (val === 'screencap') this.setupScreenCaptureInput();
+        else {
+            this.inputControlsContainer.innerHTML = '';
+            this.setMedia(null);
+        }
+        this.updateRequiredHighlight();
+    }
+
+    async removeTexture() {
+        try {
+            await resourceCache.deleteMedia(this.shaderIndex, this.slotIndex);
+            logMessage(`Removed cache entry ${resourceCache.mediaKey(this.shaderIndex, this.slotIndex)}`);
+        } catch (err) {
+            logError(`Error deleting ${resourceCache.mediaKey(this.shaderIndex, this.slotIndex)}:`, err);
+        }
+        this.setMedia(null);
+        this.resetMedia();
+        logMessage(`Slot ${this.slotIndex} unassigned.`);
+        this.sourceSelect.selectedIndex = 0;
+        this.sourceSelect.dispatchEvent(new Event('change'));
+    }
+
+    setupFileInput() {
+        this.inputControlsContainer.innerHTML = '';
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*,video/*,audio/*';
+        fileInput.addEventListener('change', async (event) => {
+            this.resetMedia();
+            const file = event.target.files[0];
+            if (!file) return;
+            this.loadAndCache(file, true, () => this.updateRequiredHighlight());
+        });
+        this.inputControlsContainer.appendChild(fileInput);
+    }
+
+    setupUrlInput() {
+        this.inputControlsContainer.innerHTML = '';
+        const form = createUrlForm(async (url) => {
+            // TODO: this should create a media object with a specific type
+            const descriptor = new Media(Media.URLT, { url });
+            await resourceCache.putMedia(this.shaderIndex, this.slotIndex, JSON.stringify(descriptor));
+            this.resetMedia();
+            this.loadAndCache(url.toLowerCase(), true, () => this.updateRequiredHighlight());
+        });
+        this.inputControlsContainer.appendChild(form);
+    }
+
+    setupMicInput() {
+        this.inputControlsContainer.innerHTML = '';
+        const micBtn = document.createElement('button');
+        micBtn.textContent = 'Enable Microphone';
+        micBtn.addEventListener('click', async () => {
+            this.resetMedia();
+            const o = await Media.Microphone();
+            this.setMedia(o);
+            this.clearPreview();
+            this.previewContainer.innerHTML = 'Microphone Enabled';
+            this.updateRequiredHighlight();
+        });
+        this.inputControlsContainer.appendChild(micBtn);
+    }
+
+    setupTabSampleInput() {
+        this.inputControlsContainer.innerHTML = '';
+        const tabSelect = document.createElement('select');
+        const defaultOption = document.createElement('option');
+        defaultOption.value = "";
+        defaultOption.textContent = "-- Select a Shader Tab --";
+        tabSelect.appendChild(defaultOption);
+
+        let opts = [];
+        const refreshOptsNames = () => {
+            for (let i = 0; i < opts.length; i++) {
+                opts[i].textContent = shaderBuffers[i].name;
+            }
+        }
+        shaderBuffers.forEach((shaderBuf, idx) => {
+            const opt = document.createElement('option');
+            opt.value = idx;
+            opt.textContent = shaderBuf.name;
+            tabSelect.appendChild(opt);
+            opts.push(opt);
+        });
+
+        tabSelect.addEventListener('change', () => {
+            const idx = parseInt(tabSelect.value);
+            if (isNaN(idx)) return;
+            const descriptor = new Media(Media.TabT, { tabIndex: idx });
+            resourceCache.putMedia(this.shaderIndex, this.slotIndex, JSON.stringify(descriptor));
+            this.setMedia(descriptor);
+            this.clearPreview();
+            const info = document.createElement('div');
+            this.previewContainer.appendChild(info);
+            refreshOptsNames();
+            this.updateRequiredHighlight();
+        });
+        tabSelect.addEventListener('click', () => {
+            refreshOptsNames();
+            this.updateRequiredHighlight()
+        });
+
+        this.inputControlsContainer.appendChild(tabSelect);
+        this.inputControlsContainer.tabSelect = tabSelect;
+    }
+
+    setupWebcamInput() {
+        this.inputControlsContainer.innerHTML = '';
+        const camBtn = document.createElement('button');
+        camBtn.textContent = 'Enable Webcam';
+        camBtn.addEventListener('click', async () => {
+            this.resetMedia();
+            let o = await Media.Webcam();
+            // TODO: find another way to bind this callback
+            o.element.addEventListener('loadeddata', () => {
+                const updateLoop = () => {
+                    this.updateRequiredHighlight();
+                    // TODO: refactor
+                    if (this.shaderBuffer.sampleMedia[this.slotIndex]?.type === Media.WebcamT) {
+                        requestAnimationFrame(updateLoop);
+                    }
+                };
+                this.clearPreview();
+                this.previewContainer.appendChild(o.element);
+                this.setMedia(o);
+                updateLoop();
+            });
+            this.setMedia(o);
+            this.bindPreview(o.element);
+        });
+        this.inputControlsContainer.appendChild(camBtn);
+    }
+
+    setupScreenCaptureInput() {
+        this.inputControlsContainer.innerHTML = '';
+        const capBtn = document.createElement('button');
+        capBtn.textContent = 'Enable Screen Capture';
+        capBtn.addEventListener('click', async () => {
+            this.resetMedia();
+            let o = await Media.ScreenCapture();
+            if (!o) return;
+            o.element.addEventListener('loadeddata', () => {
+                const updateLoop = () => {
+                    this.updateRequiredHighlight();
+                    if (this.shaderBuffer.sampleMedia[this.slotIndex]?.type === Media.VideoT) {
+                        requestAnimationFrame(updateLoop);
+                    }
+                };
+                this.clearPreview();
+                this.previewContainer.appendChild(o.element);
+                this.setMedia(o);
+                updateLoop();
+            });
+            this.setMedia(o);
+            this.bindPreview(o.element);
+        });
+        this.inputControlsContainer.appendChild(capBtn);
+    }
+
+
+    setMedia(desc) {
+        this.shaderBuffer.setMediaSlot(this.slotIndex, desc);
+    }
+    hasMedia() { return !!this.shaderBuffer.sampleMedia[this.slotIndex]; }
+
+    setDescription(desc) {
+        if (desc) {
+            this.infoIcon.hidden = false;
+            this.infoIcon.title = desc;
+        } else {
+            this.infoIcon.hidden = true;
+        }
+    }
+
+    setInputName(label) {
+        this.slotLabel.innerText = label;
+    }
+
+    // select `Tab Sample -> i`
+    selectTab(i) {
+        this.sourceSelect.selectedIndex = 5;
+        this.sourceSelect.dispatchEvent(new Event('change'));
+        this.inputControlsContainer.tabSelect.selectedIndex = i + 1;
+        this.inputControlsContainer.tabSelect.dispatchEvent(new Event('change'));
+        this.updateRequiredHighlight();
+    }
+
+    selectMediaTab(i) {
+        this.sourceSelect.selectedIndex = i;
+        this.sourceSelect.dispatchEvent(new Event('change'));
+        this.updateRequiredHighlight();
+    }
+
+    getElement() {
+        return this.container;
+    }
+
+    loadAndCache(source, cache = true, cb = undefined) {
+        if (cache) resourceCache.putMedia(this.shaderIndex, this.slotIndex, source);
+
+        let o = Media.FromSource(source, cb);
+        this.shaderBuffer.setMediaSlot(this.slotIndex, o);
+        this.bindPreview(o.element);
+    }
+
+    bindPreview(e) {
+        this.previewContainer.innerHTML = '';
+        this.previewContainer.appendChild(e);
+    }
+}
+
+//#endregion
+
+//#endregion
+
+//#region shader-buffer
+
+class RenderTarget {
+    /**
+     * @param {number} width 
+     * @param {number} height 
+     */
+    constructor(width, height) {
+        this.width = width;
+        this.height = height;
+
+        this.curIndex = 0; // 0 or 1
+        this.framebuffers = [null, null];
+        this.textures = [null, null];
+        this._allocate(width, height);
+    }
+
+    _allocate(w, h) {
+        for (let i = 0; i < 2; i++) {
+            if (this.framebuffers[i]) {
+                gl.deleteFramebuffer(this.framebuffers[i]);
+                gl.deleteTexture(this.textures[i]);
+            }
+        }
+        this.framebuffers = [];
+        this.textures = [];
+
+        for (let i = 0; i < 2; i++) {
+            // Create and configure a texture
+            const tex = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            const fb = gl.createFramebuffer();
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+
+            if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) {
+                console.warn('RenderTarget: incomplete framebuffer');
+            }
+
+            this.textures.push(tex);
+            this.framebuffers.push(fb);
+        }
+
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+        this.width = w;
+        this.height = h;
+        this.curIndex = 0;
+    }
+
+    reallocate() {
+        this._allocate(this.width, this.height);
+    }
+
+    resize(w, h) {
+        if (w === this.width && h === this.height) return;
+        this._allocate(w, h);
+    }
+
+    /**
+     * @returns {WebGLTexture}
+     */
+    get writeFramebuffer() {
+        return this.framebuffers[this.curIndex];
+    }
+    /**
+     * @returns {WebGLTexture}
+     */
+    get readTexture() {
+        return this.textures[this.curIndex ^ 1];
+    }
+
+    swap() {
+        this.curIndex ^= 1;
     }
 }
 
 class ShaderBuffer {
+    /**
+     * @param {String} name
+     * @param {ShaderProgram} program
+     */
     constructor(name, program, controlSchema, shaderIndex) {
         this.name = name;
         this.gl = gl;
 
+        if (!gl) {
+            console.warn('warning-- creating a ShaderBuffer with no active GL context');
+            return;
+        }
+
         this.width = canvas.width;
         this.height = canvas.height;
 
-        // will hold [fb0, fb1] and [tex0, tex1]
-        this.framebuffers = [];
-        this.textures = [];
-        this.currentFramebufferIndex = 0;
+        this.renderTarget = new RenderTarget(this.width, this.height);
 
         this.uniforms = new Uniforms();
 
-        // this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
-        this.sampleMedia = this.uniforms.sampleMedia; // TODO: fix codesmell
+        // TODO: instead of assigning media to sampleMedia slots this should provide a way to easily assign media
+        this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
+        this.customUniforms = {};
+        this.clearCustomUniforms();
 
-        /** @type {ShaderProgram} **/
         if (program) this.setProgram(program);
         console.log(`setting control schema to`, controlSchema);
         this.setControlSchema(controlSchema);
@@ -321,15 +1075,46 @@ class ShaderBuffer {
         this.advancedInputsContainer.className = 'advanced-inputs-container';
         document.getElementById('advanced-inputs').appendChild(this.advancedInputsContainer);
 
-        this.customUniforms = {};
-
-        this._reallocateFramebuffersAndTextures(canvas.width, canvas.height);
-
         // Initialize advanced media inputs for each texture slot
+        this.mediaInputs = [];
+        this.shaderIndex = shaderIndex;
+
+        if (this.program) this.updateUniformLocations();
+    }
+
+    restart() {
+        this.sampleMedia.forEach(media => {
+            if (media && media.element) {
+                // Reset time to zero for video/audio elements
+                media.element.currentTime = 0;
+                if (!isPaused && typeof media.element.play === 'function') {
+                    media.element.play();
+                }
+            }
+        });
+        this.renderTarget.reallocate();
+    }
+
+    restoreDefaults() {
+        const defaultProgram = new ShaderProgram(vertexShaderSource, fragmentShaderSource, gl);
+        this.setProgram(defaultProgram);
+
+        this.setControlSchema(defaultControlSchema);
+
+        this.sampleMedia.fill(null);
+        this.mediaInputs.forEach((input) => input?.resetMedia?.());
+        renderControlsForShader(this, this.controlSchema);
+
+        const shaderIndex = shaderBuffers.indexOf(this);
+        resourceCache.deleteFragmentSrc(shaderIndex);
+        resourceCache.deleteControlSchema(shaderIndex);
+        resourceCache.deleteControlState(shaderIndex);
+
         for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-            let advancedInput = createAdvancedMediaInput(this, shaderIndex, i);
-            this.advancedInputsContainer.appendChild(advancedInput);
+            resourceCache.deleteMedia(shaderIndex, i);
         }
+
+        logMessage(`Shader "${this.name}" reset to default.`);
     }
 
     setName(s) {
@@ -346,7 +1131,7 @@ class ShaderBuffer {
     setProgram(p) {
         const prog = p.compile();
         if (!prog) return false;
-        this.customUniforms = {}; // TODO: populate custom uniform locations here instead of within renderControls
+        this.clearCustomUniforms();
         this.program = p;
         this.shaderProgram = prog;
         this.updateUniformLocations();
@@ -354,74 +1139,73 @@ class ShaderBuffer {
         return true;
     }
 
+    setMediaSlot(idx, desc) {
+        this.sampleMedia[idx] = desc;
+    }
+
     updateUniformLocations() {
-        const us = this.controlSchema?.controls.map((o) => o.uniform);
+        const us = this.controlSchema?.controls?.map((o) => o.uniform);
         this.uniforms.updateLocations(this.program.program, us);
     }
 
+    setCustomUniform(k, v) {
+        this.customUniforms[k] = v;
+    }
+
+    clearCustomUniforms() {
+        this.customUniforms = {};
+    }
+
+    // TODO: this logic should move outside of this class
     setControlSchema(controlSchema) {
         this.controlSchema = controlSchema;
-        if (this.controlContainer) renderControlsForShader(this, controlSchema);
+        this.controlSchema = controlSchema;
+
+        // Clear and rebuild advanced inputs
+        this.mediaInputs = [];
+        if (this.advancedInputsContainer) this.advancedInputsContainer.innerHTML = '';
+
+        if (controlSchema?.inputs?.length) {
+            for (let i = 0; i < controlSchema.inputs.length; i++) {
+                const mediaInput = new MediaInput(this, this.shaderIndex, i);
+                this.mediaInputs.push(mediaInput);
+                if (this.advancedInputsContainer) this.advancedInputsContainer.appendChild(mediaInput.getElement());
+            }
+        }
+
+        // Clear old controls
+        if (this.controlContainer) {
+            renderControlsForShader(this, controlSchema);
+        }
         return true;
-    }
-
-    _reallocateFramebuffersAndTextures(w, h) {
-        gl.viewport(0, 0, w, h);
-        const fbObjA = ShaderBuffer.createGLFramebuffer(w, h);
-        const fbObjB = ShaderBuffer.createGLFramebuffer(w, h);
-        this.framebuffers = [fbObjA.framebuffer, fbObjB.framebuffer];
-        this.textures = [fbObjA.texture, fbObjB.texture];
-    }
-
-    static createGLFramebuffer(w, h) {
-        const tex = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, tex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        const fb = gl.createFramebuffer();
-        gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-        if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) LOG('Warning: incomplete framebuffer');
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        return { framebuffer: fb, texture: tex };
     }
 
     draw(timeMs) {
         const gl = this.gl;
-        const dstIdx = this.currentFramebufferIndex;
-        const srcIdx = 1 - dstIdx;
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffers[dstIdx]);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this.renderTarget.writeFramebuffer);
         gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         gl.useProgram(this.program.program);
 
-        this.updateUniformLocations(); // TODO: this line should go
         this.uniforms.updateValues(
             timeMs,
             { width: gl.canvas.width, height: gl.canvas.height },
-            this.customUniforms
+            this.customUniforms,
+            this.sampleMedia
         );
 
         this.program.drawToPosition(quadBuffer);
 
-        // flip-flop
-        this.currentFramebufferIndex = srcIdx;
-    }
-
-    getOutputTexture() {
-        return this.textures[this.currentFramebufferIndex];
+        this.renderTarget.swap();
     }
 }
 
-// =====================================
-// Part 3: WebGL Helpers & Quad Setup
-// =====================================
+//#endregion
+
+//#region shader-program
+
 class ShaderProgram {
     constructor(vsSrc, fsSrc, gl_) {
         /** @type {WebGL2RenderingContext} */
@@ -436,8 +1220,45 @@ class ShaderProgram {
         }
     }
 
+    static fragmentShaderSourcePre = `#version 300 es
+#ifdef GL_ES
+precision mediump float;
+#endif
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+uniform float u_time;
+uniform vec2 u_resolution;
+uniform sampler2D u_texture0;
+uniform sampler2D u_texture1;
+uniform sampler2D u_texture2;
+uniform sampler2D u_texture3;
+
+#define iChannel0 u_texture0
+#define iChannel1 u_texture1
+#define iChannel2 u_texture2
+#define iChannel3 u_texture3
+#define iTime u_time
+#define iResolution u_resolution
+
+uniform sampler2D u_fontAtlas;
+uniform vec2      u_atlasSize;   // px width/height of the entire atlas
+uniform vec2      u_cellSize;    // px width/height of one glyph cell
+
+out vec4 fragColor;
+`;
+    static fragmentShaderSourcePost = `
+void main(void) {
+    mainImage(fragColor, gl_FragCoord.xy);
+}
+`;
+
     static createShader(type, src) {
         const s = gl.createShader(type);
+        if (type === gl.FRAGMENT_SHADER) src = ShaderProgram.fragmentShaderSourcePre + src + ShaderProgram.fragmentShaderSourcePost;
         gl.shaderSource(s, src);
         gl.compileShader(s);
         if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
@@ -458,6 +1279,9 @@ class ShaderProgram {
         if (!fsSrc) fsSrc = this.fsSrc;
         this.vsSrc = vsSrc;
         this.fsSrc = fsSrc;
+
+        if (this.vs) gl.deleteShader(this.vs);
+        if (this.fs) gl.deleteShader(this.fs);
         this.vs = ShaderProgram.createShader(this.gl.VERTEX_SHADER, vsSrc);
         this.fs = ShaderProgram.createShader(this.gl.FRAGMENT_SHADER, fsSrc);
         if (!this.vs || !this.fs) return null;
@@ -470,6 +1294,7 @@ class ShaderProgram {
             this.gl.deleteProgram(prog);
             return null;
         }
+        if (this.program) gl.deleteProgram(this.program);
         this.program = prog;
         return prog;
     };
@@ -482,9 +1307,11 @@ class ShaderProgram {
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
-
-    // TODO: maybe move uniforms into the ShaderProgram
 }
+
+//#endregion
+
+//#region shader-buffer-and-quad-setup
 
 //                   goofy trick to preserve type information
 let shaderBuffers = [new ShaderBuffer()]; shaderBuffers = [];
@@ -495,30 +1322,19 @@ function createProgram(vsSrc, fsSrc) {
 
 const quadVertexShaderSource = `#version 300 es
   in vec2 a_position;
-  out vec2 v_texCoord;
+  out vec2 fragCoord;
 
   void main() {
     gl_Position = vec4(a_position, 0.0, 1.0);
-    v_texCoord = a_position * 0.5 + 0.5;
+    fragCoord = a_position * 0.5 + 0.5;
   }
 `;
-const quadFragmentShaderSource = `#version 300 es
-  #ifdef GL_ES
-  precision mediump float;
-  #endif
-  #ifdef GL_FRAGMENT_PRECISION_HIGH
-  precision highp float;
-  #else
-  precision mediump float;
-  #endif
-
-  precision mediump float;
+const quadFragmentShaderSource = `
   uniform sampler2D u_texture;
-  in vec2 v_texCoord;
-  out vec4 outColor;
+  in vec2 fragCoord;
 
-  void main() {
-    outColor = texture(u_texture, v_texCoord);
+  void mainImage( out vec4 fragColor, in vec2 fc ) {
+    fragColor = texture(u_texture, fragCoord);
   }
 `;
 const quadProgram = createProgram(quadVertexShaderSource, quadFragmentShaderSource);
@@ -526,10 +1342,55 @@ const quadBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, quadBuffer);
 const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+const emptyTexture = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, emptyTexture);
+gl.texImage2D(
+    gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0,
+    gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0])
+);
 
-// =====================================
-// Part 4: Canvas Dimension Updates
-// =====================================
+const vertexShaderSource = `#version 300 es
+  in vec2 a_position;
+  void main() {
+    gl_Position = vec4(a_position, 0.0, 1.0);
+  }
+`;
+let fragmentShaderSource = `
+  uniform float u_test;
+  uniform float u_test2;
+
+  void mainImage( out vec4 fragColor, in vec2 fragCoord ) {
+    vec2 uv = fragCoord.xy / u_resolution;
+    uv = uv - 0.5;
+    uv.x *= u_resolution.x / u_resolution.y;
+    float dist = length(uv);
+    float wave = sin(dist * 10.0 * u_test2 - u_time * 3.0 * u_test);
+    float intensity = smoothstep(0.3, 0.0, abs(wave));
+    vec3 color = mix(vec3(0.2, 0.1, 0.5), vec3(1.0, 0.8, 0.3), intensity);
+    fragColor = vec4(color, 1.0);
+  }
+`;
+
+const defaultControlSchema = {
+    controls: [
+        { type: 'slider', label: 'Speed', uniform: 'u_test', default: 0.5, min: 0, max: 1, step: 0.01 },
+        { type: 'slider', label: 'Num Rings', uniform: 'u_test2', default: 1.0, min: 0, max: 6, step: 0.25 }
+    ]
+};
+
+let MAX_TAB_SLOTS = 8;
+function initDefaultShaderBuffers() {
+    let buffers = [];
+    for (let i = 0; i < MAX_TAB_SLOTS; i++) {
+        buffers.push(new ShaderBuffer(`Shader ${i + 1}`, new ShaderProgram(vertexShaderSource, fragmentShaderSource, gl), defaultControlSchema, i));
+    }
+    shaderBuffers = buffers;
+}
+
+//#endregion
+
+//#region canvas-source-helpers
+
 function updateCanvasDimensions() {
     const width = parseInt(document.getElementById('canvas-width').value, 10);
     const height = parseInt(document.getElementById('canvas-height').value, 10);
@@ -544,8 +1405,7 @@ function updateCanvasDimensions() {
     // Clamp the CSS display size
     clampPreviewSize(canvas, 1000, 1000);
 
-    // Recreate framebuffers/textures with new dimensions
-    shaderBuffers.forEach(sb => sb._reallocateFramebuffersAndTextures(width, height));
+    shaderBuffers.forEach(sb => sb.renderTarget.resize(width, height));
     LOG(`Canvas dimensions set to ${width}x${height}`);
 }
 
@@ -560,504 +1420,17 @@ function presetCanvasDimensions(w, h) {
     };
 }
 
-// =====================================
-// Part 5: Audio & Audio-Texture Helpers
-// =====================================
-function createAudioSource(src) {
-    const audio = document.createElement('audio');
-    audio.controls = true;
-    audio.loop = true;
-    audio.src = src;
-    const audioContext = new AudioContext();
-    const source = audioContext.createMediaElementSource(audio);
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
-    const outputGain = audioContext.createGain();
-    outputGain.gain.value = 1;
-    source.connect(outputGain);
-    outputGain.connect(audioContext.destination);
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    return { audio, analyser, dataArray, outputGain };
-}
+//#endregion
 
-function toggleMute(media, mute) {
-    if (media.outputGain) media.outputGain.gain.value = mute ? 0 : 1;
-}
-
-// =====================================
-// Part 6: Default Shader Sources
-// =====================================
-
-const vertexShaderSource = `#version 300 es
-  in vec2 a_position;
-  void main() {
-    gl_Position = vec4(a_position, 0.0, 1.0);
-  }
-`;
-let fragmentShaderSource = `#version 300 es
-  #ifdef GL_ES
-  precision mediump float;
-  #endif
-  #ifdef GL_FRAGMENT_PRECISION_HIGH
-  precision highp float;
-  #else
-  precision mediump float;
-  #endif
-
-  uniform float u_time;
-  uniform vec2 u_resolution;
-  uniform sampler2D u_texture0;
-  uniform sampler2D u_texture1;
-  uniform sampler2D u_texture2;
-  uniform sampler2D u_texture3;
-  uniform float u_test;
-  uniform float u_test2;
-
-  out vec4 outColor;
-
-  void main(void) {
-    vec2 uv = gl_FragCoord.xy / u_resolution;
-    uv = uv - 0.5;
-    uv.x *= u_resolution.x / u_resolution.y;
-    float dist = length(uv);
-    float wave = sin(dist * 10.0 * u_test2 - u_time * 3.0 * u_test);
-    float intensity = smoothstep(0.3, 0.0, abs(wave));
-    vec3 color = mix(vec3(0.2, 0.1, 0.5), vec3(1.0, 0.8, 0.3), intensity);
-    outColor = vec4(color, 1.0);
-  }
-`;
-
-// =====================================
-// Part 7: ShaderBuffer Creation & Management
-// =====================================
-
-const defaultControlSchema = {
-    controls: [
-        { type: 'slider', label: 'Speed', uniform: 'u_test', default: 0.5, min: 0, max: 1, step: 0.01 },
-        { type: 'slider', label: 'Num Rings', uniform: 'u_test2', default: 1.0, min: 0, max: 6, step: 0.25 }
-    ]
-};
-
-let MAX_TAB_SLOTS = 8;
-function initDefaultShaderBuffers() {
-    // For demonstration, create two shader buffers (tabs)
-    let buffers = [];
-    for (let i = 0; i < MAX_TAB_SLOTS; i++) {
-        buffers.push(new ShaderBuffer(`Shader ${i + 1}`, new ShaderProgram(vertexShaderSource, fragmentShaderSource, gl), defaultControlSchema, i));
-    }
-    shaderBuffers = buffers;
-}
-
-// =====================================
-// Part 8: Advanced Media Input & Loader
-// =====================================
-// Helper to load an image from a source URL.
-function loadImageFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-        logMessage(`Slot ${slotIndex} loaded (image).`);
-        clampPreviewSize(img);
-        shaderBuffer.sampleMedia[slotIndex] = { type: 'image', element: img };
-        if (previewContainer) {
-            previewContainer.innerHTML = '';
-            previewContainer.appendChild(img);
-        }
-        if (cb) cb();
-    };
-    img.src = src;
-}
-
-// Helper to load a video from a source URL.
-function loadVideoFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
-    const video = document.createElement('video');
-    video.controls = true;
-    video.setAttribute('playsinline', '');
-    video.loop = true;
-    video.muted = true;
-    if (src) video.src = src;
-    video.addEventListener('loadeddata', () => {
-        // Match the shader's pause state.
-        if (!isPaused) { video.play(); } else { video.pause(); }
-        logMessage(`Slot ${slotIndex} loaded (video).`);
-        clampPreviewSize(video);
-        if (cb) cb();
-    });
-    shaderBuffer.sampleMedia[slotIndex] = { type: 'video', element: video };
-    previewContainer.innerHTML = '';
-    previewContainer.appendChild(video);
-    return video;
-}
-
-// Helper to load audio from a source URL.
-function loadAudioFromSource(src, shaderBuffer, slotIndex, previewContainer, cb) {
-    const audioSource = createAudioSource(src);
-    if (!isPaused && typeof audioSource.audio.play === 'function') {
-        audioSource.audio.play();
-    } else {
-        audioSource.audio.pause();
-    }
-    shaderBuffer.sampleMedia[slotIndex] = {
-        type: 'audio',
-        element: audioSource.audio,
-        analyser: audioSource.analyser,
-        dataArray: audioSource.dataArray,
-        outputGain: audioSource.outputGain
-    };
-    audioSource.audio.style.maxWidth = "300px";
-    previewContainer.innerHTML = '';
-    previewContainer.appendChild(audioSource.audio);
-
-    // Add a mute/unmute button.
-    const muteBtn = document.createElement('button');
-    let muted = true;
-    muteBtn.textContent = "Unmute";
-    toggleMute(shaderBuffer.sampleMedia[slotIndex], muted);
-    muteBtn.addEventListener('click', () => {
-        muted = !muted;
-        toggleMute(shaderBuffer.sampleMedia[slotIndex], muted);
-        muteBtn.textContent = muted ? "Unmute" : "Mute";
-        if (cb) cb();
-    });
-    previewContainer.appendChild(muteBtn);
-}
-
-// Helper to create a URL form that triggers on Enter.
-function createUrlForm(callback) {
-    const form = document.createElement('form');
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.placeholder = 'Enter media URL...';
-    form.appendChild(input);
-    form.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const url = input.value.trim();
-        if (url) {
-            callback(url);
-        }
-    });
-    return form;
-}
-
-// Main function to create the advanced media input interface.
-function createAdvancedMediaInput(shaderBuffer, shaderIndex, slotIndex) {
-    const cacheKey = `${shaderIndex};${slotIndex}`;
-    LOG(`${cacheKey} ${shaderIndex}`);
-
-    const container = document.createElement('div');
-    container.className = 'advanced-media-input';
-
-    const slotLabel = document.createElement('span');
-    slotLabel.className = 'texture-slot-label';
-    slotLabel.textContent = `Texture ${slotIndex}`;
-    container.appendChild(slotLabel);
-
-    const infoIcon = document.createElement('span');
-    infoIcon.className = 'texture-slot-description';
-    infoIcon.innerText = '*';
-    infoIcon.title = 'help';
-    infoIcon.hidden = true; // default to invisible
-    container.appendChild(infoIcon);
-    container.appendChild(document.createElement('br'));
-
-    // Highlight required fields when unset
-    function updateRequiredHighlight() {
-        const inputTexInfo = (shaderBuffer?.controlSchema?.inputs || [])[slotIndex] || {};
-        const isRequired = Boolean(inputTexInfo.required);
-
-        if (isRequired && !shaderBuffer.sampleMedia[slotIndex]) {
-            container.style.backgroundColor = 'rgba(255, 0, 0, 0.2)';
-        } else {
-            container.style.backgroundColor = '';
-        }
-    }
-
-    const sourceSelect = document.createElement('select');
-    sourceSelect.innerHTML = `
-    <option value="none">None</option>
-    <option value="file">File Upload</option>
-    <option value="url">URL</option>
-    <option value="mic">Microphone</option>
-    <option value="webcam">Webcam</option>
-    <option value="tab">Tab Sample</option>
-    `;
-    container.appendChild(sourceSelect);
-
-    const removeBtn = document.createElement('button');
-    removeBtn.textContent = 'Remove';
-    removeBtn.addEventListener('click', async () => {
-        try {
-            await resourceCache.delete(cacheKey);
-            logMessage(`Removed cache entry ${cacheKey}`);
-        } catch (err) {
-            logError(`Error deleting ${cacheKey}:`, err);
-        }
-        shaderBuffer.sampleMedia[slotIndex] = null;
-        resetMedia();
-        logMessage(`Slot ${slotIndex} unassigned.`);
-        updateRequiredHighlight();
-        sourceSelect.selectedIndex = 0;
-        sourceSelect.dispatchEvent(new Event('change'));
-    });
-    container.appendChild(removeBtn);
-
-    const inputControlsContainer = document.createElement('div');
-    inputControlsContainer.className = 'media-input-controls';
-    container.appendChild(inputControlsContainer);
-
-    const previewContainer = document.createElement('div');
-    previewContainer.id = `media-preview-${slotIndex}`;
-    previewContainer.className = 'media-preview';
-    container.appendChild(previewContainer);
-
-    function clearPreview() { previewContainer.innerHTML = ''; }
-    function resetMedia() { shaderBuffer.sampleMedia[slotIndex] = null; clearPreview(); resourceCache.delete(cacheKey); }
-
-    function setupFileInput() {
-        inputControlsContainer.innerHTML = '';
-        const fileInput = document.createElement('input');
-        fileInput.type = 'file';
-        fileInput.accept = 'image/*,video/*,audio/*';
-        fileInput.addEventListener('change', async (event) => {
-            resetMedia();
-            const file = event.target.files[0];
-            if (!file) return;
-            await loadAndCacheMedia(file, shaderBuffer, slotIndex, previewContainer, true, updateRequiredHighlight);
-        });
-        inputControlsContainer.appendChild(fileInput);
-    }
-
-    function setupUrlInput() {
-        inputControlsContainer.innerHTML = '';
-        const form = createUrlForm(async (url) => {
-            // TODO: this causes precached URL input to break
-            const descriptor = { type: "url", url };
-            await resourceCache.put(cacheKey, JSON.stringify(descriptor));
-
-            resetMedia();
-            const lowerUrl = url.toLowerCase();
-            await loadAndCacheMedia(lowerUrl, shaderBuffer, slotIndex, previewContainer, true, updateRequiredHighlight);
-        });
-        inputControlsContainer.appendChild(form);
-    }
-
-    function setupMicInput() {
-        inputControlsContainer.innerHTML = '';
-        const micBtn = document.createElement('button');
-        micBtn.textContent = 'Enable Microphone';
-        micBtn.addEventListener('click', () => {
-            resetMedia();
-            navigator.mediaDevices.getUserMedia({ audio: true })
-                .then(stream => {
-                    const audioContext = new AudioContext();
-                    const source = audioContext.createMediaStreamSource(stream);
-                    const analyser = audioContext.createAnalyser();
-                    analyser.fftSize = 256;
-                    source.connect(analyser);
-                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                    shaderBuffer.sampleMedia[slotIndex] = { type: "audio", element: null, analyser, dataArray };
-                    clearPreview();
-                    previewContainer.innerHTML = 'Microphone Enabled';
-                })
-                .catch(err => { logError("Error accessing microphone:", err); });
-            updateRequiredHighlight();
-        });
-        inputControlsContainer.appendChild(micBtn);
-    }
-
-    function setupTabSampleInput() {
-        inputControlsContainer.innerHTML = '';
-        const tabSelect = document.createElement('select');
-        // Add a default placeholder option.
-        const defaultOption = document.createElement('option');
-        defaultOption.value = "";
-        defaultOption.textContent = "-- Select a Shader Tab --";
-        tabSelect.appendChild(defaultOption);
-
-        // List available shader buffers.
-        let opts = [];
-        shaderBuffers.forEach((shaderBuf, idx) => {
-            const opt = document.createElement('option');
-            opt.value = idx;  // use the tab index as the value.
-            opt.textContent = shaderBuf.name; // TODO: refactor this read to update when shaderBuf.name changes
-            tabSelect.appendChild(opt);
-            opts.push(opt);
-        });
-        tabSelect.addEventListener('change', () => {
-            const idx = parseInt(tabSelect.value);
-            if (isNaN(idx)) return;
-            const descriptor = { type: "tab", tabIndex: idx };
-            resourceCache.put(cacheKey, JSON.stringify(descriptor));
-
-            // Store a reference to the target tab.
-            shaderBuffer.sampleMedia[slotIndex] = descriptor;
-            LOG(`sampling shaderBuffer ${shaderBuffer.sampleMedia[slotIndex].tabIndex}`)
-            clearPreview();
-            // Update preview area with simple text info.
-            const info = document.createElement('div');
-            // info.textContent = `Sampling from tab: ${shaderBuffers[shaderIndex].name}`;
-            previewContainer.appendChild(info);
-            updateRequiredHighlight();
-            // refresh selector names here if needed
-            // TODO: make this its own class function updateTabSelectorNames
-            for (let i = 0; i < opts.length; i++) {
-                opts[i].textContent = shaderBuffers[i].name;
-            }
-        });
-        inputControlsContainer.appendChild(tabSelect);
-        inputControlsContainer.tabSelect = tabSelect;
-    }
-
-    function setupWebcamInput() {
-        inputControlsContainer.innerHTML = '';
-        const camBtn = document.createElement('button');
-        camBtn.textContent = 'Enable Webcam';
-        camBtn.addEventListener('click', () => {
-            resetMedia();
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(stream => {
-                    const video = loadVideoFromSource(null, shaderBuffer, slotIndex, previewContainer);
-                    shaderBuffer.sampleMedia[slotIndex] = null; // not ready yet
-                    video.srcObject = stream;
-                    video.autoplay = true;
-                    video.setAttribute('playsinline', '');
-                    video.addEventListener('loadeddata', () => {
-                        function updateLoop() {
-                            updateRequiredHighlight();
-                            if (shaderBuffer.sampleMedia[slotIndex]?.type === 'webcam') {
-                                requestAnimationFrame(updateLoop);
-                            }
-                        }
-                        clearPreview();
-                        previewContainer.appendChild(video);
-                        shaderBuffer.sampleMedia[slotIndex] = { type: 'webcam', element: video }; // ready now
-                        updateLoop();
-                    });
-                })
-                .catch(err => {
-                    logError("Error accessing webcam:", err);
-                });
-        });
-        inputControlsContainer.appendChild(camBtn);
-    }
-
-    sourceSelect.addEventListener('change', () => {
-        shaderBuffer.sampleMedia[slotIndex] = null;
-        clearPreview();
-        const val = sourceSelect.value;
-        if (val === 'file') setupFileInput();
-        else if (val === 'url') setupUrlInput();
-        else if (val === 'mic') setupMicInput();
-        else if (val === 'webcam') setupWebcamInput();
-        else if (val === 'tab') setupTabSampleInput();
-        else inputControlsContainer.innerHTML = '';
-        updateRequiredHighlight();
-    });
-    container.refreshHl = () => { updateRequiredHighlight(); };
-    container.setDescription = (desc) => {
-        if (desc) {
-            infoIcon.hidden = false;
-            infoIcon.title = desc;
-        } else {
-            infoIcon.hidden = true;
-        }
-    };
-    container.setInputName = (label) => { slotLabel.innerText = label; };
-    container.removeTexture = () => { removeBtn.dispatchEvent(new Event('click')); };
-    container.selectTab = (i) => {
-        const tabIdx = 5; // index 
-        sourceSelect.selectedIndex = tabIdx;
-        sourceSelect.dispatchEvent(new Event('change'));
-        inputControlsContainer.tabSelect.selectedIndex = i + 1;
-        inputControlsContainer.tabSelect.dispatchEvent(new Event('change'));
-        updateRequiredHighlight();
-    }
-    container.selectMediaTab = (i) => {
-        sourceSelect.selectedIndex = i;
-        sourceSelect.dispatchEvent(new Event('change'));
-        updateRequiredHighlight();
-        updateRequiredHighlight();
-    }
-
-    // Initial highlight
-    updateRequiredHighlight();
-
-    return container;
-}
-
-/**
- * Load one media asset into a shader slot, optionally caching it.
- *
- * @param {File|Blob|string} source
- *    - If string: treated as a URL (won’t be cached).  
- *    - If File/Blob: creates an ObjectURL.  
- * @param {object} shaderBuffer
- * @param {number} slotIndex
- * @param {HTMLElement} previewContainer
- * @param {boolean} [cache=true]
- */
-async function loadAndCacheMedia(
-    source,
-    shaderBuffer,
-    slotIndex,
-    previewContainer,
-    cache = true,
-    cb = undefined
-) {
-    // 1) compute which shader we’re in
-    const shaderIndex = shaderBuffers.indexOf(shaderBuffer);
-    const cacheKey = `${shaderIndex};${slotIndex}`;
-    LOG(`loadandcache ${cacheKey} ${shaderIndex}`);
-
-    // 2) figure out URL and type
-    let url, blobType;
-    if (typeof source === 'string') {
-        url = source;
-        cache = false; // remote URLs don’t get cached
-        const ext = source.split('.').pop().toLowerCase();
-        blobType = ext.match(/jpe?g|png|gif/) ? 'image'
-            : ext.match(/mp4|webm|ogg/) ? 'video'
-                : ext.match(/mp3|wav|ogg/) ? 'audio'
-                    : null;
-    } else {
-        // File or Blob
-        url = URL.createObjectURL(source);
-        blobType = source.type.startsWith('image/') ? 'image'
-            : source.type.startsWith('video/') ? 'video'
-                : source.type.startsWith('audio/') ? 'audio'
-                    : null;
-
-        if (cache) {
-            // write into IndexedDB under our new key:
-            await resourceCache.put(cacheKey, source);
-        }
-    }
-
-    // 3) dispatch to the right loader
-    if (blobType === 'image') {
-        loadImageFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
-    }
-    else if (blobType === 'video') {
-        loadVideoFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
-    }
-    else if (blobType === 'audio') {
-        loadAudioFromSource(url, shaderBuffer, slotIndex, previewContainer, cb);
-    }
-    else {
-        console.warn('Unknown media type for', source);
-    }
-}
+//#region state management
 
 async function saveControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
-    const key = `controls;${idx}`;
-    await resourceCache.put(key, JSON.stringify(shaderBuffer.customUniforms));
+    await resourceCache.putControlState(idx, JSON.stringify(shaderBuffer.customUniforms));
 }
 async function getControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
-    const key = `controls;${idx}`;
-    const str = await resourceCache.get(key);
+    const str = await resourceCache.getControlState(idx);
     if (typeof str === 'string') {
         try {
             return JSON.parse(str);
@@ -1068,15 +1441,16 @@ async function getControlState(shaderBuffer) {
     }
     return null;
 }
-async function loadControlState(shaderBuffer) {
-    const uniforms = await getControlState(shaderBuffer);
+async function loadControlState(shaderBuffer, uniforms = null) {
+    if (uniforms === null) uniforms = await getControlState(shaderBuffer);
     if (uniforms)
         shaderBuffer.customUniforms = uniforms;
 }
 
-// =====================================
-// Part 9: UI: Shader & Control Tabs + Texture Refresh
-// =====================================
+//#endregion
+
+//#region UI
+
 function updateActiveViewUI() {
     // nothing to show/hide in the DOM here (canvas is always visible),
     // but we still want to log it:
@@ -1139,21 +1513,34 @@ function createControlSchemeTabs() {
     });
 }
 
-// =====================================
-// Part 10: Control Panel Rendering
-// =====================================
+//#region render-controls
+
+// TODO: create `Controller` object
 function renderControlsForShader(shaderBuffer, schema) {
     LOG(`Rendering controls for ${shaderBuffer.name}`);
     shaderBuffer.controlContainer.innerHTML = ''; // Clear previous controls
     if (shaderBuffer._autoToggleTimers) {
         shaderBuffer._autoToggleTimers.forEach(id => clearInterval(id));
     }
+
+    const restoreBtn = document.createElement('button');
+    restoreBtn.textContent = 'reset shader';
+    restoreBtn.className = 'restore-defaults-btn';
+    restoreBtn.addEventListener('click', () => {
+        shaderBuffer.restoreDefaults();
+    });
+    shaderBuffer.controlContainer.appendChild(document.createElement('br'));
+    shaderBuffer.controlContainer.appendChild(restoreBtn);
+
     shaderBuffer._autoToggleTimers = [];
     const tabIdx = shaderBuffers.indexOf(shaderBuffer);
     if (schema.name) {
         shaderBuffer.setName(`${schema.name} ${tabIdx + 1}`);
     }
     schema?.controls?.forEach(control => {
+        if (!control.uniform) { // sanity check
+            logError(`Control ${JSON.stringify(control)} has no uniform`);
+        }
         const controlDiv = document.createElement('div');
         controlDiv.className = 'control';
         const label = document.createElement('label');
@@ -1163,8 +1550,8 @@ function renderControlsForShader(shaderBuffer, schema) {
         // Use default value from the schema (or cached value); store in the shader's custom uniforms
         const saved = shaderBuffer.customUniforms[control.uniform];
         const initialValue = (saved !== undefined) ? saved : control.default;
-        LOG(shaderBuffer.customUniforms, `render control ${shaderBuffer.name} ${initialValue} ${saved} ${control.uniform} ${control.default}`);
-        shaderBuffer.customUniforms[control.uniform] = initialValue;
+        LOG(`render control ${control.uniform} initial value ${initialValue} saved: ${saved} default: ${control.default}`);
+        shaderBuffer.setCustomUniform(control.uniform, initialValue);
         switch (control.type) {
             case 'knob':
             case 'slider':
@@ -1197,7 +1584,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 // Update uniform and bubble on input
                 inputElement.addEventListener('input', e => {
                     const val = parseFloat(e.target.value);
-                    shaderBuffer.customUniforms[control.uniform] = val;
+                    shaderBuffer.setCustomUniform(control.uniform, val);
                     updateSliderBubble(e);
                     saveControlState(shaderBuffer);
                 });
@@ -1215,7 +1602,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement = document.createElement('button');
                 inputElement.textContent = control.label;
                 inputElement.addEventListener('click', () => {
-                    shaderBuffer.customUniforms[control.uniform] = true;
+                    shaderBuffer.setCustomUniform(control.uniform, true);
                     LOG(`Button action for ${control.uniform} triggered.`);
                     saveControlState(shaderBuffer);
                 });
@@ -1226,13 +1613,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement.checked = !!initialValue;
                 inputElement.setAttribute('data-uniform', control.uniform);
                 inputElement.addEventListener('change', e => {
-                    shaderBuffer.customUniforms[control.uniform] = e.target.checked;
-                    saveControlState(shaderBuffer);
-                });
-
-                // when user clicks, update uniform & state as before
-                inputElement.addEventListener('change', e => {
-                    shaderBuffer.customUniforms[control.uniform] = e.target.checked;
+                    shaderBuffer.setCustomUniform(control.uniform, e.target.checked);
                     saveControlState(shaderBuffer);
                 });
 
@@ -1283,7 +1664,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                     let x = mix(control.min.x, control.max.x, clampedX / rect.width);
                     let y = mix(control.min.y, control.max.y, 1 - (clampedY / rect.height));
                     LOG("x,y=", x, y);
-                    shaderBuffer.customUniforms[control.uniform] = { x, y };
+                    shaderBuffer.setCustomUniform(control.uniform, { x, y });
                     xyInfo.innerText = `(${x.toFixed(2)}, ${y.toFixed(2)})`;
                     xyInfo.style.left = (clampedX + 50) + 'px';
                     xyInfo.style.top = (clampedY - 25) + 'px';
@@ -1306,7 +1687,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement.type = 'color';
                 inputElement.value = initialValue;
                 inputElement.addEventListener('input', e => {
-                    shaderBuffer.customUniforms[control.uniform] = e.target.value;
+                    shaderBuffer.setCustomUniform(control.uniform, e.target.value);
                     saveControlState(shaderBuffer);
                 });
                 break;
@@ -1321,7 +1702,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 });
                 inputElement.value = String(initialValue);
                 inputElement.addEventListener('change', e => {
-                    shaderBuffer.customUniforms[control.uniform] = e.target.value;
+                    shaderBuffer.setCustomUniform(control.uniform, e.target.value);
                     saveControlState(shaderBuffer);
                 });
                 break;
@@ -1330,7 +1711,7 @@ function renderControlsForShader(shaderBuffer, schema) {
                 inputElement.type = 'text';
                 inputElement.value = initialValue;
                 inputElement.addEventListener('input', e => {
-                    shaderBuffer.customUniforms[control.uniform] = e.target.value;
+                    shaderBuffer.setCustomUniform(control.uniform, e.target.value);
                     saveControlState(shaderBuffer);
                 });
                 break;
@@ -1344,9 +1725,12 @@ function renderControlsForShader(shaderBuffer, schema) {
     });
     // name texture slots
     for (let i = 0; i < schema.inputs?.length; i++) {
+        // TODO: this should move into the MediaInput render function
         const input = schema.inputs[i];
         const label = input.name;
-        const inputController = shaderBuffer.advancedInputsContainer.children[i];
+        const inputController = shaderBuffer.mediaInputs[i];
+        if (!inputController) continue;
+        // const inputController = shaderBuffer.advancedInputsContainer.children[i];
         inputController.setInputName(label);
         const desc = input.description;
         inputController.setDescription(desc);
@@ -1355,20 +1739,20 @@ function renderControlsForShader(shaderBuffer, schema) {
         if (input.autoAssign == 'self') {
             inputController.selectTab(tabIdx);
         }
-        inputController.refreshHl();
+        inputController.updateRequiredHighlight();
     }
     shaderBuffer.controlSchema = schema;
 }
 
-// =====================================
-// Part 11: Directory Upload (JSON & Shader Files)
-// =====================================
+//#endregion
+
+//#region state
+
 async function applyControlSchema(viewIndex, schema) {
     const ok = shaderBuffers[viewIndex].setControlSchema(schema);
     if (!ok) return ok;
 
-    const key = `${viewIndex};controlSchema`;
-    await resourceCache.put(key, schema);
+    await resourceCache.putControlSchema(viewIndex, schema);
     await loadControlState(shaderBuffers[viewIndex]);
     return true;
 }
@@ -1377,8 +1761,7 @@ async function applyShader(viewIndex, frag, vert) {
     const ok = shaderBuffers[viewIndex].setProgram(new ShaderProgram(vert, frag, gl));
     if (!ok) return false;
 
-    const key = `${currentViewIndex};fragmentSource`;
-    await resourceCache.put(key, frag);
+    await resourceCache.putFragmentSrc(viewIndex, frag);
     return true;
 }
 
@@ -1416,9 +1799,7 @@ function handleFolderUpload(event) {
     reader.onload = async e => {
         newShaderSource = e.target.result;
         // cache the raw text
-        // await resourceCache.put('fragmentSource', newShaderSource);
-        const key = `${currentViewIndex};fragmentSource`;
-        await resourceCache.put(key, newShaderSource);
+        await resourceCache.putFragmentSrc(currentViewIndex, newShaderSource);
         attemptApply();
     };
     reader.readAsText(shaderFile);
@@ -1492,6 +1873,15 @@ async function handleConfigsUpload(event) {
     // save the list of names and repopulate the menu
     await resourceCache.put('configsList', JSON.stringify(names));
     populateConfigsMenu(names);
+
+    for (const name of names) {
+        const fragKey = `config;${name};fragmentSource`;
+        const src = await resourceCache.get(fragKey);
+        if (typeof src === 'string') {
+            myShaderLibrary[name] = src;
+        }
+    }
+
     logMessage(`✅ Cached ${names.length} configs: ${names.join(', ')}`);
 }
 
@@ -1521,9 +1911,12 @@ async function loadConfigDirectory(name) {
     logMessage(`✅ Loaded config "${name}" into tab ${currentViewIndex + 1}`);
 }
 
-// =====================================
-// Part 12: Main Render Loop
-// =====================================
+//#endregion
+
+//#endregion
+
+//#region render
+
 // TODO: only update shaders either in use or sampled by other shaders
 function updateAllShaderBuffers() {
     shaderBuffers.forEach(sb => sb.draw(effectiveTime));
@@ -1552,17 +1945,20 @@ function render(time) {
     const quadTextureLocation = gl.getUniformLocation(quadProgram, "u_texture");
     gl.activeTexture(gl.TEXTURE0);
     // Use the currently active shader buffer’s updated offscreen texture.
-    const target = shaderBuffers[currentViewIndex].getOutputTexture();
+    const target = shaderBuffers[currentViewIndex].renderTarget.readTexture;
     gl.bindTexture(gl.TEXTURE_2D, target);
     gl.uniform1i(quadTextureLocation, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
 
+    document.getElementById('current-frame').innerText = `${(effectiveTime / 1000.0).toPrecision(3)}`;
+
     requestAnimationFrame(render);
 }
 
-// =====================================
-// Part 13: Main Controls & Recording
-// =====================================
+//#endregion
+
+//#region record
+
 const canvasStream = canvas.captureStream(60);
 let mediaRecorder;
 let recordedChunks = [];
@@ -1586,6 +1982,7 @@ function startRecording() {
     };
     mediaRecorder.start();
     logMessage("Recording started.");
+    isPaused = false;
 }
 
 function stopRecording() {
@@ -1597,47 +1994,241 @@ function stopRecording() {
     }
 }
 
+//#endregion
+
+//#region dsl
+
+function tokenize(str) {
+    return (
+        str
+            // strip CL-style comments
+            .replace(/;.*$/gm, '')
+            // pad parens so they're separate tokens
+            .replace(/\(/g, ' ( ')
+            .replace(/\)/g, ' ) ')
+            // grab strings, parens, or atoms
+            .match(/"(?:\\.|[^"])*"|[^\s()]+|[()]/g) || []
+    )
+        .map(tok =>
+            // turn JSON-style strings into JS strings
+            tok[0] === '"' ? JSON.parse(tok) : tok
+        );
+}
+
+function parseSexp(tokens) {
+    // const t = tokens.slice(); // copy
+    const t = tokens;
+    function parseStr() { // does not work with current tokenizer
+        t.shift(); // "
+        let str = '';
+        let escaped = false;
+        while (t[0] !== '"' || escaped) {
+            const tok = t.shift();
+            if (tok === '\\') escaped = true;
+            else {
+                str += tok;
+                escaped = false;
+            }
+        }
+        t.shift(); // "
+        return str;
+    }
+    function walk() {
+        if (t.length === 0) throw new SyntaxError('Unexpected EOF');
+        const tok = t.shift();
+        if (tok === '(') {
+            const L = [];
+            while (t[0] !== ')') {
+                if (t.length === 0) throw new SyntaxError('Missing )');
+                L.push(walk());
+            }
+            t.shift(); // pop ')'
+            return L;
+        }
+        if (tok === ')') throw new SyntaxError('Unexpected )');
+        // atom: number or symbol
+        return isFinite(tok) ? Number(tok) : tok;
+    }
+    const out = [];
+    while (t.length) out.push(walk());
+    return out.length === 1 ? out[0] : out;
+}
+
+function parseDSL(str) {
+    const tokens = tokenize(str);
+    const expr = parseSexp(tokens);
+    if (tokens.length) console.warn("Extra tokens after first expr", tokens);
+    return expr;
+}
+function evalDSL(tree) {
+    // Expect: [ 'shader', shaderName, ...clauses ]
+    if (tree[0] !== 'shader') throw new Error("DSL must start with (shader …)");
+    const cfg = { name: tree[1], uniforms: {}, textures: [] };
+    for (let i = 2; i < tree.length; i++) {
+        const clause = tree[i];
+        const [kw, ...rest] = clause;
+        switch (kw) {
+            case 'uniform':
+                // [ 'uniform', name, value ]
+                const val = rest[1];
+                cfg.uniforms[rest[0]] = (val === 'true' || val === 'false') ? (val === 'true') : val;
+                break;
+            case 'texture':
+                // TODO: parse (file|shader arg) to an object which returns a texture handle
+                // [ 'texture', slot, ['file'|'shader', arg] ]
+                cfg.textures.push({ slot: rest[0], [rest[1][0]]: rest[1][1] });
+                break;
+            default:
+                console.warn("Unknown DSL clause", kw);
+        }
+    }
+    return cfg;
+}
+
+/*
+(let* ((shad-0 (shader "color-invert" :texture-0 (select-shader-tab 1)))
+       (shad-1 (shader "color-invert" :texture-0 shad-0))
+       (main-shader (shader "demo-moire"
+                            :texture-0 shad-0
+                            :texture-1 shad-1)))
+  main-shader							; render main moire shader
+  )
+
+
+(shader "demo-moire"
+(uniform u_mode 2)
+(uniform u_colInv1 false)
+(uniform u_colInv0 true)
+(texture 0 shader 2)
+(texture 1 shader 1)
+)
+*/
+
+const myShaderLibrary = {};
+async function populateMyShaderLibrary() {
+    const savedList = await resourceCache.get('configsList');
+    if (typeof savedList === 'string') {
+        const names = JSON.parse(savedList);
+        for (const name of names) {
+            const fragKey = `config;${name};fragmentSource`;
+            const src = await resourceCache.get(fragKey);
+            const controlKey = `config;${name};controlSchema`;
+            const controlSchema = await resourceCache.get(controlKey);
+            if (typeof src === 'string') {
+                myShaderLibrary[name] = { frag: src, control: controlSchema };
+            }
+        }
+    }
+}
+
+function applyDsl(txt) {
+    let tree, config;
+    try {
+        tree = parseDSL(txt);
+        config = evalDSL(tree);
+    } catch (e) {
+        console.error(e);
+        return logError("DSL parse error:", e.message);
+    }
+
+    LOG(`generated config`, config);
+    const o = myShaderLibrary[config.name];
+    let tabIndex = currentViewIndex;
+    if (!o?.frag) logError(`uh oh ${config.name} not found`);
+    else applyShader(tabIndex, o.frag, vertexShaderSource);
+
+    if (tabIndex < 0) {
+        tabIndex = shaderBuffers.length;
+        // create a fresh ShaderBuffer with your default schema
+        const sb = new ShaderBuffer(config.name,
+            new ShaderProgram(vertexShaderSource, o.frag, gl),
+            o.control,
+            tabIndex);
+        shaderBuffers.push(sb);
+        shaderBuffers[tabIndex] = sb;
+        createShaderTabs();
+        createControlSchemeTabs();
+    }
+    shaderBuffers[tabIndex].controlSchema = o.control;
+    console.log(o);
+    console.log(config.uniforms);
+    console.log(shaderBuffers[tabIndex].controlSchema);
+    // update uniform defaults given args
+    Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].setCustomUniform(k, config.uniforms[k]));
+    renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].controlSchema);
+
+    for (let t of config.textures) {
+        const inp = shaderBuffers[tabIndex].mediaInputs[t.slot];
+        if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
+        if (t.shader !== undefined) inp.selectTab(t.shader);
+    }
+
+    currentViewIndex = tabIndex;
+    updateActiveViewUI();
+    updateActiveControlUI();
+}
+
+//#endregion
+
+//#region editor
+
 // Shader Editor State Editor muX
-let editorSEX = {};
+let editorSEX = { close: () => { } };
+
+const dslDefaultText = '\
+(shader "demo-moire"\n\
+    (uniform u_mode 2)\n\
+    (uniform u_colInv1 true)\n\
+    (uniform u_colInv0 false)\n\
+    (texture 0 (shader 1))\n\
+    (texture 1 (shader 1)))\n\
+'
+
+let currentDSLText = dslDefaultText;
 function setupShaderEditor() {
-    const editBtn = document.getElementById('edit-shader-btn');
-    const editShower = document.getElementById('shader-editor-hideshow');
     const editor = document.getElementById('shader-editor');
     const applyBtn = document.getElementById('apply-shader-edit');
     const cancelBtn = document.getElementById('cancel-shader-edit');
 
     const closeEditor = () => {
-        editor.style.display = 'none';
+        if (editorSEX.editor) editorSEX.editor.style.display = 'none';
         editorOpen = false;
     };
 
-    const openEditor = () => {
-        const textarea = document.getElementById('shader-editor-container');
+    const openEditor = (type) => {
         const sb = shaderBuffers[currentViewIndex];
-        textarea.value = sb.fragmentSrc || '';
+        const textarea = document.getElementById('shader-editor-container');
+        console.log(type, sb.program.fsSrc);
         editor.style.display = 'block';
-
+        textarea.value = type === 'glsl' ? (sb.program.fsSrc || '') : currentDSLText;
         if (!editor._cmInstance) {
             editor._cmInstance = CodeMirror.fromTextArea(textarea, {
-                mode: 'x-shader/x-fragment',
+                mode: type === 'glsl' ? 'x-shader/x-fragment' : 'text/plain',
                 lineNumbers: true,
                 theme: 'default'
             });
             // Set editor size larger
             editor._cmInstance.setSize('100%', '100%');
         } else {
-            editor._cmInstance.setValue(sb.fragmentSrc || '');
+            editor._cmInstance.setValue(type === 'glsl' ? (sb.program.fsSrc || '') : currentDSLText);
             editor._cmInstance.refresh();
         }
+        editorSEX.editor = editor;
+        editorSEX.type = type;
         editorOpen = true;
     };
 
     editorSEX.close = closeEditor;
-    editorSEX.open = openEditor;
+    editorSEX.openShaderEditor = openEditor.bind(null, 'glsl');
+    editorSEX.openDslEditor = openEditor.bind(null, 'dsl');
 
-    editBtn.addEventListener('click', () => {
+    document.getElementById('edit-shader-btn').addEventListener('click', () => {
         if (editorOpen) closeEditor();
-        else openEditor();
+        else editorSEX.openShaderEditor();
+    });
+    document.getElementById('edit-dsl-btn').addEventListener('click', () => {
+        if (editorOpen) closeEditor();
+        else editorSEX.openDslEditor();
     });
 
     cancelBtn.addEventListener('click', () => {
@@ -1647,36 +2238,33 @@ function setupShaderEditor() {
     applyBtn.addEventListener('click', async () => {
         const sb = shaderBuffers[currentViewIndex];
         //           this doesnt work V
-        const newSource = editor._cmInstance.getValue() || sb.fragmentSrc;
+        const newSource = editor._cmInstance.getValue();
         editor._cmInstance.refresh();
 
-        const prog = createProgram(vertexShaderSource, newSource);
-        if (!prog) {
-            logMessage('❌ Shader compilation failed. See console for errors.');
-            return;
+        if (editorSEX.type === 'glsl') {
+            if (!sb.setFragmentShader(newSource)) {
+                logMessage('❌ Shader compilation failed. See console for errors.');
+                return;
+            } else {
+                logMessage('✅ Shader compiled successfully.');
+            }
+        } else {
+            applyDsl(newSource);
         }
-
-        // Assign the new program
-        sb.shaderProgram = prog;
-        sb.fragmentSrc = newSource;
-        sb.updateUniformLocations();
-
-        await resourceCache.put(`${currentViewIndex};fragmentSource`, newSource);
-        logMessage('✅ Shader updated.');
     });
 }
 
-// =====================================
-// Part 14: Event Listener Setup
-// =====================================
-// load/render/update things when page loaded
+//#endregion
+
+//#region setup
+
 const cachedShaderData = {};
 document.addEventListener('DOMContentLoaded', async () => {
     await resourceCache.init().then(() => console.log('resource cache loaded')).catch(err => { console.error('THIS SHOULD NOT HAPPEN! Failed to open cache:', err); });
 
     // bind buttons
     document.getElementById('update-canvas-dimensions').addEventListener('click', updateCanvasDimensions);
-    presetDimensions = [
+    let presetDimensions = [
         { name: "480p", w: 640, h: 480 },
         { name: "720p", w: 1280, h: 720 },
         { name: "1080p", w: 1920, h: 1080 },
@@ -1727,18 +2315,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     document.getElementById('restart').addEventListener('click', function () {
         effectiveTime = 0;
-
-        // For the active shader, reset attached media
-        const currentShader = shaderBuffers[currentViewIndex];
-        currentShader.sampleMedia.forEach(media => {
-            if (media && media.element) {
-                // Reset time to zero for video/audio elements
-                media.element.currentTime = 0;
-                if (!isPaused && typeof media.element.play === 'function') {
-                    media.element.play();
-                }
-            }
-        });
+        shaderBuffers.forEach(sb => sb.restart());
     });
     document.getElementById('start-record').addEventListener('click', startRecording);
     document.getElementById('stop-record').addEventListener('click', stopRecording);
@@ -1787,7 +2364,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // 2) Reset all in‑memory media & previews
         shaderBuffers.forEach((sb, sIdx) => {
-            // sb.sampleMedia = sb.sampleMedia.map(() => null);
             for (let i = 0; i < sb.sampleMedia.length; i++) {
                 sb.sampleMedia[i] = null; // TODO: cleanup this
             }
@@ -1796,6 +2372,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             previews.forEach(p => p.innerHTML = '');
         });
     });
+
+    await populateMyShaderLibrary();
 
     // update renderers
     updateCanvasDimensions();
@@ -1809,36 +2387,34 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // load cached shaders
     await (async () => {
-        for (const key of await resourceCache.keys()) {
-            if (key.match('fragmentSource') || key.match('controlSchema')) continue;
-            const [sIdx, slotIdx] = key.split(';').map(Number);
-            if (!cachedShaderData[sIdx]) cachedShaderData[sIdx] = { media: {}, urls: {}, objs: {} };
+        for (let i = 0; i < MAX_TAB_SLOTS; i++) {
+            for (let j = 0; j < MAX_TEXTURE_SLOTS; j++) {
+                const cached = await resourceCache.getMedia(i, j);
+                if (!cached) continue;
 
-            const cached = await resourceCache.get(key);
+                if (!cachedShaderData[i]) cachedShaderData[i] = { media: {}, urls: {}, objs: {} };
 
-            if (cached instanceof Blob) {
-                cachedShaderData[sIdx].media[slotIdx] = cached;
-            } else if (typeof cached === 'string') {
-                try {
-                    const obj = JSON.parse(cached);
-                    cachedShaderData[sIdx].objs[slotIdx] = obj;
-                } catch {
-                    cachedShaderData[sIdx].urls[slotIdx] = cached;
+                if (cached instanceof Blob) {
+                    cachedShaderData[i].media[j] = cached;
+                } else if (typeof cached === 'string') {
+                    try {
+                        const obj = JSON.parse(cached);
+                        cachedShaderData[i].objs[j] = obj;
+                    } catch {
+                        cachedShaderData[i].urls[j] = cached;
+                    }
                 }
             }
         }
 
         for (let idx = 0; idx < shaderBuffers.length; idx++) {
             if (!cachedShaderData[idx]) cachedShaderData[idx] = { media: {}, urls: {}, objs: {} };
-            const sb = shaderBuffers[idx];
-            const sourceKey = `${idx};fragmentSource`;
-            const src = await resourceCache.get(sourceKey);
+            const src = await resourceCache.getFragmentSrc(idx);
             if (typeof src === 'string') {
                 cachedShaderData[idx].shader = src;
             }
 
-            const schemaKey = `${idx};controlSchema`;
-            const schema = await resourceCache.get(schemaKey);
+            const schema = await resourceCache.getControlSchema(idx);
             if (schema) cachedShaderData[idx].schema = schema;
         }
 
@@ -1852,23 +2428,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (dat.shader) sb.setFragmentShader(dat.shader);
 
             for (let i = 0; i < MAX_TEXTURE_SLOTS; i++) {
-                const previewContainer = sb
-                    .advancedInputsContainer
-                    .children[i]
-                    .querySelector('.media-preview');
+                const previewContainer = sb.mediaInputs[i]?.previewContainer;
+                if (!previewContainer) continue;
                 if (dat.media[i]) {
-                    await loadAndCacheMedia(dat.media[i], sb, i, previewContainer, false);
+                    shaderBuffers[idx].mediaInputs[i].loadAndCache(dat.media[i], false);
                 }
                 if (dat.objs[i]) {
                     const o = dat.objs[i];
-                    if (o.type === 'tab') {
-                        sb.advancedInputsContainer.children[i].selectTab(o.tabIndex);
-                    } else if (o.type === 'url') {
-                        await loadAndCacheMedia(o.url, sb, i, previewContainer, false);
+                    if (o.type === Media.TabT) {
+                        sb.mediaInputs[i].selectTab(o.tabIndex);
+                    } else if (o.type === Media.URLT) {
+                        shaderBuffers[idx].mediaInputs[i].loadAndCache(o.url, false);
                     }
                 }
                 if (dat.urls[i]) {
-                    await loadAndCacheMedia(cached, sb, i, previewContainer, false);
+                    shaderBuffers[idx].mediaInputs[i].loadAndCache(cached, false);
                 }
             }
         }
@@ -1886,3 +2460,5 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     requestAnimationFrame(render);
 });
+
+//#endregion

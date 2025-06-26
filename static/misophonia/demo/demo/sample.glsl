@@ -1,21 +1,12 @@
-#version 300 es
-#ifdef GL_ES
-precision mediump float;
-#endif
-
-uniform float u_time;
-uniform vec2 u_resolution;
-
 uniform vec3 u_color;
 uniform vec2 u_position;
 uniform float u_speed;
 uniform bool u_mode;
 uniform float u_intensity;
-uniform sampler2D u_audioTexture;
 
-void main(void) {
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // Normalize pixel coordinates (0.0 to 1.0)
-  vec2 uv = gl_FragCoord.xy / u_resolution;
+  vec2 uv = fragCoord.xy / u_resolution;
 
   // Center the coordinates (-0.5 to 0.5) and adjust for aspect ratio
   uv = uv - u_position;
@@ -27,15 +18,11 @@ void main(void) {
   // Create a wave pattern that varies over time
   float wave = sin(dist * 10.0 + u_time * u_speed * 3.0);
 
-  // Smooth the wave to create a gentle gradient effect
-  float audioVal = 1. - texture2D(u_audioTexture, sin(uv * 3.14 * 2. * 2.)).r;
-  float intensity = smoothstep(0.3, 0.0, abs(wave)) * audioVal;
-
   // Mix two colors based on the intensity
   vec3 color = mix(u_color, vec3(1.0, 0.8, 0.3), intensity * u_intensity);
   if (u_mode) {
     color = 1.0 - color;
   }
 
-  gl_FragColor = vec4(color, 1.0);
+  fragColor = vec4(color, 1.0);
 }
