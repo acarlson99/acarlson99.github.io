@@ -89,7 +89,11 @@ TODO: invert, HSV/RGB conversions
 
 ** Peripheral Drift
 
+Rapid blinking usually intensifies the effect
+
 https://en.wikipedia.org/wiki/Peripheral_drift_illusion
+
+*** Radial example
 
 #+NAME: peripheral drift
 #+BEGIN_SRC glsl :file ./static/peripheral-drift.png :width 1000 :height 1000 :exports both
@@ -123,6 +127,10 @@ https://en.wikipedia.org/wiki/Peripheral_drift_illusion
 
 #+RESULTS: peripheral drift
 [[file:./static/peripheral-drift.png]]
+
+*** Contrasting colors strengthen the effect
+
+Based on wikipedia [[https://en.wikipedia.org/wiki/Peripheral_drift_illusion#/media/File:Anomalous_motion_illusion1.svg][example]] by Paul Nasca
 
 #+NAME: peripheral drift 2
 #+BEGIN_SRC glsl :file ./static/peripheral-drift-2.png :width 1000 :height 1000 :exports both
@@ -170,6 +178,10 @@ https://en.wikipedia.org/wiki/Peripheral_drift_illusion
 
 #+RESULTS: peripheral drift 2
 [[file:./static/peripheral-drift-2.png]]
+
+*** Throbert
+
+Lots of album covers use this kind of throbbing effect
 
 #+NAME: peripheral drift 3
 #+BEGIN_SRC glsl :file ./static/peripheral-drift-3.png :width 1000 :height 1000 :exports both
