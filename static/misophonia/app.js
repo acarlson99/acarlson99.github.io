@@ -1067,9 +1067,9 @@ class ShaderBuffer {
         this.customUniforms = {};
         this.clearCustomUniforms();
 
-        if (program) this.setProgram(program);
         console.log(`setting control schema to`, controlSchema);
         this.setControlSchema(controlSchema);
+        if (program) this.setProgram(program);
 
         this.controlContainer = document.createElement('div');
         this.controlContainer.className = 'shader-control-panel';
@@ -1100,10 +1100,10 @@ class ShaderBuffer {
     }
 
     restoreDefaults() {
+        this.setControlSchema(defaultControlSchema);
+
         const defaultProgram = new ShaderProgram(vertexShaderSource, fragmentShaderSource, gl);
         this.setProgram(defaultProgram);
-
-        this.setControlSchema(defaultControlSchema);
 
         this.sampleMedia.fill(null);
         this.mediaInputs.forEach((input) => input?.resetMedia?.());
@@ -1162,7 +1162,6 @@ class ShaderBuffer {
 
     // TODO: this logic should move outside of this class
     setControlSchema(controlSchema) {
-        this.controlSchema = controlSchema;
         this.controlSchema = controlSchema;
 
         // Clear and rebuild advanced inputs
@@ -1320,6 +1319,7 @@ void main(void) {
 
 //                   goofy trick to preserve type information
 let shaderBuffers = [new ShaderBuffer()]; shaderBuffers = [];
+document.shaderBuffers = () => shaderBuffers;
 
 function createProgram(vsSrc, fsSrc) {
     return new ShaderProgram(vsSrc, fsSrc, gl).compile();
@@ -1811,14 +1811,15 @@ function handleFolderUpload(event) {
 
     async function attemptApply() {
         if (newShaderSource == null) return;
-        const success = await applyShader(currentViewIndex, newShaderSource, vertexShaderSource);
-        if (!success) return;
 
         // swap in the new control schema if we have it
         if (newSchemaData) {
             // renderControlsForShader(active, newSchemaData);
             applyControlSchema(currentViewIndex, newSchemaData);
         }
+
+        const success = await applyShader(currentViewIndex, newShaderSource, vertexShaderSource);
+        if (!success) return;
         logMessage("Shader & schema updated and cached!");
     }
 }
@@ -1895,6 +1896,11 @@ async function loadConfigDirectory(name) {
     const fragKey = `config;${name};fragmentSource`;
     const schemaKey = `config;${name};controlSchema`;
 
+    const schema = await resourceCache.get(schemaKey);
+    if (schema) {
+        applyControlSchema(currentViewIndex, schema);
+    }
+
     const fragSrc = await resourceCache.get(fragKey);
     if (typeof fragSrc === 'string') {
         const ok = applyShader(currentViewIndex, fragSrc, null);
@@ -1902,11 +1908,6 @@ async function loadConfigDirectory(name) {
             logError(`❌ Failed to load ${name}`);
             return;
         }
-    }
-
-    const schema = await resourceCache.get(schemaKey);
-    if (schema) {
-        applyControlSchema(currentViewIndex, schema);
     }
 
     // rename the tab to the config name
