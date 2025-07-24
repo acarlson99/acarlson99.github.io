@@ -16,11 +16,15 @@
     - [ ] Labeled media in controls.json
       - [X] field representing "u_texture0 maps to a depth map; u_texture1 is the previous frame"
       - [ ] maybe even with default values
-        - "self" should auto-assign the current buffer
-  - [ ] `Restart` button should clear previous frame as well
+        - [X] "self" should auto-assign the current buffer
+  - [X] `Restart` button should clear previous frame as well
   - [ ] Hotkeys
     - [ ] change tabs
     - [ ] make control+preview pannel match, or intentionally split them
+    - [ ] apply shader with M-<Enter>
   - [ ] upload directory from url
   - [ ] upload shader from shadertoy API
   - [X] upload directory of shader-config-directories, then choose one to load from a menu
+  - [ ] Controls should have option to reference other control values
+  - [ ] Sound shader with frequency visualizer and ability to bind individual waves to control values (so shaders can change based on the sound wave)
+  - [ ] hook into Spotify
