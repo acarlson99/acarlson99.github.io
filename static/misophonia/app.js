@@ -53,7 +53,7 @@ const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipl
 if (!gl) alert('WebGL is not supported by your browser.');
 
 // variables
-const devMode = document.URL.startsWith('http://localhost');
+const devMode = document.URL.startsWith('http://localhost') || document.URL.startsWith('http://127.0.0.1');
 const MAX_TEXTURE_SLOTS = 4;
 const maxLines = 100;
 const outputMessages = [];
@@ -359,11 +359,13 @@ class Uniforms {
      * @param {Object} customVals mapping of uniforms to values
      */
     updateCustomValues(customVals) {
+        let errs = 0;
         for (let name in customVals) {
             const value = customVals[name];
             const loc = this.customLocations[name];
             if (loc === null) {
                 console.warn(`uniform ${name} has no corresponding location`);
+                errs++;
                 continue;
             }
             if (typeof value === 'number') {
@@ -384,6 +386,7 @@ class Uniforms {
                 console.warn(value, loc, name);
             }
         }
+        return errs;
     }
 
     /**
@@ -392,8 +395,10 @@ class Uniforms {
      * @param {[Media]} media
      */
     updateValues(timeMs, resolution, customUniformValues, media) {
-        if (customUniformValues) this.updateCustomValues(customUniformValues);
+        let errs = 0;
+        if (customUniformValues) errs = this.updateCustomValues(customUniformValues);
         this.updateBuiltinValues(timeMs, resolution, media);
+        return errs;
     }
 
     /** @param {[String]} names is a list of uniform names **/
@@ -1188,12 +1193,13 @@ class ShaderBuffer {
 
         gl.useProgram(this.program.program);
 
-        this.uniforms.updateValues(
+        let errs = this.uniforms.updateValues(
             timeMs,
             { width: gl.canvas.width, height: gl.canvas.height },
             this.customUniforms,
             this.sampleMedia
         );
+        if (errs) logError(`errors encountered updating uniforms for buffer ${this.name}`);
 
         this.program.drawToPosition(quadBuffer);
 
