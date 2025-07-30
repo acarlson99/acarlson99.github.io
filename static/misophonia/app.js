@@ -54,7 +54,7 @@ if (!gl) alert('WebGL is not supported by your browser.');
 
 // variables
 const devMode = document.URL.startsWith('http://localhost') || document.URL.startsWith('http://127.0.0.1');
-const MAX_TEXTURE_SLOTS = 4;
+const MAX_TEXTURE_SLOTS = 8;
 const maxLines = 100;
 const outputMessages = [];
 let currentViewIndex = parseInt(localStorage.getItem('currentViewIndex') || '0');
@@ -1134,7 +1134,10 @@ class ShaderBuffer {
     /** @param {ShaderProgram} p */
     setProgram(p) {
         const prog = p.compile();
-        if (!prog) return false;
+        if (!prog) {
+            logError(`Error setting buffer ${this.name}`);
+            return false;
+        }
         this.clearCustomUniforms();
         this.program = p;
         this.shaderProgram = prog;
@@ -1198,7 +1201,7 @@ class ShaderBuffer {
             this.customUniforms,
             this.sampleMedia
         );
-        if (errs) logError(`errors encountered updating uniforms for buffer ${this.name}`);
+        if (errs) console.warn(`errors encountered updating uniforms for buffer ${this.name}`);
 
         this.program.drawToPosition(quadBuffer);
 
@@ -1224,6 +1227,8 @@ class ShaderProgram {
         }
     }
 
+    static samplerString = new Array(MAX_TEXTURE_SLOTS).fill(null);
+
     static fragmentShaderSourcePre = `#version 300 es
 #ifdef GL_ES
 precision mediump float;
@@ -1236,15 +1241,9 @@ precision mediump float;
 
 uniform float u_time;
 uniform vec2 u_resolution;
-uniform sampler2D u_texture0;
-uniform sampler2D u_texture1;
-uniform sampler2D u_texture2;
-uniform sampler2D u_texture3;
 
-#define iChannel0 u_texture0
-#define iChannel1 u_texture1
-#define iChannel2 u_texture2
-#define iChannel3 u_texture3
+${new Array(MAX_TEXTURE_SLOTS).fill(null).map((_, i) => `uniform sampler2D u_texture${i};\n#define iChannel${i} u_texture${i}\n`).join('')}
+
 #define iTime u_time
 #define iResolution u_resolution
 
