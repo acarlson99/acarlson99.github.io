@@ -661,6 +661,9 @@ function createUrlForm(callback) {
 
 class MediaInput {
     // handles media UI
+    /** 
+     * @param {ShaderBuffer} shaderBuffer
+     */
     constructor(shaderBuffer, shaderIndex, slotIndex) {
         this.shaderBuffer = shaderBuffer;
         this.shaderIndex = shaderIndex;
@@ -717,7 +720,7 @@ class MediaInput {
     }
 
     updateRequiredHighlight() {
-        const inputTexInfo = (this.shaderBuffer?.controlSchema?.inputs || [])[this.slotIndex] || {};
+        const inputTexInfo = (this.shaderBuffer?.getControlSchema()?.inputs || [])[this.slotIndex] || {};
         const isRequired = Boolean(inputTexInfo.required);
         this.container.style.backgroundColor = isRequired && !this.hasMedia() ? 'rgba(255, 0, 0, 0.2)' : '';
     }
@@ -1152,10 +1155,22 @@ class Control {
 
 class Controller {
     /** Manage all controls for a single ShaderBuffer */
-    constructor(shaderBuffer) {
+    /** @param {ShaderBuffer} shaderBuffer */
+    constructor(shaderBuffer, schema) {
         this.sb = shaderBuffer;
         /** @type {Control[]} */
         this.byId = [];
+
+        this.schema = schema;
+
+        this.container = document.createElement('div');
+        this.container.className = 'shader-control-panel';
+        document.getElementById('controls-container').appendChild(this.container);
+    }
+
+    /** @param {ShaderBuffer} shaderBuffer */
+    register(shaderBuffer) {
+        this.sb = shaderBuffer;
     }
 
     reset() {
@@ -1223,14 +1238,7 @@ class ShaderBuffer {
         this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
         this.customUniforms = {};
         this.clearCustomUniforms();
-
-        console.log(`setting control schema to`, controlSchema);
-        this.setControlSchema(controlSchema);
         if (program) this.setProgram(program);
-
-        this.controlContainer = document.createElement('div');
-        this.controlContainer.className = 'shader-control-panel';
-        document.getElementById('controls-container').appendChild(this.controlContainer);
 
         this.advancedInputsContainer = document.createElement('div');
         this.advancedInputsContainer.className = 'advanced-inputs-container';
@@ -1240,14 +1248,17 @@ class ShaderBuffer {
         this.mediaInputs = [];
         this.shaderIndex = shaderIndex;
 
-        if (this.program) this.updateUniformLocations();
-
         /**
          * @type {Controller}
          */
-        this.controller = new Controller(this);
+        this.controller = new Controller(this, controlSchema);
         this.controller.reset();
+        this.setControlSchema(controlSchema);
+
+        if (this.program) this.updateUniformLocations();
     }
+
+    getControlSchema() { return this.controller?.schema; }
 
     restart() {
         this.sampleMedia.forEach(media => {
@@ -1270,7 +1281,7 @@ class ShaderBuffer {
 
         this.sampleMedia.fill(null);
         this.mediaInputs.forEach((input) => input?.resetMedia?.());
-        renderControlsForShader(this, this.controlSchema);
+        renderControlsForShader(this, this.getControlSchema());
 
         const shaderIndex = shaderBuffers.indexOf(this);
         resourceCache.deleteFragmentSrc(shaderIndex);
@@ -1313,7 +1324,8 @@ class ShaderBuffer {
     getMediaSlot(idx) { return this.sampleMedia[idx]; }
 
     updateUniformLocations() {
-        const us = this.controlSchema?.controls?.map((o) => o.uniform);
+        const us = this.getControlSchema()?.controls?.map((o) => o.uniform);
+        // if (!us) console.warn(`uniforms not defined for some reason for shader ${this.name}`);
         this.uniforms.updateLocations(this.program.program, us);
     }
 
@@ -1331,7 +1343,7 @@ class ShaderBuffer {
 
     // TODO: this logic should move outside of this class
     setControlSchema(controlSchema) {
-        this.controlSchema = controlSchema;
+        this.controller.schema = controlSchema;
 
         // Clear and rebuild advanced inputs
         this.mediaInputs = [];
@@ -1635,7 +1647,7 @@ function updateActiveControlUI() {
     document.querySelectorAll('.advanced-inputs-container').forEach(c => c.style.display = 'none');
     document.querySelectorAll('.shader-control-panel').forEach(c => c.style.display = 'none');
     ctrlShader.advancedInputsContainer.style.display = 'block';
-    ctrlShader.controlContainer.style.display = 'block';
+    ctrlShader.controller.container.style.display = 'block';
 
     const buttons = document.getElementById('control-scheme-tabs').children
     for (let i = 0; i < buttons.length; i++) {
@@ -1685,8 +1697,8 @@ function createControlSchemeTabs() {
  * @param {ShaderBuffer} shaderBuffer
  */
 function renderControlsForShader(shaderBuffer, schema) {
-    LOG(`Rendering controls for ${shaderBuffer.name}`);
-    shaderBuffer.controlContainer.innerHTML = ''; // Clear previous controls
+    LOG(`Rendering controls for ${shaderBuffer.name}`, schema);
+    shaderBuffer.controller.container.innerHTML = ''; // Clear previous controls
     if (shaderBuffer._autoToggleTimers) {
         shaderBuffer._autoToggleTimers.forEach(id => clearInterval(id));
     }
@@ -1697,8 +1709,8 @@ function renderControlsForShader(shaderBuffer, schema) {
     restoreBtn.textContent = 'reset shader';
     restoreBtn.className = 'restore-defaults-btn';
     restoreBtn.addEventListener('click', () => shaderBuffer.restoreDefaults());
-    shaderBuffer.controlContainer.appendChild(document.createElement('br'));
-    shaderBuffer.controlContainer.appendChild(restoreBtn);
+    shaderBuffer.controller.container.appendChild(document.createElement('br'));
+    shaderBuffer.controller.container.appendChild(restoreBtn);
 
     shaderBuffer._autoToggleTimers = [];
     const tabIdx = shaderBuffers.indexOf(shaderBuffer);
@@ -1886,7 +1898,7 @@ function renderControlsForShader(shaderBuffer, schema) {
         }
 
         if (inputElement) controlDiv.appendChild(inputElement);
-        shaderBuffer.controlContainer.appendChild(controlDiv);
+        shaderBuffer.controller.container.appendChild(controlDiv);
 
         if (inputElement) {
             shaderBuffer.controller.register(index, ctrlSchema, inputElement, controlDiv);
@@ -1905,7 +1917,7 @@ function renderControlsForShader(shaderBuffer, schema) {
         if (input.autoAssign == 'self') inputController.selectTab(tabIdx);
         inputController.updateRequiredHighlight();
     }
-    shaderBuffer.controlSchema = schema;
+    shaderBuffer.controller.schema = schema;
 }
 
 //#endregion
@@ -2314,13 +2326,13 @@ function applyDsl(txt) {
         createShaderTabs();
         createControlSchemeTabs();
     }
-    shaderBuffers[tabIndex].controlSchema = o.control;
+    shaderBuffers[tabIndex].setControlSchema(o.control);
     console.log(o);
     console.log(config.uniforms);
-    console.log(shaderBuffers[tabIndex].controlSchema);
+    console.log(shaderBuffers[tabIndex].getControlSchema());
     // update uniform defaults given args
     Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].setCustomUniform(k, config.uniforms[k]));
-    renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].controlSchema);
+    renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].getControlSchema());
 
     for (let t of config.textures) {
         const inp = shaderBuffers[tabIndex].mediaInputs[t.slot];
@@ -2619,7 +2631,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     shaderBuffers.forEach(shaderBuffer => {
-        renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
+        renderControlsForShader(shaderBuffer, shaderBuffer.getControlSchema());
     });
 
     updateActiveViewUI();
