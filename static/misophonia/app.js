@@ -231,7 +231,7 @@ const logError = (...args) => { logMessage('ERROR:', ...args); LOG('ERROR:', ...
 
 // Helpers
 const mix = (a, b, t) => a * (1 - t) + b * t;
-const isPowerOf2 = v => (v & (v - 1)) === 0;
+const isPowerOf2 = v => Number.isInteger(v) && v > 0 && (v & (v - 1)) === 0;
 function hexToRgb(hex) {
     hex = hex.replace(/^#/, '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -328,10 +328,7 @@ class Uniforms {
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                gl.texImage2D(
-                    gl.TEXTURE_2D, 0, gl.LUMINANCE, dataArray.length, 1, 0,
-                    gl.LUMINANCE, gl.UNSIGNED_BYTE, dataArray
-                );
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, dataArray.length, 1, 0, gl.RED, gl.UNSIGNED_BYTE, dataArray);
                 gl.uniform1i(textureLocation, 2 + i);
             } else if (media.type === Media.ImageT) {
                 gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
@@ -390,6 +387,7 @@ class Uniforms {
     }
 
     /**
+     * binds time, resolution, custom uniforms, and media to program
      * @param {Number} timeMs
      * @param {{width:Number,height:Number}} resolution
      * @param {[Media]} media
@@ -729,6 +727,10 @@ class MediaInput {
     }
 
     resetMedia() {
+        this.getMedia()?.element?.srcObject?.getTracks()?.forEach(t => {
+            t.stop();
+            console.log(`stopping media track ${t}`);
+        });
         this.setMedia(null);
         this.clearPreview();
         resourceCache.deleteMedia(this.shaderIndex, this.slotIndex);
@@ -758,7 +760,6 @@ class MediaInput {
         } catch (err) {
             logError(`Error deleting ${resourceCache.mediaKey(this.shaderIndex, this.slotIndex)}:`, err);
         }
-        this.setMedia(null);
         this.resetMedia();
         logMessage(`Slot ${this.slotIndex} unassigned.`);
         this.sourceSelect.selectedIndex = 0;
@@ -906,6 +907,7 @@ class MediaInput {
     setMedia(desc) {
         this.shaderBuffer.setMediaSlot(this.slotIndex, desc);
     }
+    getMedia() { return this.shaderBuffer.getMediaSlot(this.slotIndex); }
     hasMedia() { return !!this.shaderBuffer.sampleMedia[this.slotIndex]; }
 
     setDescription(desc) {
@@ -1061,6 +1063,8 @@ class Control {
 
     /** Programmatically set value and sync both UI + uniform */
     set(value) {
+        if (value === undefined) value = this.el.value;
+
         const type = this.schema.type;
         const uniform = this.schema.uniform;
 
@@ -1185,6 +1189,10 @@ class Controller {
         }
         return c.set(value);
     }
+
+    refreshValues() {
+        this.byId.forEach(c => c.set(undefined));
+    }
 }
 
 //#endregion
@@ -1295,7 +1303,6 @@ class ShaderBuffer {
         }
         this.clearCustomUniforms();
         this.program = p;
-        this.shaderProgram = prog;
         this.updateUniformLocations();
         return true;
     }
@@ -1303,6 +1310,7 @@ class ShaderBuffer {
     setMediaSlot(idx, desc) {
         this.sampleMedia[idx] = desc;
     }
+    getMediaSlot(idx) { return this.sampleMedia[idx]; }
 
     updateUniformLocations() {
         const us = this.controlSchema?.controls?.map((o) => o.uniform);
@@ -1312,6 +1320,10 @@ class ShaderBuffer {
     setCustomUniform(k, v) {
         this.customUniforms[k] = v;
     }
+    setCustomUniforms(uniforms) {
+        Object.keys(uniforms).forEach(k => this.setCustomUniform(k, uniforms[k]));
+    }
+    getCustomUniforms() { return this.customUniforms; }
 
     clearCustomUniforms() {
         this.customUniforms = {};
@@ -1579,7 +1591,7 @@ function presetCanvasDimensions(w, h) {
 
 async function saveControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
-    await resourceCache.putControlState(idx, JSON.stringify(shaderBuffer.customUniforms));
+    await resourceCache.putControlState(idx, JSON.stringify(shaderBuffer.getCustomUniforms()));
 }
 async function getControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
@@ -1588,7 +1600,7 @@ async function getControlState(shaderBuffer) {
         try {
             return JSON.parse(str);
         } catch {
-            logError(`Invalid value for control state\nkey:${key}\nval: ${str}`);
+            logError(`Invalid value for control state\nkey:${idx}\nval: ${str}`);
             return null;
         }
     }
@@ -1597,7 +1609,7 @@ async function getControlState(shaderBuffer) {
 async function loadControlState(shaderBuffer, uniforms = null) {
     if (uniforms === null) uniforms = await getControlState(shaderBuffer);
     if (uniforms)
-        shaderBuffer.customUniforms = uniforms;
+        shaderBuffer.setCustomUniforms(uniforms);
 }
 
 //#endregion
@@ -2399,6 +2411,7 @@ function setupShaderEditor() {
                 logMessage('❌ Shader compilation failed. See console for errors.');
                 return;
             } else {
+                sb.controller.refreshValues();
                 logMessage('✅ Shader compiled successfully.');
             }
         } else {
@@ -2595,7 +2608,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 }
                 if (dat.urls[i]) {
-                    shaderBuffers[idx].mediaInputs[i].loadAndCache(cached, false);
+                    shaderBuffers[idx].mediaInputs[i].loadAndCache(dat.urls[i], false);
                 }
             }
         }
