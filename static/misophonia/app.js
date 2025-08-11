@@ -2656,6 +2656,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     shaderBuffers.forEach(shaderBuffer => {
         renderControlsForShader(shaderBuffer, shaderBuffer.getControlSchema());
+        shaderBuffer.renderTarget.reallocate();
     });
 
     updateActiveViewUI();
