@@ -1066,83 +1066,107 @@ class Control {
 
     /** Programmatically set value and sync both UI + uniform */
     set(value) {
-        if (value === undefined) value = this.el.value;
-
-        const type = this.schema.type;
-        const uniform = this.schema.uniform;
-
-        // helper to persist
+        const { type, uniform } = this.schema;
         const persist = () => saveControlState(this.sb);
 
-        if (type === 'slider' || type === 'knob') {
-            const v = Number(value);
-            this.el.value = isFinite(v) ? v : (this.schema.default ?? 0);
-            this.sb.setCustomUniform(uniform, Number(this.el.value));
-            persist();
-            return true;
-        }
-
-        if (type === 'toggle') {
-            const checked = Boolean(value);
-            this.el.checked = checked;
-            this.sb.setCustomUniform(uniform, checked);
-            persist();
-            return true;
-        }
+        const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+        const toBool = (val) => {
+            if (typeof val === 'string') {
+                const s = val.trim().toLowerCase();
+                if (['false', '0', 'off', 'no'].includes(s)) return false;
+                if (['true', '1', 'on', 'yes'].includes(s)) return true;
+            }
+            return !!val;
+        };
 
         if (type === 'button') {
-            // Buttons are actions; calling set(true) will just "press" it once.
             if (value) this.el.click();
             return true;
         }
 
-        if (type === 'dropdown') {
-            const str = String(value);
-            // if option not present, just set uniform directly and leave UI unchanged
-            if ([...this.el.options].some(o => o.value === str)) {
-                this.el.value = str;
+        if (type === 'toggle') {
+            const v = (value === undefined) ? this.el.checked : toBool(value);
+            this.el.checked = v;
+            this.sb.setCustomUniform(uniform, v);
+            persist();
+            return true;
+        }
+
+        if (type === 'slider' || type === 'knob') {
+            let v = (value === undefined) ? Number(this.el.value) : Number(value);
+            if (!isFinite(v)) v = this.schema.default ?? 0;
+            if (this.schema.min !== undefined && this.schema.max !== undefined) {
+                v = clamp(v, this.schema.min, this.schema.max);
             }
-            this.sb.setCustomUniform(uniform, str);
+            this.el.value = String(v);
+            this.sb.setCustomUniform(uniform, v);
+            persist();
+            return true;
+        }
+
+        if (type === 'dropdown') {
+            const v = (value === undefined) ? String(this.el.value) : String(value);
+            if ([...this.el.options].some(o => o.value === v)) {
+                this.el.value = v;
+            }
+            this.sb.setCustomUniform(uniform, v);
             persist();
             return true;
         }
 
         if (type === 'text-input') {
-            const str = String(value);
-            this.el.value = str;
-            this.sb.setCustomUniform(uniform, str);
+            const v = (value === undefined) ? String(this.el.value) : String(value);
+            this.el.value = v;
+            this.sb.setCustomUniform(uniform, v);
             persist();
             return true;
         }
 
         if (type === 'color-picker') {
-            const str = String(value); // "#rrggbb"
-            this.el.value = str;
-            this.sb.setCustomUniform(uniform, str);
+            const v = (value === undefined) ? String(this.el.value) : String(value);
+            this.el.value = v; // expected like "#rrggbb"
+            this.sb.setCustomUniform(uniform, v);
             persist();
             return true;
         }
 
         if (type === 'xy-plane') {
-            // value should be {x:number, y:number} in the control’s domain
-            const v = value || {};
-            const x = (typeof v.x === 'number') ? v.x : this.schema.default?.x ?? this.schema.min.x;
-            const y = (typeof v.y === 'number') ? v.y : this.schema.default?.y ?? this.schema.min.y;
+            // Prefer explicit value; otherwise try current uniform; else default/min.
+            let vx, vy;
+
+            if (value && typeof value.x === 'number' && typeof value.y === 'number') {
+                vx = value.x; vy = value.y;
+            } else {
+                const cur = this.sb.getCustomUniform?.(uniform);
+                if (cur && typeof cur.x === 'number' && typeof cur.y === 'number') {
+                    vx = cur.x; vy = cur.y;
+                } else {
+                    const def = this.schema.default;
+                    const min = this.schema.min, max = this.schema.max;
+                    vx = (def?.x ?? min.x);
+                    vy = (def?.y ?? min.y);
+                }
+            }
+
+            // Clamp to domain if provided
+            const min = this.schema.min, max = this.schema.max;
+            if (min && max) {
+                vx = clamp(vx, min.x, max.x);
+                vy = clamp(vy, min.y, max.y);
+            }
 
             // sync uniform
-            this.sb.setCustomUniform(uniform, { x, y });
+            this.sb.setCustomUniform(uniform, { x: vx, y: vy });
 
-            // sync indicator pixel position if we have the cached pieces
             const xy = this.el._xy; // set in renderControlsForShader
-            if (xy && xy.indicator && xy.containerRect) {
-                const min = this.schema.min, max = this.schema.max;
-                const nx = (x - min.x) / (max.x - min.x);
-                const ny = (y - min.y) / (max.y - min.y);
+            if (xy && xy.indicator && xy.containerRect && min && max) {
+                const nx = (vx - min.x) / (max.x - min.x);
+                const ny = (vy - min.y) / (max.y - min.y);
                 const left = nx * xy.containerRect.width;
                 const top = (1 - ny) * xy.containerRect.height;
                 xy.indicator.style.left = `${left}px`;
                 xy.indicator.style.top = `${top}px`;
-                if (xy.info) xy.info.innerText = `(${x.toFixed(2)}, ${y.toFixed(2)})`;
+                if (xy.info) xy.info.innerText = `(${vx.toFixed(2)}, ${vy.toFixed(2)})`;
             }
             persist();
             return true;
