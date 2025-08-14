@@ -1,5 +1,6 @@
 import TinySDF from 'https://cdn.skypack.dev/@mapbox/tiny-sdf';
-import CacheManager from "./cashman.js"
+import CacheManager from "./cashman.js";
+import * as lisp from "./lisp.js";
 
 const tinySdf = new TinySDF({
     fontSize: 24,             // Font size in pixels
@@ -2199,134 +2200,13 @@ function stopRecording() {
 
 //#region dsl
 
-function tokenize(str) {
-    return (
-        str
-            // strip CL-style comments
-            .replace(/;.*$/gm, '')
-            // pad parens so they're separate tokens
-            .replace(/\(/g, ' ( ')
-            .replace(/\)/g, ' ) ')
-            // grab strings, parens, or atoms
-            .match(/"(?:\\.|[^"])*"|[^\s()]+|[()]/g) || []
-    )
-        .map(tok =>
-            // turn JSON-style strings into JS strings
-            tok[0] === '"' ? JSON.parse(tok) : tok
-        );
-}
-
-function parseSexp(tokens) {
-    // const t = tokens.slice(); // copy
-    const t = tokens;
-    function parseStr() { // does not work with current tokenizer
-        t.shift(); // "
-        let str = '';
-        let escaped = false;
-        while (t[0] !== '"' || escaped) {
-            const tok = t.shift();
-            if (tok === '\\') escaped = true;
-            else {
-                str += tok;
-                escaped = false;
-            }
-        }
-        t.shift(); // "
-        return str;
-    }
-    function walk() {
-        if (t.length === 0) throw new SyntaxError('Unexpected EOF');
-        const tok = t.shift();
-        if (tok === '(') {
-            const L = [];
-            while (t[0] !== ')') {
-                if (t.length === 0) throw new SyntaxError('Missing )');
-                L.push(walk());
-            }
-            t.shift(); // pop ')'
-            return L;
-        }
-        if (tok === ')') throw new SyntaxError('Unexpected )');
-        // atom: number or symbol
-        return isFinite(tok) ? Number(tok) : tok;
-    }
-    const out = [];
-    while (t.length) out.push(walk());
-    return out.length === 1 ? out[0] : out;
-}
-
-function parseDSL(str) {
-    const tokens = tokenize(str);
-    const expr = parseSexp(tokens);
-    if (tokens.length) console.warn("Extra tokens after first expr", tokens);
-    return expr;
-}
-function evalDSL(tree) {
-    // Expect: [ 'shader', shaderName, ...clauses ]
-    if (tree[0] !== 'shader') throw new Error("DSL must start with (shader …)");
-    const cfg = { name: tree[1], uniforms: {}, textures: [] };
-    for (let i = 2; i < tree.length; i++) {
-        const clause = tree[i];
-        const [kw, ...rest] = clause;
-        switch (kw) {
-            case 'uniform':
-                // [ 'uniform', name, value ]
-                const val = rest[1];
-                cfg.uniforms[rest[0]] = (val === 'true' || val === 'false') ? (val === 'true') : val;
-                break;
-            case 'texture':
-                // TODO: parse (file|shader arg) to an object which returns a texture handle
-                // [ 'texture', slot, ['file'|'shader', arg] ]
-                cfg.textures.push({ slot: rest[0], [rest[1][0]]: rest[1][1] });
-                break;
-            default:
-                console.warn("Unknown DSL clause", kw);
-        }
-    }
-    return cfg;
-}
-
-/*
-(let* ((shad-0 (shader "color-invert" :texture-0 (select-shader-tab 1)))
-       (shad-1 (shader "color-invert" :texture-0 shad-0))
-       (main-shader (shader "demo-moire"
-                            :texture-0 shad-0
-                            :texture-1 shad-1)))
-  main-shader							; render main moire shader
-  )
-
-
-(shader "demo-moire"
-(uniform u_mode 2)
-(uniform u_colInv1 false)
-(uniform u_colInv0 true)
-(texture 0 shader 2)
-(texture 1 shader 1)
-)
-*/
-
-const myShaderLibrary = {};
-async function populateMyShaderLibrary() {
-    const savedList = await resourceCache.get('configsList');
-    if (typeof savedList === 'string') {
-        const names = JSON.parse(savedList);
-        for (const name of names) {
-            const fragKey = `config;${name};fragmentSource`;
-            const src = await resourceCache.get(fragKey);
-            const controlKey = `config;${name};controlSchema`;
-            const controlSchema = await resourceCache.get(controlKey);
-            if (typeof src === 'string') {
-                myShaderLibrary[name] = { frag: src, control: controlSchema };
-            }
-        }
-    }
-}
-
 function applyDsl(txt) {
+    console.warn("naw fam not rn");
+    return;
     let tree, config;
     try {
-        tree = parseDSL(txt);
-        config = evalDSL(tree);
+        tree = lisp.parse(txt);
+        config = lisp.evaluate(tree);
     } catch (e) {
         console.error(e);
         return logError("DSL parse error:", e.message);
@@ -2459,6 +2339,23 @@ function setupShaderEditor() {
 //#endregion
 
 //#region setup
+
+const myShaderLibrary = {};
+async function populateMyShaderLibrary() {
+    const savedList = await resourceCache.get('configsList');
+    if (typeof savedList === 'string') {
+        const names = JSON.parse(savedList);
+        for (const name of names) {
+            const fragKey = `config;${name};fragmentSource`;
+            const src = await resourceCache.get(fragKey);
+            const controlKey = `config;${name};controlSchema`;
+            const controlSchema = await resourceCache.get(controlKey);
+            if (typeof src === 'string') {
+                myShaderLibrary[name] = { frag: src, control: controlSchema };
+            }
+        }
+    }
+}
 
 const cachedShaderData = {};
 document.addEventListener('DOMContentLoaded', async () => {
