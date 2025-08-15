@@ -2200,51 +2200,61 @@ function stopRecording() {
 
 //#region dsl
 
+let shaderLoadIndex;
+document.lisp = lisp;
+lisp.makeNative('shader', args => {
+    // args[0] is string representing name of shader to load
+    // load it
+    // args[1] is list of '(uniform value)
+    // args[2] is list of (texture-reference)
+    console.log('loading shader with args');
+    console.log(args);
+    shaderLoadIndex += 1;
+    return shaderBuffers[shaderLoadIndex - 1];
+});
+
 function applyDsl(txt) {
-    console.warn("naw fam not rn");
-    return;
-    let tree, config;
+    shaderLoadIndex = 0;
     try {
-        tree = lisp.parse(txt);
-        config = lisp.evaluate(tree);
+        lisp.evalStr(txt);
     } catch (e) {
         console.error(e);
         return logError("DSL parse error:", e.message);
     }
 
-    LOG(`generated config`, config);
-    const o = myShaderLibrary[config.name];
-    let tabIndex = currentViewIndex;
-    if (!o?.frag) logError(`uh oh ${config.name} not found`);
-    else applyShader(tabIndex, o.frag, vertexShaderSource);
+    // LOG(`generated config`, config);
+    // const o = myShaderLibrary[config.name];
+    // let tabIndex = currentViewIndex;
+    // if (!o?.frag) logError(`uh oh ${config.name} not found`);
+    // else applyShader(tabIndex, o.frag, vertexShaderSource);
 
-    if (tabIndex < 0) {
-        tabIndex = shaderBuffers.length;
-        // create a fresh ShaderBuffer with your default schema
-        const sb = new ShaderBuffer(config.name,
-            new ShaderProgram(vertexShaderSource, o.frag, gl),
-            o.control,
-            tabIndex);
-        shaderBuffers.push(sb);
-        shaderBuffers[tabIndex] = sb;
-        createShaderTabs();
-        createControlSchemeTabs();
-    }
-    shaderBuffers[tabIndex].setControlSchema(o.control);
-    console.log(o);
-    console.log(config.uniforms);
-    console.log(shaderBuffers[tabIndex].getControlSchema());
-    // update uniform defaults given args
-    Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].setCustomUniform(k, config.uniforms[k]));
-    renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].getControlSchema());
+    // if (tabIndex < 0) {
+    //     tabIndex = shaderBuffers.length;
+    //     // create a fresh ShaderBuffer with your default schema
+    //     const sb = new ShaderBuffer(config.name,
+    //         new ShaderProgram(vertexShaderSource, o.frag, gl),
+    //         o.control,
+    //         tabIndex);
+    //     shaderBuffers.push(sb);
+    //     shaderBuffers[tabIndex] = sb;
+    //     createShaderTabs();
+    //     createControlSchemeTabs();
+    // }
+    // shaderBuffers[tabIndex].setControlSchema(o.control);
+    // console.log(o);
+    // console.log(config.uniforms);
+    // console.log(shaderBuffers[tabIndex].getControlSchema());
+    // // update uniform defaults given args
+    // Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].setCustomUniform(k, config.uniforms[k]));
+    // renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].getControlSchema());
 
-    for (let t of config.textures) {
-        const inp = shaderBuffers[tabIndex].mediaInputs[t.slot];
-        if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
-        if (t.shader !== undefined) inp.selectTab(t.shader);
-    }
+    // for (let t of config.textures) {
+    //     const inp = shaderBuffers[tabIndex].mediaInputs[t.slot];
+    //     if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
+    //     if (t.shader !== undefined) inp.selectTab(t.shader);
+    // }
 
-    currentViewIndex = tabIndex;
+    // currentViewIndex = tabIndex;
     updateActiveViewUI();
     updateActiveControlUI();
 }

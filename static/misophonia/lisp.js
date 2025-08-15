@@ -228,7 +228,6 @@ function evaluateAtom(ast, env) {
     // keyword
     if (s[0] === ':') return new LispVal(s, LispType.KEYWORD, s);
 
-    // symbol: if bound => value, else keep as SYMBOL
     const bound = env.getVar(s);
     if (bound !== undefined) return bound;
     return new LispVal(s, LispType.SYMBOL, s);
@@ -254,6 +253,36 @@ function quoteAST(ast) {
             console.log(ast);
             throw new Error('unknown AST in quote');
     }
+}
+
+function qqExpand(ast) {
+    // returns AST (not LispVal)
+    const symA = s => ASTNode.newAtom(s);
+    const listA = xs => ASTNode.fromList(xs);
+
+    if (ast.type === ASTType.ATOM) return listA([symA('quote'), ast]);
+
+    if (ast.type === ASTType.LIST) {
+        // handle , and ,@ at head position
+        if (ast.val.length && ast.val[0].type === ASTType.ATOM) {
+            const hd = ast.val[0].val;
+            if (hd === 'unquote') return ast.val[1];
+            if (hd === 'unquote-splicing')
+                throw new Error('illegal ,@ at top level of quasiquote');
+            // else fallthrough
+        }
+        // build (append …) to handle splices
+        const parts = ast.val.map(el => {
+            if (el.type === ASTType.LIST && el.val[0]?.type === ASTType.ATOM && el.val[0].val === 'unquote-splicing') {
+                return el.val[1]; // as-is, will be appended
+            }
+            return listA([symA('list'), qqExpand(el)]);
+        });
+        return parts.length === 0
+            ? listA([symA('quote'), ASTNode.fromList([])])
+            : (parts.length === 1 ? parts[0] : listA([symA('append'), ...parts]));
+    }
+    throw new Error('qqExpand: unknown ast');
 }
 
 const isFunctionVal = (v) => v && v.type === LispType.JSOBJECT && v.val && v.val._fnTag === 'CL-FUNCTION';
@@ -315,7 +344,6 @@ function evaluate(ast, env = globalEnv) {
 // ---------- CORE ENV ---------------------------------------------------------
 
 
-// demo JS interface
 /**
  * @param {[LispVal]} args 
  */
@@ -324,10 +352,15 @@ function loadShaderBuffer(args) {
     //   string (name of shader to load)
     //   list containing uniform:value pairs
     //   list containing textures
+
+    return new LispVal(undefined, LispType.JSOBJECT);
 }
 
 function expectArgs(args, min = undefined, max = undefined) {
-    if (args.length < min || args.length > max) throw new Error("incorrect length");
+    if ((min !== undefined && args.length < min) ||
+        (max !== undefined && args.length > max)) {
+        throw new Error("incorrect length");
+    }
 }
 
 // https://stackoverflow.com/questions/4589366/the-most-minimal-lisp
@@ -335,17 +368,122 @@ function expectArgs(args, min = undefined, max = undefined) {
 // we need only define quote, atom, eq, cons, car, cdr, and cond
 Object.assign(globalEnv.fns, {});
 
+const asNum = v => (v.type === LispType.NUMBER) ? v.val : (() => { throw new Error('number expected') })();
+const bool = b => new LispVal(!!b, LispType.BOOLEAN);
+
+function makeNative(name, fn) {
+    globalEnv.fns[name] = {
+        call(args, env) { return fn(args); }
+    };
+}
+
+makeNative('+', args => new LispVal(args.reduce((s, a) => s + asNum(a), 0), LispType.NUMBER));
+makeNative('-', args => {
+    if (!args.length) throw new Error('(-) needs at least 1 arg');
+    const nums = args.map(asNum);
+    const r = (nums.length === 1) ? -nums[0] : nums.slice(1).reduce((x, y) => x - y, nums[0]);
+    return new LispVal(r, LispType.NUMBER);
+});
+makeNative('*', args => new LispVal(args.reduce((p, a) => p * asNum(a), 1), LispType.NUMBER));
+makeNative('=', args => bool(args.every(a => a.type === args[0].type && a.val === args[0].val)));
+
+makeNative('cons', args => {
+    expectArgs(args, 2, 2);
+    const [a, d] = args;
+    return new LispVal([a, ...(d.type === LispType.LIST ? d.val : d === NIL ? [] : (() => { throw new Error('cdr must be list or nil') })())], LispType.LIST);
+});
+makeNative('car', args => {
+    expectArgs(args, 1, 1);
+    const l = args[0]; if (l === NIL || l.type !== LispType.LIST || !l.val.length) return NIL; return l.val[0];
+});
+makeNative('cdr', args => {
+    expectArgs(args, 1, 1);
+    const l = args[0]; if (l === NIL || l.type !== LispType.LIST || l.val.length <= 1) return NIL;
+    return new LispVal(l.val.slice(1), LispType.LIST);
+});
+makeNative('list', args => args.length ? new LispVal(args, LispType.LIST) : NIL);
+
+makeNative('atom', args => {
+    expectArgs(args, 1, 1);
+    const v = args[0]; return bool(v === NIL || v.type !== LispType.LIST);
+});
+makeNative('null', args => { expectArgs(args, 1, 1); return bool(args[0] === NIL); });
+
+
 // Special forms (operate on AST, not values)
 Object.assign(globalEnv.specials, {
     'quote': (args, env) => {
-        expectArgs(1, args);
+        expectArgs(args, 1, 1);
         return quoteAST(args[0]);
+    },
+
+    'quasiquote': (args, env) => {
+        expectArgs(args, 1, 1);
+        return evaluate(qqExpand(args[0]), env);
+    },
+
+    'progn': (args, env) => { let v = NIL; for (const a of args) v = evaluate(a, env); return v; },
+
+    'if': (args, env) => {
+        expectArgs(args, 2, 3);
+        const test = evaluate(args[0], env);
+        return (test.type !== LispType.NIL && !(test.type === LispType.BOOLEAN && !test.val))
+            ? evaluate(args[1], env)
+            : (args[2] ? evaluate(args[2], env) : NIL);
+    },
+
+    'setq': (args, env) => {
+        if (args.length % 2 !== 0) throw new Error('setq needs even number of forms');
+        let last = NIL;
+        for (let i = 0; i < args.length; i += 2) {
+            const nameAst = args[i];
+            if (nameAst.type !== ASTType.ATOM) throw new Error('setq: name must be symbol');
+            const val = evaluate(args[i + 1], env);
+            env.setVar(nameAst.val, val);
+            last = val;
+        }
+        return last;
+    },
+
+    'lambda': (args, env) => {
+        expectArgs(args, 2); // (lambda (params...) body...)
+        const paramsAst = args[0];
+        if (paramsAst.type !== ASTType.LIST) throw new Error('lambda: params must be a list');
+        const params = paramsAst.val.map(a => {
+            if (a.type !== ASTType.ATOM) throw new Error('lambda: param must be symbol');
+            return a.val;
+        });
+        const body = args.slice(1);
+        return new LispVal({
+            _fnTag: 'CL-FUNCTION',
+            params,
+            body,
+            closureEnv: env
+        }, LispType.JSOBJECT);
+    },
+
+    // simple lexical LET
+    'let': (args, env) => {
+        expectArgs(args, 1);
+        const bindingsAst = args[0];
+        if (bindingsAst.type !== ASTType.LIST) throw new Error('let: bindings must be list');
+        const child = makeEnv(env);
+        for (const b of bindingsAst.val) {
+            if (b.type !== ASTType.LIST || b.val.length !== 2 || b.val[0].type !== ASTType.ATOM)
+                throw new Error('let: each binding is (name expr)');
+            const name = b.val[0].val;
+            const val = evaluate(b.val[1], env);
+            child.setVar(name, val);
+        }
+        let last = NIL;
+        for (const form of args.slice(1)) last = evaluate(form, child);
+        return last;
     },
 });
 
 Object.assign(globalEnv.vars, {
     'nil': new LispVal(null, LispType.NIL, 'nil'),
-    't': new LispVal('t', new LispVal(true, LispType.BOOLEAN, 't')),
+    't': new LispVal(true, new LispVal(true, LispType.BOOLEAN, 't')),
 });
 
 // ---------- PUBLIC API -------------------------------------------------------
@@ -357,6 +495,22 @@ function evalStr(s, env = globalEnv) {
     for (const n of nodes) last = evaluate(n, env);
     return last;
 }
+
+export {
+    TokType,
+    ASTType,
+    LispType,
+
+    Token,
+    ASTNode,
+    LispVal,
+
+    globalEnv,
+
+    evalStr,
+
+    makeNative,
+};
 
 // ---------- EXAMPLES ---------------------------------------------------------
 // console.log(show(evalStr("(+ 1 2 3)")));                 // 6
