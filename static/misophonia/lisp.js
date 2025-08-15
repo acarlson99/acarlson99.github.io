@@ -1,18 +1,13 @@
+// ---------- TOKENIZER --------------------------------------------------------
+
 const TokType = {
-    // (
     PAREN_OPEN: 'PAREN_OPEN',
-    // )
     PAREN_CLOSE: 'PAREN_CLOSE',
-    // '
-    QUOTE: 'QUOTE',
-    // `
-    QUASI_QUOTE: 'QUASI_QUOTE',
-    // , 
-    UNQUOTE: 'UNQUOTE',
-    // @        e.g. `(+ 1 2 ,@(cons 3 '(4))) => '(+ 1 2 3 4)
-    AT_SIGN: 'AT_SIGN',
+    QUOTE: 'QUOTE',            // '
+    QUASI_QUOTE: 'QUASI_QUOTE',// `
+    UNQUOTE: 'UNQUOTE',        // ,
+    UNQUOTE_SPLICING: 'UNQUOTE_SPLICING', // ,@
     ATOM: 'ATOM',
-    // should not happen hopefully
     UNKNOWN: 'UNKNOWN',
 };
 
@@ -33,40 +28,36 @@ class Token {
      */
     static inferType(lit) {
         switch (lit) {
-            case '(':
-                return TokType.PAREN_OPEN;
-            case ')':
-                return TokType.PAREN_CLOSE;
-            case '\'':
-                return TokType.QUOTE;
-            case '`':
-                return TokType.QUASI_QUOTE;
-            case ',':
-                return TokType.UNQUOTE;
-            case '@':
-                return TokType.AT_SIGN
+            case '(': return TokType.PAREN_OPEN;
+            case ')': return TokType.PAREN_CLOSE;
+            case '\'': return TokType.QUOTE;
+            case '`': return TokType.QUASI_QUOTE;
+            case ',': return TokType.UNQUOTE;
+            case ',@': return TokType.UNQUOTE_SPLICING;
         }
-
         return TokType.ATOM;
     }
 }
 
-// special chars ()'`,@
+// special chars ()'`, @ and string literals "..."
 function tokenize(str) {
+    const re =
+        /"([^"\\]|\\.)*"|[^\s()'`,@]+|,@|[()'`,@]/g; // order matters: ",@" before single chars
     return (str
-        // strip CL-style comments
-        .replace(/;.*$/gm, '')
-        // grab parens, or atoms
-        .match(/[^\s()'`,@]+|[()'`,@]/g) || []
+        .replace(/;.*$/gm, '')            // strip CL-style comments
+        .match(re) || []
     ).map(c => new Token(c));
 }
 
+// ---------- AST --------------------------------------------------------------
+
 const ASTType = {
-    ATOM: 'ATOM', // e.g. foo
+    ATOM: 'ATOM', // e.g. foo or "bar"
     LIST: 'LIST',
-    QUOTE: 'QUOTE',
-    QUASI_QUOTE: 'QUASI_QUOTE',
-    UNQUOTE: 'UNQUOTE',
+    // QUOTE: 'QUOTE',
+    // QUASI_QUOTE: 'QUASI_QUOTE',
+    // UNQUOTE: 'UNQUOTE',
+    // UNQUOTE_SPLICING: 'UNQUOTE_SPLICING',
 }
 
 class ASTNode {
@@ -74,214 +65,303 @@ class ASTNode {
     constructor(val, type) { this.val = val; this.type = type; }
 
     static newAtom(s) { return new ASTNode(s, ASTType.ATOM); }
-
-    /**
-     * @param {[ASTNode]} asts
-     * @returns {ASTNode}
-     */
     static fromList(asts) { return new ASTNode(asts, ASTType.LIST); }
 }
+function sym(name) { return ASTNode.newAtom(name); }
 
 /**
+ * Parse a single S-expression starting at tokens[0]
  * @param {[Token]} tokens
- * @returns {{node: ASTNode, rest: [Token], err: any}}
+ * @returns {{node: ASTNode|null, rest: [Token], err: string|null}}
  */
 function parseSexp(tokens) {
-    const ts = tokens.slice();
-    const tok = ts[0];
-    let rest = ts.slice(1);
+    if (!tokens.length) return { node: null, rest: [], err: 'unexpected EOF' };
 
-    let node = null;
-    let err = null;
-    let o
-    switch (tok?.type) {
-        case TokType.PAREN_OPEN:
-            // parse list
-            let exprs = [];
-            o = parseSexp(rest);
-            while (o.rest?.length && o.rest[0].type !== TokType.PAREN_CLOSE) {
-                // parse subexpr
-                exprs.push(o.node);
-                o = parseSexp(o.rest);
+    const [tok, ...rest0] = tokens;
+
+    // Wrap a following expression as (name <expr>)
+    const parsePrefixed = (name, glyph) => {
+        const o = parseSexp(rest0);
+        if (o.err) return { node: null, rest: o.rest, err: glyph + ' ' + o.err };
+        return { node: ASTNode.fromList([sym(name), o.node]), rest: o.rest, err: null };
+    };
+
+    switch (tok.type) {
+        case TokType.PAREN_OPEN: {
+            let rest = rest0;
+            const items = [];
+            while (true) {
+                if (!rest.length) return { node: null, rest, err: 'list ended unexpectedly' };
+                if (rest[0].type === TokType.PAREN_CLOSE) {
+                    return { node: ASTNode.fromList(items), rest: rest.slice(1), err: null };
+                }
+                const o = parseSexp(rest);
+                if (o.err) return { node: null, rest: o.rest, err: '( ' + o.err + ' )' };
+                items.push(o.node);
+                rest = o.rest;
             }
-            exprs.push(o.node);
-            if (o.err) err = "( " + o.err + " )";
-            else if (exprs.length < 1) err = "evaluating empty list";
-            else if (o.rest[0].type !== TokType.PAREN_CLOSE) err = "list ended unexpectedly";
-            else node = ASTNode.fromList(exprs);
-            rest = o.rest.slice(1);
-            break;
-        case TokType.PAREN_CLOSE:
-            err = "paren_close not acceptable here";
-        case TokType.QUOTE:
-            // parse quoted expr
-            o = parseSexp(rest);
-            if (o.err) err = "'" + o.err;
-            rest = o.rest;
-            node = new ASTNode(o.node, ASTType.QUOTE);
-            break;
-        case TokType.QUASI_QUOTE:
-            // parse quasi-quoted expr
-            o = parseSexp(rest);
-            if (o.err) err = "'" + o.err;
-            rest = o.rest;
-            node = new ASTNode(o.node, ASTType.QUASI_QUOTE);
-            break;
-        case TokType.UNQUOTE:
-            // ,expr
-            o = parseSexp(rest);
-            if (o.err) err = "'" + o.err;
-            rest = o.rest;
-            node = new ASTNode(o.node, ASTType.UNQUOTE);
-            break;
-        case TokType.ATOM:
-            node = ASTNode.newAtom(tok.lit);
-            break;
-    }
+        }
 
-    return { node: node, rest: rest, err: err };
+        case TokType.PAREN_CLOSE:
+            return { node: null, rest: rest0, err: 'unexpected )' };
+
+        case TokType.QUOTE: return parsePrefixed('quote', "'");
+        case TokType.QUASI_QUOTE: return parsePrefixed('quasiquote', '`');
+        case TokType.UNQUOTE: return parsePrefixed('unquote', ',');
+        case TokType.UNQUOTE_SPLICING: return parsePrefixed('unquote-splicing', ',@');
+
+        case TokType.ATOM:
+            return { node: ASTNode.newAtom(tok.lit), rest: rest0, err: null };
+
+        default:
+            return { node: null, rest: rest0, err: 'unknown token' };
+    }
 }
 
 /**
+ * Parse all top-level forms
  * @param {[Token]} tokens
- * @returns {[ASTNode]}
+ * @returns {{nodes:[ASTNode], err:string|null}}
  */
 function parse(tokens) {
-    let o = parseSexp(tokens);
-    let nodes = [o.node];
-    while (o.rest?.length > 0 && !o.err) {
-        o = parseSexp(o.rest);
+    let rest = tokens.slice();
+    const nodes = [];
+    while (rest.length) {
+        const o = parseSexp(rest);
+        if (o.err) return { nodes, err: o.err };
         nodes.push(o.node);
+        rest = o.rest;
     }
-    if (o.err) console.warn('error parsing', o.err);
-    return nodes;
+    return { nodes, err: null };
 }
+
+// ---------- VALUES / ENV -----------------------------------------------------
 
 const LispType = {
-    NUMBER: "NUMBER",
-    LIST: "LIST",
-    KEYWORD: "KEYWORD",
-    SYMBOL: "SYMBOL",
+    NUMBER: 'NUMBER',
+    LIST: 'LIST',
+    KEYWORD: 'KEYWORD',
+    SYMBOL: 'SYMBOL',
+    STRING: 'STRING',
+    BOOLEAN: 'BOOLEAN',
+    NIL: 'NIL',
+    // TODO: support external "JS object" type
+    JSOBJECT: 'JSOBJECT',
 }
 
-class LispVal { constructor(val, type, lit = undefined) { this.type = type; this.val = val; this.lit = lit; } }
+class LispVal {
+    constructor(val, type, lit = undefined) { this.type = type; this.val = val; this.lit = lit; }
+}
 
-/**
- * @param {ASTNode} ast
- */
-function evaluateAtom(ast) {
-    if (ast.type !== ASTType.ATOM) console.log("evaluating non-atom in atom function");
+const NIL = new LispVal(null, LispType.NIL, 'nil');
 
-    const n = Number.parseFloat(ast.val);
-    if (Number.isFinite(n)) return new LispVal(n, LispType.NUMBER, ast.val);
+// pretty-printer
+function show(v) {
+    switch (v?.type) {
+        case LispType.NIL: return 'nil';
+        case LispType.NUMBER: return String(v.val);
+        case LispType.STRING: return JSON.stringify(v.val);
+        case LispType.KEYWORD: return v.val;
+        case LispType.SYMBOL: return '\'' + v.val;
+        case LispType.BOOLEAN: return v.val ? 't' : 'nil';
+        case LispType.LIST: return '(' + v.val.map(show).join(' ') + ')';
+        default: return String(v?.val ?? v);
+    }
+}
+
+const list = (...xs) => xs.length ? new LispVal(xs, LispType.LIST) : NIL;
+
+function makeEnv(parent = null) {
+    const env = {
+        parent,
+        vars: Object.create(null),
+        fns: Object.create(null),
+        specials: Object.create(null),
+
+        getVar(name) {
+            if (name in this.vars) return this.vars[name];
+            if (this.parent) return this.parent.getVar(name);
+            return undefined;
+        },
+        setVar(name, val) { this.vars[name] = val; return val; },
+
+        getFn(name) {
+            if (name in this.fns) return this.fns[name];
+            if (this.parent) return this.parent.getFn(name);
+            return undefined;
+        },
+        getSpecial(name) {
+            if (name in this.specials) return this.specials[name];
+            if (this.parent) return this.parent.getSpecial(name);
+            return undefined;
+        },
+    };
+    return env;
+}
+
+const globalEnv = makeEnv();
+
+// ---------- READER/EVAL HELPERS ---------------------------------------------
+
+/** Evaluate an atom into a LispVal (numbers, strings, booleans, keywords, symbols). */
+function evaluateAtom(ast, env) {
+    if (ast.type !== ASTType.ATOM) throw new Error("evaluateAtom called on non-atom");
 
     const s = ast.val;
-    if (s[0] === ":") // keyword
-        return new LispVal(s, LispType.KEYWORD, s);
 
+    // string literal?
+    if (s[0] === '"' && s[s.length - 1] === '"') {
+        const unescaped = JSON.parse(s); // safe due to tokenizer
+        return new LispVal(unescaped, LispType.STRING, s);
+    }
+
+    // number?
+    const n = Number.parseFloat(s);
+    if (!Number.isNaN(n) && isFinite(n) && String(n) === s.replace(/^(\+)?/, '')) {
+        return new LispVal(n, LispType.NUMBER, s);
+    }
+
+    // booleans
+    if (s === 'true' || s === '#t') return new LispVal(true, LispType.BOOLEAN, s);
+    if (s === 'false' || s === '#f') return new LispVal(false, LispType.BOOLEAN, s);
+
+    // keyword
+    if (s[0] === ':') return new LispVal(s, LispType.KEYWORD, s);
+
+    // symbol: if bound => value, else keep as SYMBOL
+    const bound = env.getVar(s);
+    if (bound !== undefined) return bound;
     return new LispVal(s, LispType.SYMBOL, s);
 }
 
-let defaultEnv = {
-    fns: {
-        "+": {
-            call: (args, env) => {
-                let acc = 0;
-                for (const a of args) {
-                    acc += a.val;
-                }
-                return new LispVal(acc, LispType.NUMBER);
-            }
-        }
-    },
-    getFn: (name) => defaultEnv.fns[name],
-};
-
-/**
- * @param {ASTNode} ast
- */
-function evaluate(ast, env) {
+// QUOTE: turn AST into value without evaluation
+function quoteAST(ast) {
     switch (ast.type) {
-        case ASTType.ATOM:
-            // evaluate to value representation
-            return evaluateAtom(ast);
-            break;
+        case ASTType.ATOM: {
+            const s = ast.val;
+            if (s[0] === '"' && s[s.length - 1] === '"') return new LispVal(JSON.parse(s), LispType.STRING, s);
+            const n = Number.parseFloat(s);
+            if (!Number.isNaN(n) && isFinite(n) && String(n) === s.replace(/^(\+)?/, '')) return new LispVal(n, LispType.NUMBER, s);
+            if (s === 'true' || s === '#t') return new LispVal(true, LispType.BOOLEAN, s);
+            if (s === 'false' || s === '#f') return new LispVal(false, LispType.BOOLEAN, s);
+            if (s[0] === ':') return new LispVal(s, LispType.KEYWORD, s);
+            return new LispVal(s, LispType.SYMBOL, s);
+        }
         case ASTType.LIST:
-            // evaluate to funcall
-            if (ast.val.length < 1) console.warn("Not enough args to funcall");
+            return ast.val.length ? new LispVal(ast.val.map(quoteAST), LispType.LIST) : NIL;
 
-            // evaluate sub-lists
-            let vals = [];
-            for (const v of ast.val) {
-                let r = evaluate(v, env);
-                vals.push(r);
-            }
-            const fnName = vals[0];
-            const args = vals.slice(1);
-            // get function from function table
-            const fn = env.getFn(fnName.val);
-            // pass their vals into the function
-            return fn.call(args, env);
-            break;
-        case ASTType.QUOTE:
-        case ASTType.QUASI_QUOTE:
+        default:
+            console.log(ast);
+            throw new Error('unknown AST in quote');
     }
 }
 
-function evalStr(s) {
-    return evaluate(parseSexp(tokenize(s)).node);
+const isFunctionVal = (v) => v && v.type === LispType.JSOBJECT && v.val && v.val._fnTag === 'CL-FUNCTION';
+
+// ---------- EVALUATOR --------------------------------------------------------
+
+
+/**
+ * @param {ASTNode} ast
+ * @param {*} env
+ * @returns {LispVal}
+ */
+function evaluate(ast, env = globalEnv) {
+    switch (ast.type) {
+        case ASTType.ATOM:
+            return evaluateAtom(ast, env);
+
+        case ASTType.LIST: {
+            if (ast.val.length === 0) return NIL;
+
+            const headAst = ast.val[0];
+
+            // Special forms by symbol at AST level
+            if (headAst.type === ASTType.ATOM) {
+                const sp = env.getSpecial(headAst.val);
+                if (sp) return sp(ast.val.slice(1), env);
+            }
+
+            // Evaluate operator *only once*, then decide how to call
+            const opVal = evaluate(headAst, env);
+            const argVals = ast.val.slice(1).map(n => evaluate(n, env));
+
+            if (opVal.type === LispType.SYMBOL) {
+                const fn = env.getFn(opVal.val);
+                if (!fn) throw new Error(`unknown function: ${opVal.val}`);
+                return fn.call(argVals, env);
+            }
+
+            if (isFunctionVal(opVal)) {
+                // Apply lambda
+                const fn = opVal.val;
+                const callEnv = makeEnv(fn.closureEnv);
+                if (fn.params.length !== argVals.length)
+                    throw new Error(`arity mismatch: expected ${fn.params.length}, got ${argVals.length}`);
+                for (let i = 0; i < fn.params.length; i++) callEnv.setVar(fn.params[i], argVals[i]);
+                let last = NIL;
+                for (const form of fn.body) last = evaluate(form, callEnv);
+                return last;
+            }
+
+            throw new Error('first position must be a function (symbol or lambda)');
+        }
+
+        default:
+            throw new Error('unknown AST node type');
+    }
 }
 
-// function parse(str) {
-//     const tokens = tokenize(str);
-//     const expr = parseSexp(tokens);
-//     if (tokens.length) console.warn("Extra tokens after first expr", tokens);
-//     return expr;
-// }
-// function evaluate(tree) {
-//     // Expect: [ 'shader', shaderName, ...clauses ]
-//     if (tree[0] !== 'shader') throw new Error("DSL must start with (shader …)");
-//     const cfg = { name: tree[1], uniforms: {}, textures: [] };
-//     for (let i = 2; i < tree.length; i++) {
-//         const clause = tree[i];
-//         const [kw, ...rest] = clause;
-//         switch (kw) {
-//             case 'uniform':
-//                 // [ 'uniform', name, value ]
-//                 const val = rest[1];
-//                 cfg.uniforms[rest[0]] = (val === 'true' || val === 'false') ? (val === 'true') : val;
-//                 break;
-//             case 'texture':
-//                 // TODO: parse (file|shader arg) to an object which returns a texture handle
-//                 // [ 'texture', slot, ['file'|'shader', arg] ]
-//                 cfg.textures.push({ slot: rest[0], [rest[1][0]]: rest[1][1] });
-//                 break;
-//             default:
-//                 console.warn("Unknown DSL clause", kw);
-//         }
-//     }
-//     return cfg;
-// }
-
-// export {
-//     parse, evaluate
-// };
-
-/*
-(let* ((shad-0 (shader "color-invert" :texture-0 (select-shader-tab 1)))
-       (shad-1 (shader "color-invert" :texture-0 shad-0))
-       (main-shader (shader "demo-moire"
-                            :texture-0 shad-0
-                            :texture-1 shad-1)))
-  main-shader							; render main moire shader
-  )
+// ---------- CORE ENV ---------------------------------------------------------
 
 
-(shader "demo-moire"
-(uniform u_mode 2)
-(uniform u_colInv1 false)
-(uniform u_colInv0 true)
-(texture 0 shader 2)
-(texture 1 shader 1)
-)
-*/
+// demo JS interface
+/**
+ * @param {[LispVal]} args 
+ */
+function loadShaderBuffer(args) {
+    // expected form:
+    //   string (name of shader to load)
+    //   list containing uniform:value pairs
+    //   list containing textures
+}
+
+function expectArgs(args, min = undefined, max = undefined) {
+    if (args.length < min || args.length > max) throw new Error("incorrect length");
+}
+
+// https://stackoverflow.com/questions/4589366/the-most-minimal-lisp
+// taking inspiration from https://paulgraham.com/lispcode.html
+// we need only define quote, atom, eq, cons, car, cdr, and cond
+Object.assign(globalEnv.fns, {});
+
+// Special forms (operate on AST, not values)
+Object.assign(globalEnv.specials, {
+    'quote': (args, env) => {
+        expectArgs(1, args);
+        return quoteAST(args[0]);
+    },
+});
+
+Object.assign(globalEnv.vars, {
+    'nil': new LispVal(null, LispType.NIL, 'nil'),
+    't': new LispVal('t', new LispVal(true, LispType.BOOLEAN, 't')),
+});
+
+// ---------- PUBLIC API -------------------------------------------------------
+
+function evalStr(s, env = globalEnv) {
+    const { nodes, err } = parse(tokenize(s));
+    if (err) throw new Error('parse error: ' + err);
+    let last = NIL;
+    for (const n of nodes) last = evaluate(n, env);
+    return last;
+}
+
+// ---------- EXAMPLES ---------------------------------------------------------
+// console.log(show(evalStr("(+ 1 2 3)")));                 // 6
+// console.log(show(evalStr("'(1 2 3)")));                  // (1 2 3)
+// console.log(show(evalStr("`(a ,(+ 1 2) ,@(list 4 5))"))); // (a 3 4 5)
+// console.log(show(evalStr(`(define foo "color-invert")`)));// "color-invert"
+// console.log(show(evalStr("(if true foo \"nope\")")));     // "color-invert"
+// console.log(show(evalStr("(car '(10 20 30))")));          // 10
