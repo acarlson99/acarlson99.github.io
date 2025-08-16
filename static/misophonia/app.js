@@ -1381,7 +1381,25 @@ class ShaderBuffer {
                 if (this.advancedInputsContainer) this.advancedInputsContainer.appendChild(mediaInput.getElement());
             }
         }
+
+        const addTexInput = document.createElement('button');
+        addTexInput.innerText = "skibidi another texture, perchance??";
+        addTexInput.addEventListener('click', () => {
+            this.addMediaInput();
+        })
+        if (this.advancedInputsContainer) this.advancedInputsContainer.appendChild(addTexInput);
+
         return true;
+    }
+
+    addMediaInput() {
+        if (this.mediaInputs.length >= MAX_TEXTURE_SLOTS) {
+            logError('oopsies too many :/');
+            return;
+        }
+        const mediaInput = new MediaInput(this, this.shaderIndex, this.mediaInputs.length);
+        this.mediaInputs.push(mediaInput);
+        this.advancedInputsContainer.appendChild(mediaInput.getElement());
     }
 
     draw(timeMs) {
@@ -2001,7 +2019,7 @@ function handleFolderUpload(event) {
     reader.onload = async e => {
         newShaderSource = e.target.result;
         // cache the raw text
-        await resourceCache.putFragmentSrc(currentViewIndex, newShaderSource);
+        await resourceCache.putFragmentSrc(currentControlIndex, newShaderSource);
         await attemptApply();
     };
     reader.readAsText(shaderFile);
@@ -2011,10 +2029,10 @@ function handleFolderUpload(event) {
 
         // swap in the new control schema if we have it
         if (newSchemaData) {
-            applyControlSchema(currentViewIndex, newSchemaData, true);
+            applyControlSchema(currentControlIndex, newSchemaData, true);
         }
 
-        const success = await applyShader(currentViewIndex, newShaderSource, vertexShaderSource);
+        const success = await applyShader(currentControlIndex, newShaderSource, vertexShaderSource);
         if (!success) return;
         logMessage("Shader & schema updated and cached!");
     }
@@ -2088,18 +2106,18 @@ async function handleConfigsUpload(event) {
 }
 
 async function loadConfigDirectory(name) {
-    const active = shaderBuffers[currentViewIndex];
+    const active = shaderBuffers[currentControlIndex];
     const fragKey = `config;${name};fragmentSource`;
     const schemaKey = `config;${name};controlSchema`;
 
     const schema = await resourceCache.get(schemaKey);
     if (schema) {
-        applyControlSchema(currentViewIndex, schema, true);
+        applyControlSchema(currentControlIndex, schema, true);
     }
 
     const fragSrc = await resourceCache.get(fragKey);
     if (typeof fragSrc === 'string') {
-        const ok = applyShader(currentViewIndex, fragSrc, null);
+        const ok = applyShader(currentControlIndex, fragSrc, null);
         if (!ok) {
             logError(`❌ Failed to load ${name}`);
             return;
@@ -2107,10 +2125,10 @@ async function loadConfigDirectory(name) {
     }
 
     // rename the tab to the config name
-    active.setName(`${name} ${currentViewIndex + 1}`);
+    active.setName(`${name} ${currentControlIndex + 1}`);
     updateActiveViewUI();
 
-    logMessage(`✅ Loaded config "${name}" into tab ${currentViewIndex + 1}`);
+    logMessage(`✅ Loaded config "${name}" into tab ${currentControlIndex + 1}`);
 }
 
 //#endregion
@@ -2119,10 +2137,17 @@ async function loadConfigDirectory(name) {
 
 //#region render
 
+// populate with IDs of shaders to ignore rendering (generally used for high-resolution renders)
+document.shaderDenial = [];
+
 // TODO: only update shaders either in use or sampled by other shaders
 function updateAllShaderBuffers() {
-    shaderBuffers.forEach(sb => sb.draw(effectiveTime));
-}
+    shaderBuffers.forEach((sb, i) => {
+        if (document.shaderDenial.filter(n => n == i).length === 0) {
+            sb.draw(effectiveTime);
+        }
+    })
+};
 
 function render(time) {
     if (lastFrameTime === 0) lastFrameTime = time;
