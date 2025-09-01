@@ -55,7 +55,7 @@ And then get a little artsy with it
       float th = abs(uv.x)*2.;
       vec3 phase = (vec3(0.,1.,2.)/6.*3.14+abs(uv.x)*3.14*10.-3.14/3.)*3.;
 
-      float bend = mix( 1.,.1 ,abs(uv.x)*2.); // offset to amplitude
+      float bend = mix( 1.,.25 ,abs(uv.x)*2.); // offset to amplitude
       float amp = cos(uv.y*3.14*20.*bend);
 
       float wavelength = 1.;
@@ -64,17 +64,36 @@ And then get a little artsy with it
   }
 #+END_SRC
 
-#+RESULTS: sin-2
-[[file:./static/sin-2.png]]
+#+NAME: sin-2-1
+#+BEGIN_SRC glsl :file ./static/sin-2-1.png :width 1080 :height 566 :exports both
+  void main() {
+      vec2 r = vec2(.5,1./3.);
+      vec2 uv = (gl_FragCoord.xy - r*iResolution.xy) / iResolution.xy;
+      if (uv.y<0.) uv.y *= r.x/r.y;
+      float th = abs(uv.y)*2.;
+      vec3 phase = (-vec3(0.,1.,2.)/6.*3.14+abs(uv.y)*3.14*10.+3.1415926/3.*1.25)*3.;
+
+      float bend = mix(.5,.7 ,abs(uv.y)*2.); // offset to amplitude
+      // float bend = mix( 1.,.25 ,abs(uv.y)*2.); // offset to amplitude
+      float amp = cos(uv.x*3.14*20.*bend);
+
+      float wavelength = 1.;
+      vec3 c = amp * sin((th*3.14*2. - phase) / wavelength);
+      fragColor = vec4(.5+.5*c, 1.);
+  }
+#+END_SRC
+
+#+RESULTS: sin-2-1
+[[file:./static/sin-2-1.png]]
 
 #+NAME: sin-3
 #+BEGIN_SRC glsl :file ./static/sin-3.png :width 1080 :height 566 :exports both
   void main() {
       vec2 uv = (gl_FragCoord.xy - vec2(.5,.55)*iResolution.xy) / iResolution.xy;
       float th = abs(uv.x)*2.;
-      vec3 phase = (vec3(0.,1.,2.)/6.*3.14+abs(uv.x)*3.14*10.-3.14/3.)*3.;
 
-      float bend = mix( 1.,.1 ,abs(uv.y)*2.); // offset to amplitude
+      vec3 phase = (-vec3(0.,1.,2.)/6.*3.14+abs(uv.x)*3.14*10.-3.14/3.)*3.;
+      float bend = mix( 1.,.25 ,abs(uv.y)*2.); // offset to amplitude
       float amp = cos(abs(uv.x)*3.14*20.*bend + 3.14);
 
       float wavelength = 1.;
