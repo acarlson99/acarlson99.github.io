@@ -70,17 +70,25 @@ And then get a little artsy with it
 #+NAME: sin-2-1
 #+BEGIN_SRC glsl :file ./static/sin-2-1.png :width 1080 :height 566 :exports both
   void main() {
-      vec2 r = vec2(.5,1./3.);
+      vec2 r = vec2(.5,.525);
       vec2 uv = (gl_FragCoord.xy - r*iResolution.xy) / iResolution.xy;
-    vec2 uvo = uv;
-  // TODO: adjust phase for top/bottom bits
       if (uv.y<0.) uv.y *= r.x/r.y;
-      float th = abs(uv.y)*2.;
-      vec3 phase = (-vec3(0.,1.,2.)/6.*3.14*mix(1.,0.2,pow(1.-(abs(uv.y)*r.x/r.y),2.))+abs(uv.y)*3.14*10.+3.1415926/3.*1.25)*3.;
+      else uv.y /= r.x/r.y;
+      float nCells = 10.;
 
-      float bend = mix(.5,.8,abs(uv.y)*2.); // offset to amplitude
-      // float bend = mix( 1.,.25 ,abs(uv.y)*2.); // offset to amplitude
-      float amp = cos(uv.x*3.14*20.*bend);
+      float th = abs(uv.y)*2.;
+      vec3 phase = (
+          vec3(0.,1.,2.)/6.*3.14*abs(uv.y)*2.*mix(.8,1.2,abs(uv.x)*2.)
+          +abs(uv.y)*3.14*nCells
+          +3.1415926/3.*.5
+          )*3.;
+
+      float pw = 1.-pow(1.-abs(uv.y*2.),2.);
+      float amp = cos(
+          uv.x*3.14*2.*10.
+          /mix(0.334,1.,abs(uv.y)) // perspective
+          )*(.5+.5*pw)// distance fog
+          ;
 
       float wavelength = 1.;
       vec3 c = amp * sin((th*3.14*2. - phase) / wavelength);
