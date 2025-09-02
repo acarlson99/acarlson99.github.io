@@ -1,4 +1,5 @@
 #+HTML_HEAD: <link rel="stylesheet" type="text/css" href="style.css">
+#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="blog.css">
 #+HTML_HEAD: <style>img { max-width: 25vw; max-height: 25vw; }</style>
 
 this is a work in progress
@@ -27,6 +28,87 @@ https://en.wikipedia.org/wiki/Waveform
 
 #+RESULTS: sin
 [[file:./static/sin.png]]
+
+Now we can do a fun trick to create a gradient
+
+#+NAME: sin-gradient
+#+BEGIN_SRC glsl :file ./static/sin-gradient.png :width 1080 :height 566 :exports both
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / iResolution.xy;
+      float th = uv.x;
+
+      vec3 phase = (vec3(0.,1.,2.)/6.*3.14-3.14/3.)*3.;
+
+      float amp = 1.;
+      float wavelength = 1.;
+      vec3 c = amp * sin((th*3.14*2. - phase) / wavelength);
+      fragColor = vec4(.5+.5*c, 1.);
+  }
+#+END_SRC
+
+And then get a little artsy with it
+
+#+NAME: sin-2
+#+BEGIN_SRC glsl :file ./static/sin-2.png :width 1080 :height 566 :exports both
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - vec2(.5,.55)*iResolution.xy) / iResolution.xy;
+      float th = abs(uv.x)*2.;
+      vec3 phase = (vec3(0.,1.,2.)/6.*3.14+abs(uv.x)*3.14*10.-3.14/3.)*3.;
+
+      float bend = mix( 1.,.25 ,abs(uv.x)*2.); // offset to amplitude
+      float amp = cos(uv.y*3.14*20.*bend);
+
+      float wavelength = 1.;
+      vec3 c = amp * sin((th*3.14*2. - phase) / wavelength);
+      fragColor = vec4(.5+.5*c, 1.);
+  }
+#+END_SRC
+
+#+RESULTS: sin-2
+[[file:./static/sin-2.png]]
+
+#+NAME: sin-2-1
+#+BEGIN_SRC glsl :file ./static/sin-2-1.png :width 1080 :height 566 :exports both
+  void main() {
+      vec2 r = vec2(.5,1./3.);
+      vec2 uv = (gl_FragCoord.xy - r*iResolution.xy) / iResolution.xy;
+    vec2 uvo = uv;
+  // TODO: adjust phase for top/bottom bits
+      if (uv.y<0.) uv.y *= r.x/r.y;
+      float th = abs(uv.y)*2.;
+      vec3 phase = (-vec3(0.,1.,2.)/6.*3.14*mix(1.,0.2,pow(1.-(abs(uv.y)*r.x/r.y),2.))+abs(uv.y)*3.14*10.+3.1415926/3.*1.25)*3.;
+
+      float bend = mix(.5,.8,abs(uv.y)*2.); // offset to amplitude
+      // float bend = mix( 1.,.25 ,abs(uv.y)*2.); // offset to amplitude
+      float amp = cos(uv.x*3.14*20.*bend);
+
+      float wavelength = 1.;
+      vec3 c = amp * sin((th*3.14*2. - phase) / wavelength);
+      fragColor = vec4(.5+.5*c, 1.);
+  }
+#+END_SRC
+
+#+RESULTS: sin-2-1
+[[file:./static/sin-2-1.png]]
+
+#+NAME: sin-3
+#+BEGIN_SRC glsl :file ./static/sin-3.png :width 1080 :height 566 :exports both
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - vec2(.5,.55)*iResolution.xy) / iResolution.xy;
+      float th = abs(uv.x)*2.;
+
+      vec3 phase = (-vec3(0.,1.,2.)/6.*3.14+abs(uv.x)*3.14*10.-3.14/3.)*3.;
+      float bend = mix( 1.,.25 ,abs(uv.y)*2.); // offset to amplitude
+      float amp = cos(abs(uv.x)*3.14*20.*bend + 3.14);
+
+      float wavelength = 1.;
+      vec3 c = amp * sin((th*3.14*2. - phase) / wavelength);
+      fragColor = vec4(.5+.5*c, 1.);
+  }
+#+END_SRC
+
+#+RESULTS: sin-3
+[[file:./static/sin-3.png]]
 
 ** Square
 
@@ -83,13 +165,415 @@ https://en.wikipedia.org/wiki/Waveform
 
 * Colors
 
-TODO: invert, HSV/RGB conversions
+** conversions
+
+*** hsv
+
+Adaption of https://en.wikipedia.org/wiki/HSL_and_HSV#HSV_to_RGB_alternative
+
+#+NAME: hsv-conversion-fns
+#+BEGIN_SRC glsl :file /dev/null :exports code
+
+  #ifndef HSV_CONVERSION_FNS
+  #define HSV_CONVERSION_FNS
+
+  #define PI 3.141592653589
+
+  vec3 hsv2rgb(vec3 hsv){
+      vec3 k = mod(vec3(5.,3.,1.) + (hsv[0]*6.), 6.);
+      return hsv[2] - hsv[2]*hsv[1]*clamp(min(k,4.-k),vec3(0.),vec3(1.));
+  }
+
+  vec3 rgb2hsv(vec3 c) {
+  #define R c.r
+  #define G c.g
+  #define B c.b
+      float V = max(max(R,G),B);
+      float VmC = min(min(R,G),B);
+      // V-C = x
+      // V-C-x = 0
+      // V-x = C
+      float C = V- VmC;
+      // C = 2(V-L)
+      // C = 2V - 2L
+      // C + 2L = 2V
+      // 2L = 2V - C
+      float L = V - (C/2.);
+
+      float H;
+      float eps = 0.000001; // a small number
+      if (abs(C) < eps) {
+          H=0.;
+      } else if (abs(V-R) < eps) {
+          H = mod((G-B)/C, 6.);
+      } else if (abs(V-G) < eps) {
+          H = (B-R)/C + 2.;
+      } else if (abs(V-B) < eps) {
+          H = (R-G)/C + 4.;
+      }
+	H/=6.;
+
+      float S = 0.;
+      if (abs(V)>eps) S = C/V;
+
+  #undef R
+  #undef G
+  #undef B
+
+      return vec3(H,S,V);
+  }
+
+  #endif
+#+END_SRC
+
+If there are 3 colors we want to mix in 6 permutations:
+
+| 1 | 0 | 0 |
+| 1 | 1 | 0 |
+| 0 | 1 | 0 |
+| 0 | 1 | 1 |
+| 0 | 0 | 1 |
+| 1 | 0 | 1 |
+
+then `hue` can be calculated by splitting the value into 6 sections, then choosing 2 colors for each section
+
+Saturation and Value represent how black/white the color looks.  These essentially move the max and min values for each color
+
+This wikipedia example illustrates this quite intuitively:
+
+https://upload.wikimedia.org/wikipedia/commons/5/5d/HSV-RGB-comparison.svg
+
+Given the above definitions we can manupulate colors thusly
+
+#+NAME: hsv-colorspace-demo
+#+BEGIN_SRC glsl :file ./static/hsv-colorspace-demo.png :width 1080 :height 1080 :exports both :noweb no-export :noweb-prefix no
+  // <<hsv-conversion-fns>>
+
+  void main() {
+      vec2 uv = gl_FragCoord.xy / iResolution.xy;
+      vec2 uvz = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
+
+      float oh = sin(uv.x*PI*2.);
+      float a = atan(uvz.y,uvz.x)-oh*.05*PI*2.;
+
+      float y = uv.y+oh*.05;
+      vec3 col = vec3(0.);
+      // top color
+      vec3 hsv1 = vec3(
+          a/2./PI,                      // radial hue
+          smoothstep(0.25,.5,y),  // fade in from white below
+          1.-smoothstep(.5,1.1,y) // fade out to black above
+          );
+      // bottom color
+      vec3 hsv2 = vec3(
+          ((uv.x+oh*.1)*PI*2. + PI/2.)/2./PI, // hue shifts horizontally
+          1.-smoothstep(-.1,.35,y),   // fade out to white above
+          smoothstep(-.1,.2,y)        // fade in from black below
+          );
+
+      vec3 c1 = hsv2rgb(hsv1);
+      vec3 c2 = hsv2rgb(hsv2);
+      float sqsc = 6.;
+      float wav = sin(y*2.*PI*sqsc+PI/2)*sin(uv.x*2.*PI*sqsc);
+      float wav2 = sin(y*2.*PI*sqsc*3.+PI/2)*sin(uv.x*2.*PI*sqsc*3.);
+
+      //wav = sin(a*6+sin(length(uvz)*PI*6.*2.)*PI+length(uvz)*PI*2.*6.);
+
+      // add a couple neat little effects
+      float blur = 0.25;
+
+  // shift hue a tad
+  #define EFFECT1(C) C = mix(						\
+          hsv2rgb(rgb2hsv(C)+vec3(-.05,0.,0.)),	\
+          C,										\
+          smoothstep(-blur,blur,wav));
+  // desaturate slightly
+  #define EFFECT2(C) C = mix(						\
+          hsv2rgb(rgb2hsv(C)*vec3(1.,.7,.8)),		\
+          C,										\
+          smoothstep(-blur,blur,wav));
+
+      EFFECT1(c1);
+      EFFECT2(c2);
+
+      col = mix(c2,c1,smoothstep(.2,.25,y));
+
+      fragColor = vec4(col,1.0);
+  }
+#+END_SRC
+
+*** hsl
+
+TODO: this
+
+*** srgb
+
+Based on https://en.wikipedia.org/wiki/SRGB#Transfer_function_(%22gamma%22)
+
+#+NAME: srgb-conversion-fns
+#+BEGIN_SRC glsl :file /dev/null :exports code
+
+  #ifndef RGB_CONVERSION_FNS
+  #define RGB_CONVERSION_FNS
+
+  // ---------- sRGB <-> linear RGB ("RGB") -------------------------------------
+  // from https://en.wikipedia.org/wiki/SRGB#Transfer_function_(%22gamma%22)
+
+  float srgb2rgb(float c)  {
+      return (c <= 0.04045) ? (c/12.92) : pow((c+0.055)/1.055, 2.4);
+  }
+  vec3  srgb2rgb(vec3  c)  {
+      return vec3(srgb2rgb(c.r), srgb2rgb(c.g), srgb2rgb(c.b));
+  }
+  float rgb2srgb(float c)  {
+      // inverse of above
+      return (c <= 0.0031308) ? (12.92*c) : (1.055*pow(c, 1.0/2.4) - 0.055);
+  }
+  vec3  rgb2srgb(vec3  c)  {
+      return vec3(rgb2srgb(c.r), rgb2srgb(c.g), rgb2srgb(c.b));
+  }
+
+  #endif
+#+END_SRC
+
+#+NAME: srgb-colorspace-demo
+#+BEGIN_SRC glsl :file ./static/srgb-colorspace-demo.png :width 1080 :height 1080 :exports both :noweb no-export :noweb-prefix no
+      // <<srgb-conversion-fns>>
+      // <<hsv-conversion-fns>>
+
+      void main() {
+          vec2 uv = gl_FragCoord.xy / iResolution.xy;
+          vec2 uvz = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
+
+          vec3 top = hsv2rgb(vec3(uv.x,1.,1.));
+          vec3 bottom = rgb2srgb(top);
+          vec3 col = mix(bottom,top,step(0.,uvz.y));
+
+          fragColor = vec4(col,1.0);
+      }
+#+END_SRC
+
+Comparing linear RGB (top) to the gamma-corrected sRGB (bottom) gradient we can observe a more visually consistent lightness
+
+*** oklab
+
+Implementation based on https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab
+
+#+NAME: oklab-conversion-fns
+#+BEGIN_SRC glsl :file /dev/null :exports code :noweb no-export :noweb-prefix no
+
+  #ifndef OKLAB_CONVERSION_FNS
+  #define OKLAB_CONVERSION_FNS
+
+  // <<srgb-conversion-fns>>
+
+  // --- linear RGB <-> OKLab (Björn Ottosson reference implementation) ---
+
+  float cbrt(float x) {
+      return pow(x, 1./3.);
+  }
+
+  vec3 linear2oklab(vec3 c) {
+      // linear sRGB -> LMS
+      float l = 0.4122214708*c.r + 0.5363325363*c.g + 0.0514459929*c.b;
+      float m = 0.2119034982*c.r + 0.6806995451*c.g + 0.1073969566*c.b;
+      float s = 0.0883024619*c.r + 0.2817188376*c.g + 0.6299787005*c.b;
+
+      // nonlinearity
+      float l_ = cbrt(l);
+      float m_ = cbrt(m);
+      float s_ = cbrt(s);
+
+      // LMS -> OKLab
+      return vec3(
+          0.2104542553*l_ + 0.7936177850*m_ - 0.0040720468*s_,
+          1.9779984951*l_ - 2.4285922050*m_ + 0.4505937099*s_,
+          0.0259040371*l_ + 0.7827717662*m_ - 0.8086757660*s_
+          );
+  }
+
+  vec3 oklab2linear(vec3 c) {
+      // OKLab -> intermediate LMS'
+      float l_ = c.x + 0.3963377774*c.y + 0.2158037573*c.z;
+      float m_ = c.x - 0.1055613458*c.y - 0.0638541728*c.z;
+      float s_ = c.x - 0.0894841775*c.y - 1.2914855480*c.z;
+
+      // undo nonlinearity
+      float l = l_*l_*l_;
+      float m = m_*m_*m_;
+      float s = s_*s_*s_;
+
+      // LMS -> linear sRGB
+      return vec3(
+          +4.0767416621*l - 3.3077115913*m + 0.2309699292*s,
+          -1.2684380046*l + 2.6097574011*m - 0.3413193965*s,
+          -0.0041960863*l - 0.7034186147*m + 1.7076147010*s
+          );
+  }
+
+  // --- sRGB (display) <-> OKLab convenience wrappers ---
+
+  vec3 srgb2oklab(vec3 srgb) {
+      return linear2oklab( srgb2rgb(srgb) ); // gamma → linear → OKLab
+  }
+
+  vec3 oklab2srgb(vec3 lab) {
+      return rgb2srgb( oklab2linear(lab) ); // OKLab → linear → gamma
+  }
+
+  #endif
+#+END_SRC
+
+*** oklch
+
+#+NAME: oklch-conversion-fns
+#+BEGIN_SRC glsl :file /dev/null :exports code :noweb no-export :noweb-prefix no
+
+  #ifndef OKLCH_CONVERSION_FNS
+  #define OKLCH_CONVERSION_FNS
+
+  // <<oklab-conversion-fns>>
+
+  // TODO: verify that oklab and oklch implementations are as expected-- I might be mixing them up
+  // --- OKLAB <-> OKLCH
+  vec3 oklab2oklch(vec3 lab){
+      float C = length(lab.yz);
+      float h = atan(lab.z, lab.y); if(h < 0.0) h += 2.0*PI;
+      return vec3(lab.x, C, h);
+  }
+  vec3 oklch2oklab(vec3 lch){
+      return vec3(lch.x, lch.y*cos(lch.z), lch.y*sin(lch.z));
+  }
+  vec3 oklch2linear(vec3 oklch) {
+      return oklab2linear(oklch2oklab(oklch));
+  }
+  vec3 linear2oklch(vec3 linear) {
+      return oklab2oklch(linear2oklab(linear));
+  }
+
+  #endif
+#+END_SRC
+
+** demos
+
+see xorDev post https://twitter.com/XorDev/status/1730330783892574668
+
+#+NAME: color-mix
+#+BEGIN_SRC glsl :file ./static/color-mix-shader-out.png :width (* 2. 1080) :height 1080 :exports both :noweb no-export :noweb-prefix no
+  // <<hsv-conversion-fns>>
+  // <<srgb-conversion-fns>>
+  // <<oklab-conversion-fns>>
+  // <<oklch-conversion-fns>>
+
+  void main() {
+      vec2 uv = gl_FragCoord.xy / iResolution.xy;
+      vec2 uvz = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
+
+      vec3 col = vec3(1.,1.,1.);
+
+      float a = atan(uvz.y,uvz.x);
+
+      vec3 ca = vec3(1.,1.,0.);
+      vec3 cb = vec3(0.,0.,1.);
+
+      float nbands = 5.;
+      int band = int(nbands-ceil(uv.y*nbands));
+  #define CONV(V,F) V = F(V)
+      switch (band) {
+      case 0: // linear
+          break;
+      case 1: // srgb (gamma corrected)
+          CONV(ca, rgb2srgb);
+          CONV(cb, rgb2srgb);
+          break;
+      case 2: // oklab
+          CONV(ca, linear2oklab);
+          CONV(cb, linear2oklab);
+          break;
+      case 3: // oklch
+          CONV(ca, linear2oklch);
+          CONV(cb, linear2oklch);
+          break;
+      case 4: // hsv
+          CONV(ca, rgb2hsv);
+          CONV(cb, rgb2hsv);
+          break;
+      }
+
+      float n = 10.;
+      col = mix(ca,cb, floor(uv.x*n)/(n-1.));
+
+      switch (band) {
+      case 0: // linear
+          break;
+      case 1: // srgb (gamma corrected)
+          CONV(col, srgb2rgb);
+          break;
+      case 2: // oklab
+          CONV(col, oklab2linear);
+          break;
+      case 3: // oklch
+          CONV(col, oklch2linear);
+          break;
+      case 4: // hsv
+          CONV(col, hsv2rgb);
+          break;
+      }
+
+      // TODO: make an oklch hsl comparison shader
+      //   could do a ring around the middle with white at the center and black at edges and hue set to atan
+      // col = oklch2linear(vec3(.75, .1, atan(uvz.y,uvz.x)));
+      // if (length(uvz)>.2) col = hsv2rgb(vec3(atan(uvz.y,uvz.x), 1.,1.));
+
+      fragColor = vec4(col,1.0);
+  }
+#+END_SRC
+
+#+RESULTS: color-mix
+[[file:./static/color-mix-shader-out.png]]
+
+#+NAME: color-mix-cmp-1
+#+BEGIN_SRC glsl :file ./static/color-mix-shader-out-whaa.png :width 1080 :height 1080 :exports both :noweb no-export :noweb-prefix no
+  // <<hsv-conversion-fns>>
+  // <<srgb-conversion-fns>>
+  // <<oklab-conversion-fns>>
+  // <<oklch-conversion-fns>>
+
+  // -----------------------------------------------------------------------------
+
+  #define CONV(V,F) V = F(V)
+
+  void main() {
+      vec2 uv = gl_FragCoord.xy / iResolution.xy;
+      vec2 uvz = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
+
+      vec3 col = vec3(1.,1.,1.);
+
+      vec3 ca = oklch2linear(vec3(1., length(uvz), atan(uvz.y,uvz.x)));
+      vec3 cb = hsv2rgb(vec3(atan(uvz.y,uvz.x)/2./PI, length(uvz)*2., 1.));
+
+      float a = atan(uvz.y,uvz.x);
+
+      float wav = sin(a*6+sin(length(uvz)*PI*6.*2.)*PI+length(uvz)*PI*2.*6.);
+      float blur = fwidth(wav+.5);
+      col = mix(ca,cb,smoothstep(-blur,blur,wav));
+
+      fragColor = vec4(col,1.0);
+  }
+#+END_SRC
+
+#+RESULTS: color-mix-cmp-1
+[[file:./static/color-mix-shader-out-whaa.png]]
 
 * Illusions
 
 ** Peripheral Drift
 
+Rapid blinking usually intensifies the effect
+
 https://en.wikipedia.org/wiki/Peripheral_drift_illusion
+
+*** Radial example
 
 #+NAME: peripheral drift
 #+BEGIN_SRC glsl :file ./static/peripheral-drift.png :width 1000 :height 1000 :exports both
@@ -116,7 +600,6 @@ https://en.wikipedia.org/wiki/Peripheral_drift_illusion
       col = mix(outlineCol, vec3(0.9,.8,.9), d1);
       col = mix(vec3(.5), col, d2);
 
-      // Output to screen
       fragColor = vec4(col,1.0);
   }
 #+END_SRC
@@ -124,11 +607,13 @@ https://en.wikipedia.org/wiki/Peripheral_drift_illusion
 #+RESULTS: peripheral drift
 [[file:./static/peripheral-drift.png]]
 
+*** Contrasting colors strengthen the effect
+
+Cololrs based on wikipedia [[https://en.wikipedia.org/wiki/Peripheral_drift_illusion#/media/File:Anomalous_motion_illusion1.svg][example]] by Paul Nasca
+
 #+NAME: peripheral drift 2
 #+BEGIN_SRC glsl :file ./static/peripheral-drift-2.png :width 1000 :height 1000 :exports both
   #define PI (355./113.)
-
-  mat2 rot(float t) { return mat2(cos(t),-sin(t),sin(t),cos(t)); }
 
   void main()
   {
@@ -163,7 +648,6 @@ https://en.wikipedia.org/wiki/Peripheral_drift_illusion
           d2
           );
 
-      // Output to screen
       fragColor = vec4(col,1.0);
   }
 #+END_SRC
@@ -171,21 +655,25 @@ https://en.wikipedia.org/wiki/Peripheral_drift_illusion
 #+RESULTS: peripheral drift 2
 [[file:./static/peripheral-drift-2.png]]
 
+*** Throbert
+
+Lots of album covers use this kind of throbbing effect
+
 #+NAME: peripheral drift 3
 #+BEGIN_SRC glsl :file ./static/peripheral-drift-3.png :width 1000 :height 1000 :exports both
   #define PI (355./113.)
-
-  mat2 rot(float t) { return mat2(cos(t),-sin(t),sin(t),cos(t)); }
 
   void main()
   {
       vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
 
-      // Time varying pixel color
       float a = atan(uv.x,uv.y);
-      vec3 col = vec3(0.)+ cos(vec3(0.,.75,1.5)+(sin(a*8.)*PI+length(uv)*PI*16.*1.) * sin(a*8.+PI/2.))*.5+.5;
+      vec3 col = cos(
+          vec3(0.,.75,1.5)
+          +(sin(a*8.)*PI+length(uv)*PI*16.*1.)
+          * sin(a*8.+PI/2.)
+          )*.5+.5;
 
-      // Output to screen
       fragColor = vec4(col,1.0);
   }
 #+END_SRC

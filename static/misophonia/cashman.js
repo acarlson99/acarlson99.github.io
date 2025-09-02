@@ -1,4 +1,4 @@
-class CacheManager {
+export default class CacheManager {
     constructor(dbName, storeName, dbVersion = 1) {
         this.dbName = dbName;
         this.storeName = storeName;

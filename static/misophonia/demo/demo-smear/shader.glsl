@@ -3,27 +3,36 @@
 uniform float u_dropoff;
 uniform float u_intensity;
 uniform vec2 u_direction;
+uniform bool u_sameDirection;
+uniform bool u_invertDirection;
+uniform bool u_useNormalMap;
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   vec2 uv = fragCoord.xy / iResolution.xy;
-  // uv.x *= iResolution.x / iResolution.y;
 
-  // Get previous frame (feedback)
-  vec4 lastFrame = texture(iChannel0, uv);
+  vec4 normalMap = texture(iChannel2, uv);
 
-  // Get base image
+  vec2 dir = normalize(u_direction);
+  if (u_sameDirection)
+    dir = normalize(u_direction - uv);
+
+  // smear in direction
+  // or perchance use a normal map??
+  if (u_useNormalMap) {
+    vec4 normalMap = texture(iChannel2, uv);
+    vec3 normal = normalize(normalMap.rgb * 2.0 - 1.0);
+    dir = normalize(normal.xy);
+  }
+
+  if (u_invertDirection)
+    dir *= -1.;
+
+  vec2 offset = dir * u_intensity;
+
+  vec4 smeared = texture(iChannel0, uv + offset);
+
   vec4 baseImage = texture(iChannel1, uv);
+  baseImage *= (sin(iTime * PI * 2. * 2.) * .5 + .5);
 
-  // Smear UVs slightly based on some function (e.g., random noise or offset)
-  vec2 offset = vec2(0.01, 0.0); // slight right smear
-  // offset =
-  // vec2(cos(iTime-atan(uv.x,uv.y)*2.),sin(iTime+atan(uv.x,uv.y)))*0.01;
-  offset = normalize(u_direction) * u_intensity;
-  // TODO: only "offset" sections matching some pattern/outline maybe?
-  // basically, sample a monochrome depth map texture
-  vec4 smeared = texture(iChannel0, uv - offset);
-  smeared = 1. - ((1. - baseImage) * (1. - smeared));
-
-  // Blend base image and smeared frame
-  fragColor = mix(smeared, baseImage, u_dropoff); // 0.95 = strong smear
+  fragColor = mix(smeared, baseImage, u_dropoff);
 }

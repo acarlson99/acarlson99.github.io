@@ -1,5 +1,6 @@
 import TinySDF from 'https://cdn.skypack.dev/@mapbox/tiny-sdf';
-import CacheManager from "./cashman.js"
+import CacheManager from "./cashman.js";
+import * as lisp from "./lisp.js";
 
 const tinySdf = new TinySDF({
     fontSize: 24,             // Font size in pixels
@@ -53,8 +54,8 @@ const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipl
 if (!gl) alert('WebGL is not supported by your browser.');
 
 // variables
-const devMode = document.URL.startsWith('http://localhost');
-const MAX_TEXTURE_SLOTS = 4;
+const devMode = document.URL.startsWith('http://localhost') || document.URL.startsWith('http://127.0.0.1');
+const MAX_TEXTURE_SLOTS = 8;
 const maxLines = 100;
 const outputMessages = [];
 let currentViewIndex = parseInt(localStorage.getItem('currentViewIndex') || '0');
@@ -231,7 +232,7 @@ const logError = (...args) => { logMessage('ERROR:', ...args); LOG('ERROR:', ...
 
 // Helpers
 const mix = (a, b, t) => a * (1 - t) + b * t;
-const isPowerOf2 = v => (v & (v - 1)) === 0;
+const isPowerOf2 = v => Number.isInteger(v) && v > 0 && (v & (v - 1)) === 0;
 function hexToRgb(hex) {
     hex = hex.replace(/^#/, '');
     if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
@@ -283,7 +284,6 @@ class Uniforms {
         if (this.timeLocation) gl.uniform1f(this.timeLocation, timeMs * 0.001);
         if (this.resolutionLocation) gl.uniform2f(this.resolutionLocation, res.width, res.height);
         this.bindSampledTextures(sampleMedia);
-        glyphSDF.bind(this.uGlyphLoc, this.uGlyphSizeLoc);
         gl.uniform2f(this.uAtlasSizeLoc, fontAtlas.atlasSize.w, fontAtlas.atlasSize.h);
         gl.uniform2f(this.uCellSizeLoc, fontAtlas.cellSize.w, fontAtlas.cellSize.h);
         fontAtlas.bind(this.uSamplerLoc);
@@ -329,10 +329,7 @@ class Uniforms {
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
                 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-                gl.texImage2D(
-                    gl.TEXTURE_2D, 0, gl.LUMINANCE, dataArray.length, 1, 0,
-                    gl.LUMINANCE, gl.UNSIGNED_BYTE, dataArray
-                );
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, dataArray.length, 1, 0, gl.RED, gl.UNSIGNED_BYTE, dataArray);
                 gl.uniform1i(textureLocation, 2 + i);
             } else if (media.type === Media.ImageT) {
                 gl.bindTexture(gl.TEXTURE_2D, this.sampleTextures[i]);
@@ -360,11 +357,13 @@ class Uniforms {
      * @param {Object} customVals mapping of uniforms to values
      */
     updateCustomValues(customVals) {
+        let errs = 0;
         for (let name in customVals) {
             const value = customVals[name];
             const loc = this.customLocations[name];
             if (loc === null) {
                 console.warn(`uniform ${name} has no corresponding location`);
+                errs++;
                 continue;
             }
             if (typeof value === 'number') {
@@ -385,16 +384,20 @@ class Uniforms {
                 console.warn(value, loc, name);
             }
         }
+        return errs;
     }
 
     /**
+     * binds time, resolution, custom uniforms, and media to program
      * @param {Number} timeMs
      * @param {{width:Number,height:Number}} resolution
      * @param {[Media]} media
      */
     updateValues(timeMs, resolution, customUniformValues, media) {
-        if (customUniformValues) this.updateCustomValues(customUniformValues);
+        let errs = 0;
+        if (customUniformValues) errs = this.updateCustomValues(customUniformValues);
         this.updateBuiltinValues(timeMs, resolution, media);
+        return errs;
     }
 
     /** @param {[String]} names is a list of uniform names **/
@@ -659,6 +662,9 @@ function createUrlForm(callback) {
 
 class MediaInput {
     // handles media UI
+    /** 
+     * @param {ShaderBuffer} shaderBuffer
+     */
     constructor(shaderBuffer, shaderIndex, slotIndex) {
         this.shaderBuffer = shaderBuffer;
         this.shaderIndex = shaderIndex;
@@ -715,7 +721,7 @@ class MediaInput {
     }
 
     updateRequiredHighlight() {
-        const inputTexInfo = (this.shaderBuffer?.controlSchema?.inputs || [])[this.slotIndex] || {};
+        const inputTexInfo = (this.shaderBuffer?.getControlSchema()?.inputs || [])[this.slotIndex] || {};
         const isRequired = Boolean(inputTexInfo.required);
         this.container.style.backgroundColor = isRequired && !this.hasMedia() ? 'rgba(255, 0, 0, 0.2)' : '';
     }
@@ -725,6 +731,10 @@ class MediaInput {
     }
 
     resetMedia() {
+        this.getMedia()?.element?.srcObject?.getTracks()?.forEach(t => {
+            t.stop();
+            console.log(`stopping media track ${t}`);
+        });
         this.setMedia(null);
         this.clearPreview();
         resourceCache.deleteMedia(this.shaderIndex, this.slotIndex);
@@ -754,7 +764,6 @@ class MediaInput {
         } catch (err) {
             logError(`Error deleting ${resourceCache.mediaKey(this.shaderIndex, this.slotIndex)}:`, err);
         }
-        this.setMedia(null);
         this.resetMedia();
         logMessage(`Slot ${this.slotIndex} unassigned.`);
         this.sourceSelect.selectedIndex = 0;
@@ -902,6 +911,7 @@ class MediaInput {
     setMedia(desc) {
         this.shaderBuffer.setMediaSlot(this.slotIndex, desc);
     }
+    getMedia() { return this.shaderBuffer.getMediaSlot(this.slotIndex); }
     hasMedia() { return !!this.shaderBuffer.sampleMedia[this.slotIndex]; }
 
     setDescription(desc) {
@@ -1037,6 +1047,198 @@ class RenderTarget {
     }
 }
 
+//#region controls
+
+class Control {
+    /**
+     * @param {ShaderBuffer} shaderBuffer
+     * @param {number} id                        // index into schema.controls
+     * @param {Object} schemaControl             // the control schema entry
+     * @param {HTMLElement} inputEl              // the main DOM element for this control
+     * @param {HTMLElement} controlDiv           // wrapper div (optional)
+     */
+    constructor(shaderBuffer, id, schemaControl, inputEl, controlDiv) {
+        this.sb = shaderBuffer;
+        this.id = id;
+        this.schema = schemaControl;
+        this.el = inputEl;
+        this.wrapper = controlDiv;
+    }
+
+    /** Programmatically set value and sync both UI + uniform */
+    set(value) {
+        const { type, uniform } = this.schema;
+        const persist = () => saveControlState(this.sb);
+
+        const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+        const toBool = (val) => {
+            if (typeof val === 'string') {
+                const s = val.trim().toLowerCase();
+                if (['false', '0', 'off', 'no'].includes(s)) return false;
+                if (['true', '1', 'on', 'yes'].includes(s)) return true;
+            }
+            return !!val;
+        };
+
+        if (type === 'button') {
+            if (value) this.el.click();
+            return true;
+        }
+
+        if (type === 'toggle') {
+            const v = (value === undefined) ? this.el.checked : toBool(value);
+            this.el.checked = v;
+            this.sb.setCustomUniform(uniform, v);
+            persist();
+            return true;
+        }
+
+        if (type === 'slider' || type === 'knob') {
+            let v = (value === undefined) ? Number(this.el.value) : Number(value);
+            if (!isFinite(v)) v = this.schema.default ?? 0;
+            if (this.schema.min !== undefined && this.schema.max !== undefined) {
+                v = clamp(v, this.schema.min, this.schema.max);
+            }
+            this.el.value = String(v);
+            this.sb.setCustomUniform(uniform, v);
+            persist();
+            return true;
+        }
+
+        if (type === 'dropdown') {
+            const v = (value === undefined) ? String(this.el.value) : String(value);
+            if ([...this.el.options].some(o => o.value === v)) {
+                this.el.value = v;
+            }
+            this.sb.setCustomUniform(uniform, v);
+            persist();
+            return true;
+        }
+
+        if (type === 'text-input') {
+            const v = (value === undefined) ? String(this.el.value) : String(value);
+            this.el.value = v;
+            this.sb.setCustomUniform(uniform, v);
+            persist();
+            return true;
+        }
+
+        if (type === 'color-picker') {
+            const v = (value === undefined) ? String(this.el.value) : String(value);
+            this.el.value = v; // expected like "#rrggbb"
+            this.sb.setCustomUniform(uniform, v);
+            persist();
+            return true;
+        }
+
+        if (type === 'xy-plane') {
+            // Prefer explicit value; otherwise try current uniform; else default/min.
+            let vx, vy;
+
+            if (value && typeof value.x === 'number' && typeof value.y === 'number') {
+                vx = value.x; vy = value.y;
+            } else {
+                const cur = this.sb.getCustomUniform?.(uniform);
+                if (cur && typeof cur.x === 'number' && typeof cur.y === 'number') {
+                    vx = cur.x; vy = cur.y;
+                } else {
+                    const def = this.schema.default;
+                    const min = this.schema.min, max = this.schema.max;
+                    vx = (def?.x ?? min.x);
+                    vy = (def?.y ?? min.y);
+                }
+            }
+
+            // Clamp to domain if provided
+            const min = this.schema.min, max = this.schema.max;
+            if (min && max) {
+                vx = clamp(vx, min.x, max.x);
+                vy = clamp(vy, min.y, max.y);
+            }
+
+            // sync uniform
+            this.sb.setCustomUniform(uniform, { x: vx, y: vy });
+
+            const xy = this.el._xy; // set in renderControlsForShader
+            if (xy && xy.indicator && xy.containerRect && min && max) {
+                const nx = (vx - min.x) / (max.x - min.x);
+                const ny = (vy - min.y) / (max.y - min.y);
+                const left = nx * xy.containerRect.width;
+                const top = (1 - ny) * xy.containerRect.height;
+                xy.indicator.style.left = `${left}px`;
+                xy.indicator.style.top = `${top}px`;
+                if (xy.info) xy.info.innerText = `(${vx.toFixed(2)}, ${vy.toFixed(2)})`;
+            }
+            persist();
+            return true;
+        }
+
+        console.warn(`Control.set: unhandled control type "${type}"`);
+        return false;
+    }
+}
+
+class Controller {
+    /** Manage all controls for a single ShaderBuffer */
+    /** @param {ShaderBuffer} shaderBuffer */
+    constructor(shaderBuffer, schema) {
+        this.sb = shaderBuffer;
+        /** @type {Control[]} */
+        this.byId = [];
+
+        this.schema = schema;
+
+        this.container = document.createElement('div');
+        this.container.className = 'shader-control-panel';
+        document.getElementById('controls-container').appendChild(this.container);
+    }
+
+    /** @param {ShaderBuffer} shaderBuffer */
+    register(shaderBuffer) {
+        this.sb = shaderBuffer;
+    }
+
+    reset() {
+        this.byId.length = 0;
+    }
+
+    /**
+     * Register a control created by the renderer
+     * @param {number} id
+     * @param {Object} schemaControl
+     * @param {HTMLElement} inputEl
+     * @param {HTMLElement} controlDiv
+     */
+    register(id, schemaControl, inputEl, controlDiv) {
+        this.byId[id] = new Control(this.sb, id, schemaControl, inputEl, controlDiv);
+        // Tag DOM for debugging / external queries
+        inputEl.dataset.controlId = String(id);
+        return this.byId[id];
+    }
+
+    /**
+     * Programmatically set a control’s state (and update the UI)
+     * @param {number} id
+     * @param {any} value
+     */
+    setState(id, value) {
+        const c = this.byId[id];
+        if (!c) {
+            console.warn(`Controller.setState: no control with id ${id}`);
+            return false;
+        }
+        return c.set(value);
+    }
+
+    refreshValues() {
+        this.byId.forEach(c => c.set(undefined));
+    }
+}
+
+//#endregion
+
+//#region buffer
+
 class ShaderBuffer {
     /**
      * @param {String} name
@@ -1058,18 +1260,10 @@ class ShaderBuffer {
 
         this.uniforms = new Uniforms();
 
-        // TODO: instead of assigning media to sampleMedia slots this should provide a way to easily assign media
         this.sampleMedia = new Array(MAX_TEXTURE_SLOTS).fill(null);
         this.customUniforms = {};
         this.clearCustomUniforms();
-
         if (program) this.setProgram(program);
-        console.log(`setting control schema to`, controlSchema);
-        this.setControlSchema(controlSchema);
-
-        this.controlContainer = document.createElement('div');
-        this.controlContainer.className = 'shader-control-panel';
-        document.getElementById('controls-container').appendChild(this.controlContainer);
 
         this.advancedInputsContainer = document.createElement('div');
         this.advancedInputsContainer.className = 'advanced-inputs-container';
@@ -1079,8 +1273,17 @@ class ShaderBuffer {
         this.mediaInputs = [];
         this.shaderIndex = shaderIndex;
 
+        /**
+         * @type {Controller}
+         */
+        this.controller = new Controller(this, controlSchema);
+        this.controller.reset();
+        this.setControlSchema(controlSchema);
+
         if (this.program) this.updateUniformLocations();
     }
+
+    getControlSchema() { return this.controller?.schema; }
 
     restart() {
         this.sampleMedia.forEach(media => {
@@ -1096,14 +1299,14 @@ class ShaderBuffer {
     }
 
     restoreDefaults() {
+        this.setControlSchema(defaultControlSchema);
+
         const defaultProgram = new ShaderProgram(vertexShaderSource, fragmentShaderSource, gl);
         this.setProgram(defaultProgram);
 
-        this.setControlSchema(defaultControlSchema);
-
         this.sampleMedia.fill(null);
         this.mediaInputs.forEach((input) => input?.resetMedia?.());
-        renderControlsForShader(this, this.controlSchema);
+        renderControlsForShader(this, this.getControlSchema());
 
         const shaderIndex = shaderBuffers.indexOf(this);
         resourceCache.deleteFragmentSrc(shaderIndex);
@@ -1130,27 +1333,34 @@ class ShaderBuffer {
     /** @param {ShaderProgram} p */
     setProgram(p) {
         const prog = p.compile();
-        if (!prog) return false;
+        if (!prog) {
+            logError(`Error setting buffer ${this.name}`);
+            return false;
+        }
         this.clearCustomUniforms();
         this.program = p;
-        this.shaderProgram = prog;
         this.updateUniformLocations();
-        if (this.controlContainer) renderControlsForShader(this, this.controlSchema);
         return true;
     }
 
     setMediaSlot(idx, desc) {
         this.sampleMedia[idx] = desc;
     }
+    getMediaSlot(idx) { return this.sampleMedia[idx]; }
 
     updateUniformLocations() {
-        const us = this.controlSchema?.controls?.map((o) => o.uniform);
+        const us = this.getControlSchema()?.controls?.map((o) => o.uniform);
+        // if (!us) console.warn(`uniforms not defined for some reason for shader ${this.name}`);
         this.uniforms.updateLocations(this.program.program, us);
     }
 
     setCustomUniform(k, v) {
         this.customUniforms[k] = v;
     }
+    setCustomUniforms(uniforms) {
+        Object.keys(uniforms).forEach(k => this.setCustomUniform(k, uniforms[k]));
+    }
+    getCustomUniforms() { return this.customUniforms; }
 
     clearCustomUniforms() {
         this.customUniforms = {};
@@ -1158,8 +1368,7 @@ class ShaderBuffer {
 
     // TODO: this logic should move outside of this class
     setControlSchema(controlSchema) {
-        this.controlSchema = controlSchema;
-        this.controlSchema = controlSchema;
+        this.controller.schema = controlSchema;
 
         // Clear and rebuild advanced inputs
         this.mediaInputs = [];
@@ -1173,11 +1382,24 @@ class ShaderBuffer {
             }
         }
 
-        // Clear old controls
-        if (this.controlContainer) {
-            renderControlsForShader(this, controlSchema);
-        }
+        const addTexInput = document.createElement('button');
+        addTexInput.innerText = "skibidi another texture, perchance??";
+        addTexInput.addEventListener('click', () => {
+            this.addMediaInput();
+        })
+        if (this.advancedInputsContainer) this.advancedInputsContainer.appendChild(addTexInput);
+
         return true;
+    }
+
+    addMediaInput() {
+        if (this.mediaInputs.length >= MAX_TEXTURE_SLOTS) {
+            logError('oopsies too many :/');
+            return;
+        }
+        const mediaInput = new MediaInput(this, this.shaderIndex, this.mediaInputs.length);
+        this.mediaInputs.push(mediaInput);
+        this.advancedInputsContainer.appendChild(mediaInput.getElement());
     }
 
     draw(timeMs) {
@@ -1189,12 +1411,13 @@ class ShaderBuffer {
 
         gl.useProgram(this.program.program);
 
-        this.uniforms.updateValues(
+        let errs = this.uniforms.updateValues(
             timeMs,
             { width: gl.canvas.width, height: gl.canvas.height },
             this.customUniforms,
             this.sampleMedia
         );
+        if (errs) console.warn(`errors encountered updating uniforms for buffer ${this.name}`);
 
         this.program.drawToPosition(quadBuffer);
 
@@ -1220,6 +1443,8 @@ class ShaderProgram {
         }
     }
 
+    static samplerString = new Array(MAX_TEXTURE_SLOTS).fill(null);
+
     static fragmentShaderSourcePre = `#version 300 es
 #ifdef GL_ES
 precision mediump float;
@@ -1232,15 +1457,9 @@ precision mediump float;
 
 uniform float u_time;
 uniform vec2 u_resolution;
-uniform sampler2D u_texture0;
-uniform sampler2D u_texture1;
-uniform sampler2D u_texture2;
-uniform sampler2D u_texture3;
 
-#define iChannel0 u_texture0
-#define iChannel1 u_texture1
-#define iChannel2 u_texture2
-#define iChannel3 u_texture3
+${new Array(MAX_TEXTURE_SLOTS).fill(null).map((_, i) => `uniform sampler2D u_texture${i};\n#define iChannel${i} u_texture${i}\n`).join('')}
+
 #define iTime u_time
 #define iResolution u_resolution
 
@@ -1315,6 +1534,7 @@ void main(void) {
 
 //                   goofy trick to preserve type information
 let shaderBuffers = [new ShaderBuffer()]; shaderBuffers = [];
+document.shaderBuffers = () => shaderBuffers;
 
 function createProgram(vsSrc, fsSrc) {
     return new ShaderProgram(vsSrc, fsSrc, gl).compile();
@@ -1422,11 +1642,11 @@ function presetCanvasDimensions(w, h) {
 
 //#endregion
 
-//#region state management
+//#region persistent state management
 
 async function saveControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
-    await resourceCache.putControlState(idx, JSON.stringify(shaderBuffer.customUniforms));
+    await resourceCache.putControlState(idx, JSON.stringify(shaderBuffer.getCustomUniforms()));
 }
 async function getControlState(shaderBuffer) {
     const idx = shaderBuffers.indexOf(shaderBuffer);
@@ -1435,7 +1655,7 @@ async function getControlState(shaderBuffer) {
         try {
             return JSON.parse(str);
         } catch {
-            logError(`Invalid value for control state\nkey:${key}\nval: ${str}`);
+            logError(`Invalid value for control state\nkey:${idx}\nval: ${str}`);
             return null;
         }
     }
@@ -1444,7 +1664,7 @@ async function getControlState(shaderBuffer) {
 async function loadControlState(shaderBuffer, uniforms = null) {
     if (uniforms === null) uniforms = await getControlState(shaderBuffer);
     if (uniforms)
-        shaderBuffer.customUniforms = uniforms;
+        shaderBuffer.setCustomUniforms(uniforms);
 }
 
 //#endregion
@@ -1470,7 +1690,7 @@ function updateActiveControlUI() {
     document.querySelectorAll('.advanced-inputs-container').forEach(c => c.style.display = 'none');
     document.querySelectorAll('.shader-control-panel').forEach(c => c.style.display = 'none');
     ctrlShader.advancedInputsContainer.style.display = 'block';
-    ctrlShader.controlContainer.style.display = 'block';
+    ctrlShader.controller.container.style.display = 'block';
 
     const buttons = document.getElementById('control-scheme-tabs').children
     for (let i = 0; i < buttons.length; i++) {
@@ -1515,245 +1735,245 @@ function createControlSchemeTabs() {
 
 //#region render-controls
 
-// TODO: create `Controller` object
+/**
+ * 
+ * @param {ShaderBuffer} shaderBuffer
+ */
 function renderControlsForShader(shaderBuffer, schema) {
-    LOG(`Rendering controls for ${shaderBuffer.name}`);
-    shaderBuffer.controlContainer.innerHTML = ''; // Clear previous controls
+    LOG(`Rendering controls for ${shaderBuffer.name}`, schema);
+    shaderBuffer.controller.container.innerHTML = ''; // Clear previous controls
     if (shaderBuffer._autoToggleTimers) {
         shaderBuffer._autoToggleTimers.forEach(id => clearInterval(id));
     }
 
+    shaderBuffer.controller.reset();
+
     const restoreBtn = document.createElement('button');
     restoreBtn.textContent = 'reset shader';
     restoreBtn.className = 'restore-defaults-btn';
-    restoreBtn.addEventListener('click', () => {
-        shaderBuffer.restoreDefaults();
-    });
-    shaderBuffer.controlContainer.appendChild(document.createElement('br'));
-    shaderBuffer.controlContainer.appendChild(restoreBtn);
+    restoreBtn.addEventListener('click', () => shaderBuffer.restoreDefaults());
+    shaderBuffer.controller.container.appendChild(document.createElement('br'));
+    shaderBuffer.controller.container.appendChild(restoreBtn);
 
     shaderBuffer._autoToggleTimers = [];
     const tabIdx = shaderBuffers.indexOf(shaderBuffer);
-    if (schema.name) {
-        shaderBuffer.setName(`${schema.name} ${tabIdx + 1}`);
-    }
-    schema?.controls?.forEach(control => {
-        if (!control.uniform) { // sanity check
-            logError(`Control ${JSON.stringify(control)} has no uniform`);
-        }
+    if (schema.name) shaderBuffer.setName(`${schema.name} ${tabIdx + 1}`);
+
+    schema?.controls?.forEach((ctrlSchema, index) => {
+        if (!ctrlSchema.uniform) logError(`Control ${JSON.stringify(ctrlSchema)} has no uniform`);
+
         const controlDiv = document.createElement('div');
         controlDiv.className = 'control';
+
         const label = document.createElement('label');
-        label.textContent = control.label;
+        label.textContent = ctrlSchema.label;
         controlDiv.appendChild(label);
+
         let inputElement;
-        // Use default value from the schema (or cached value); store in the shader's custom uniforms
-        const saved = shaderBuffer.customUniforms[control.uniform];
-        const initialValue = (saved !== undefined) ? saved : control.default;
-        LOG(`render control ${control.uniform} initial value ${initialValue} saved: ${saved} default: ${control.default}`);
-        shaderBuffer.setCustomUniform(control.uniform, initialValue);
-        switch (control.type) {
+
+        const saved = shaderBuffer.customUniforms[ctrlSchema.uniform];
+        const initialValue = (saved !== undefined) ? saved : ctrlSchema.default;
+        LOG(`render control ${ctrlSchema.uniform} initial value ${initialValue} saved: ${saved} default: ${ctrlSchema.default}`);
+
+        switch (ctrlSchema.type) {
             case 'knob':
-            case 'slider':
-                // Create the slider input
+            case 'slider': {
                 inputElement = document.createElement('input');
                 inputElement.type = 'range';
-                inputElement.min = control.min;
-                inputElement.max = control.max;
-                inputElement.step = control.step;
-                inputElement.value = initialValue;
-                inputElement.setAttribute('data-uniform', control.uniform);
+                inputElement.min = ctrlSchema.min;
+                inputElement.max = ctrlSchema.max;
+                inputElement.step = ctrlSchema.step;
+                inputElement.setAttribute('data-uniform', ctrlSchema.uniform);
 
-                // Create an info bubble for displaying the current value
                 const infoBubble = document.createElement('div');
                 infoBubble.className = 'slider-info-bubble';
                 infoBubble.style.display = 'none';
                 controlDiv.style.position = 'relative';
                 controlDiv.appendChild(infoBubble);
 
-                // Function to update bubble content and position
-                function updateSliderBubble(e) {
+                function updateSliderBubble() {
                     const rect = inputElement.getBoundingClientRect();
-                    const pct = (parseFloat(inputElement.value) - control.min) / (control.max - control.min);
+                    const v = parseFloat(inputElement.value);
+                    const pct = (v - ctrlSchema.min) / (ctrlSchema.max - ctrlSchema.min);
                     const bubbleX = pct * rect.width;
-                    infoBubble.innerText = parseFloat(inputElement.value).toFixed(control.fixedPrecision || 2);
+                    infoBubble.innerText = v.toFixed(ctrlSchema.fixedPrecision || 2);
                     infoBubble.style.left = `${bubbleX}px`;
                     infoBubble.style.top = `-1.5em`;
                 }
 
-                // Update uniform and bubble on input
                 inputElement.addEventListener('input', e => {
                     const val = parseFloat(e.target.value);
-                    shaderBuffer.setCustomUniform(control.uniform, val);
-                    updateSliderBubble(e);
-                    saveControlState(shaderBuffer);
+                    shaderBuffer.controller.setState(index, val);
+                    updateSliderBubble();
                 });
-
-                // Show bubble on interaction
-                inputElement.addEventListener('mousedown', e => {
+                inputElement.addEventListener('mousedown', () => {
                     infoBubble.style.display = 'block';
-                    updateSliderBubble(e);
+                    updateSliderBubble();
                 });
-                document.addEventListener('mouseup', () => {
-                    infoBubble.style.display = 'none';
-                });
+                document.addEventListener('mouseup', () => { infoBubble.style.display = 'none'; });
                 break;
-            case 'button':
+            }
+
+            case 'button': {
                 inputElement = document.createElement('button');
-                inputElement.textContent = control.label;
+                inputElement.textContent = ctrlSchema.label;
                 inputElement.addEventListener('click', () => {
-                    shaderBuffer.setCustomUniform(control.uniform, true);
-                    LOG(`Button action for ${control.uniform} triggered.`);
-                    saveControlState(shaderBuffer);
+                    // treat click as a one-shot "true"
+                    shaderBuffer.controller.setState(index, true);
+                    LOG(`Button action for ${ctrlSchema.uniform} triggered.`);
                 });
                 break;
-            case 'toggle':
+            }
+
+            case 'toggle': {
                 inputElement = document.createElement('input');
                 inputElement.type = 'checkbox';
-                inputElement.checked = !!initialValue;
-                inputElement.setAttribute('data-uniform', control.uniform);
+                inputElement.setAttribute('data-uniform', ctrlSchema.uniform);
                 inputElement.addEventListener('change', e => {
-                    shaderBuffer.setCustomUniform(control.uniform, e.target.checked);
-                    saveControlState(shaderBuffer);
+                    shaderBuffer.controller.setState(index, e.target.checked);
                 });
-
-                // if schema defines a hotkey, register it
-                if (control.hotkey) {
-                    const key = control.hotkey.toLowerCase();
-                    hotkeyBindings[key] = {
-                        shaderBuffer,
-                        uniform: control.uniform,
-                        input: inputElement
-                    };
+                if (ctrlSchema.hotkey) {
+                    const key = ctrlSchema.hotkey.toLowerCase();
+                    hotkeyBindings[key] = { shaderBuffer, uniform: ctrlSchema.uniform, input: inputElement };
                 }
                 break;
-            case 'xy-plane':
+            }
+
+            case 'xy-plane': {
                 inputElement = document.createElement('div');
                 inputElement.className = 'xy-plane';
+
                 const grid = document.createElement('div');
                 grid.className = 'xy-grid';
                 inputElement.appendChild(grid);
-                // Compute normalized position for the indicator
-                const normX = (initialValue.x - control.min.x) / (control.max.x - control.min.x);
-                const normY = (initialValue.y - control.min.y) / (control.max.y - control.min.y);
+
                 const indicator = document.createElement('div');
                 indicator.className = 'xy-indicator';
-                indicator.style.left = (normX * 200) + 'px';
-                indicator.style.top = ((1 - normY) * 200) + 'px';
                 inputElement.appendChild(indicator);
+
                 const minLabel = document.createElement('div');
                 minLabel.className = 'xy-label xy-label-min';
-                minLabel.innerText = `Min: ${control.min.x}, ${control.min.y}`;
+                minLabel.innerText = `Min: ${ctrlSchema.min.x}, ${ctrlSchema.min.y}`;
                 inputElement.appendChild(minLabel);
+
                 const maxLabel = document.createElement('div');
                 maxLabel.className = 'xy-label xy-label-max';
-                maxLabel.innerText = `Max: ${control.max.x}, ${control.max.y}`;
+                maxLabel.innerText = `Max: ${ctrlSchema.max.x}, ${ctrlSchema.max.y}`;
                 inputElement.appendChild(maxLabel);
+
                 const xyInfo = document.createElement('div');
                 xyInfo.className = 'xy-info-bubble';
                 xyInfo.style.display = 'none';
                 inputElement.appendChild(xyInfo);
-                function updateXY(e) {
+
+                // Attach refs so Control.set can position the indicator
+                inputElement._xy = {
+                    indicator,
+                    info: xyInfo,
+                    get containerRect() { return inputElement.getBoundingClientRect(); }
+                };
+
+                function updateXYFromPointer(e) {
                     const rect = inputElement.getBoundingClientRect();
                     const rawX = e.clientX - rect.left;
                     const rawY = e.clientY - rect.top;
                     const clampedX = Math.min(Math.max(rawX, 0), rect.width);
                     const clampedY = Math.min(Math.max(rawY, 0), rect.height);
-                    indicator.style.left = clampedX + 'px';
-                    indicator.style.top = clampedY + 'px';
-                    let x = mix(control.min.x, control.max.x, clampedX / rect.width);
-                    let y = mix(control.min.y, control.max.y, 1 - (clampedY / rect.height));
-                    LOG("x,y=", x, y);
-                    shaderBuffer.setCustomUniform(control.uniform, { x, y });
+                    const x = mix(ctrlSchema.min.x, ctrlSchema.max.x, clampedX / rect.width);
+                    const y = mix(ctrlSchema.min.y, ctrlSchema.max.y, 1 - (clampedY / rect.height));
+
+                    shaderBuffer.controller.setState(index, { x, y });
+
                     xyInfo.innerText = `(${x.toFixed(2)}, ${y.toFixed(2)})`;
                     xyInfo.style.left = (clampedX + 50) + 'px';
                     xyInfo.style.top = (clampedY - 25) + 'px';
                 }
+
                 inputElement.addEventListener('mousedown', e => {
                     xyInfo.style.display = 'block';
-                    updateXY(e);
-                    function onMouseMove(e) { updateXY(e); }
-                    document.addEventListener('mousemove', onMouseMove);
-                    document.addEventListener('mouseup', function onMouseUp() {
+                    updateXYFromPointer(e);
+                    function onMouseMove(e2) { updateXYFromPointer(e2); }
+                    function onMouseUp() {
                         document.removeEventListener('mousemove', onMouseMove);
                         document.removeEventListener('mouseup', onMouseUp);
                         xyInfo.style.display = 'none';
-                        saveControlState(shaderBuffer);
-                    });
+                    }
+                    document.addEventListener('mousemove', onMouseMove);
+                    document.addEventListener('mouseup', onMouseUp);
                 });
                 break;
-            case 'color-picker':
+            }
+
+            case 'color-picker': {
                 inputElement = document.createElement('input');
                 inputElement.type = 'color';
-                inputElement.value = initialValue;
                 inputElement.addEventListener('input', e => {
-                    shaderBuffer.setCustomUniform(control.uniform, e.target.value);
-                    saveControlState(shaderBuffer);
+                    shaderBuffer.controller.setState(index, e.target.value);
                 });
                 break;
-            case 'dropdown':
+            }
+
+            case 'dropdown': {
                 inputElement = document.createElement('select');
-                control.options.forEach(option => {
+                ctrlSchema.options.forEach(option => {
                     const opt = document.createElement('option');
                     opt.value = option;
                     opt.textContent = option;
-                    if (option === initialValue) opt.selected = true;
                     inputElement.appendChild(opt);
                 });
-                inputElement.value = String(initialValue);
                 inputElement.addEventListener('change', e => {
-                    shaderBuffer.setCustomUniform(control.uniform, e.target.value);
-                    saveControlState(shaderBuffer);
+                    shaderBuffer.controller.setState(index, e.target.value);
                 });
                 break;
-            case 'text-input':
+            }
+
+            case 'text-input': {
                 inputElement = document.createElement('input');
                 inputElement.type = 'text';
-                inputElement.value = initialValue;
                 inputElement.addEventListener('input', e => {
-                    shaderBuffer.setCustomUniform(control.uniform, e.target.value);
-                    saveControlState(shaderBuffer);
+                    shaderBuffer.controller.setState(index, e.target.value);
                 });
                 break;
+            }
+
             default:
-                console.warn(`Unknown control type: ${control.type}`);
+                console.warn(`Unknown control type: ${ctrlSchema.type}`);
         }
+
+        if (inputElement) controlDiv.appendChild(inputElement);
+        shaderBuffer.controller.container.appendChild(controlDiv);
+
         if (inputElement) {
-            controlDiv.appendChild(inputElement);
+            shaderBuffer.controller.register(index, ctrlSchema, inputElement, controlDiv);
+            controlDiv.dataset.controlId = String(index);
+            shaderBuffer.controller.setState(index, initialValue);
         }
-        shaderBuffer.controlContainer.appendChild(controlDiv);
     });
+
     // name texture slots
     for (let i = 0; i < schema.inputs?.length; i++) {
-        // TODO: this should move into the MediaInput render function
         const input = schema.inputs[i];
-        const label = input.name;
         const inputController = shaderBuffer.mediaInputs[i];
         if (!inputController) continue;
-        // const inputController = shaderBuffer.advancedInputsContainer.children[i];
-        inputController.setInputName(label);
-        const desc = input.description;
-        inputController.setDescription(desc);
-
-        // only support self for now
-        if (input.autoAssign == 'self') {
-            inputController.selectTab(tabIdx);
-        }
+        inputController.setInputName(input.name);
+        inputController.setDescription(input.description);
+        if (input.autoAssign == 'self') inputController.selectTab(tabIdx);
         inputController.updateRequiredHighlight();
     }
-    shaderBuffer.controlSchema = schema;
+    shaderBuffer.controller.schema = schema;
 }
 
 //#endregion
 
 //#region state
 
-async function applyControlSchema(viewIndex, schema) {
+async function applyControlSchema(viewIndex, schema, rerenderControls = false) {
     const ok = shaderBuffers[viewIndex].setControlSchema(schema);
     if (!ok) return ok;
 
     await resourceCache.putControlSchema(viewIndex, schema);
     await loadControlState(shaderBuffers[viewIndex]);
+    if (rerenderControls) renderControlsForShader(shaderBuffers[viewIndex], schema);
     return true;
 }
 async function applyShader(viewIndex, frag, vert) {
@@ -1799,21 +2019,21 @@ function handleFolderUpload(event) {
     reader.onload = async e => {
         newShaderSource = e.target.result;
         // cache the raw text
-        await resourceCache.putFragmentSrc(currentViewIndex, newShaderSource);
-        attemptApply();
+        await resourceCache.putFragmentSrc(currentControlIndex, newShaderSource);
+        await attemptApply();
     };
     reader.readAsText(shaderFile);
 
     async function attemptApply() {
         if (newShaderSource == null) return;
-        const success = await applyShader(currentViewIndex, newShaderSource, vertexShaderSource);
-        if (!success) return;
 
         // swap in the new control schema if we have it
         if (newSchemaData) {
-            // renderControlsForShader(active, newSchemaData);
-            applyControlSchema(currentViewIndex, newSchemaData);
+            applyControlSchema(currentControlIndex, newSchemaData, true);
         }
+
+        const success = await applyShader(currentControlIndex, newShaderSource, vertexShaderSource);
+        if (!success) return;
         logMessage("Shader & schema updated and cached!");
     }
 }
@@ -1886,29 +2106,29 @@ async function handleConfigsUpload(event) {
 }
 
 async function loadConfigDirectory(name) {
-    const active = shaderBuffers[currentViewIndex];
+    const active = shaderBuffers[currentControlIndex];
     const fragKey = `config;${name};fragmentSource`;
     const schemaKey = `config;${name};controlSchema`;
 
+    const schema = await resourceCache.get(schemaKey);
+    if (schema) {
+        applyControlSchema(currentControlIndex, schema, true);
+    }
+
     const fragSrc = await resourceCache.get(fragKey);
     if (typeof fragSrc === 'string') {
-        const ok = applyShader(currentViewIndex, fragSrc, null);
+        const ok = applyShader(currentControlIndex, fragSrc, null);
         if (!ok) {
             logError(`❌ Failed to load ${name}`);
             return;
         }
     }
 
-    const schema = await resourceCache.get(schemaKey);
-    if (schema) {
-        applyControlSchema(currentViewIndex, schema);
-    }
-
     // rename the tab to the config name
-    active.setName(`${name} ${currentViewIndex + 1}`);
+    active.setName(`${name} ${currentControlIndex + 1}`);
     updateActiveViewUI();
 
-    logMessage(`✅ Loaded config "${name}" into tab ${currentViewIndex + 1}`);
+    logMessage(`✅ Loaded config "${name}" into tab ${currentControlIndex + 1}`);
 }
 
 //#endregion
@@ -1917,10 +2137,17 @@ async function loadConfigDirectory(name) {
 
 //#region render
 
+// populate with IDs of shaders to ignore rendering (generally used for high-resolution renders)
+document.shaderDenial = [];
+
 // TODO: only update shaders either in use or sampled by other shaders
 function updateAllShaderBuffers() {
-    shaderBuffers.forEach(sb => sb.draw(effectiveTime));
-}
+    shaderBuffers.forEach((sb, i) => {
+        if (document.shaderDenial.filter(n => n == i).length === 0) {
+            sb.draw(effectiveTime);
+        }
+    })
+};
 
 function render(time) {
     if (lastFrameTime === 0) lastFrameTime = time;
@@ -1998,172 +2225,61 @@ function stopRecording() {
 
 //#region dsl
 
-function tokenize(str) {
-    return (
-        str
-            // strip CL-style comments
-            .replace(/;.*$/gm, '')
-            // pad parens so they're separate tokens
-            .replace(/\(/g, ' ( ')
-            .replace(/\)/g, ' ) ')
-            // grab strings, parens, or atoms
-            .match(/"(?:\\.|[^"])*"|[^\s()]+|[()]/g) || []
-    )
-        .map(tok =>
-            // turn JSON-style strings into JS strings
-            tok[0] === '"' ? JSON.parse(tok) : tok
-        );
-}
-
-function parseSexp(tokens) {
-    // const t = tokens.slice(); // copy
-    const t = tokens;
-    function parseStr() { // does not work with current tokenizer
-        t.shift(); // "
-        let str = '';
-        let escaped = false;
-        while (t[0] !== '"' || escaped) {
-            const tok = t.shift();
-            if (tok === '\\') escaped = true;
-            else {
-                str += tok;
-                escaped = false;
-            }
-        }
-        t.shift(); // "
-        return str;
-    }
-    function walk() {
-        if (t.length === 0) throw new SyntaxError('Unexpected EOF');
-        const tok = t.shift();
-        if (tok === '(') {
-            const L = [];
-            while (t[0] !== ')') {
-                if (t.length === 0) throw new SyntaxError('Missing )');
-                L.push(walk());
-            }
-            t.shift(); // pop ')'
-            return L;
-        }
-        if (tok === ')') throw new SyntaxError('Unexpected )');
-        // atom: number or symbol
-        return isFinite(tok) ? Number(tok) : tok;
-    }
-    const out = [];
-    while (t.length) out.push(walk());
-    return out.length === 1 ? out[0] : out;
-}
-
-function parseDSL(str) {
-    const tokens = tokenize(str);
-    const expr = parseSexp(tokens);
-    if (tokens.length) console.warn("Extra tokens after first expr", tokens);
-    return expr;
-}
-function evalDSL(tree) {
-    // Expect: [ 'shader', shaderName, ...clauses ]
-    if (tree[0] !== 'shader') throw new Error("DSL must start with (shader …)");
-    const cfg = { name: tree[1], uniforms: {}, textures: [] };
-    for (let i = 2; i < tree.length; i++) {
-        const clause = tree[i];
-        const [kw, ...rest] = clause;
-        switch (kw) {
-            case 'uniform':
-                // [ 'uniform', name, value ]
-                const val = rest[1];
-                cfg.uniforms[rest[0]] = (val === 'true' || val === 'false') ? (val === 'true') : val;
-                break;
-            case 'texture':
-                // TODO: parse (file|shader arg) to an object which returns a texture handle
-                // [ 'texture', slot, ['file'|'shader', arg] ]
-                cfg.textures.push({ slot: rest[0], [rest[1][0]]: rest[1][1] });
-                break;
-            default:
-                console.warn("Unknown DSL clause", kw);
-        }
-    }
-    return cfg;
-}
-
-/*
-(let* ((shad-0 (shader "color-invert" :texture-0 (select-shader-tab 1)))
-       (shad-1 (shader "color-invert" :texture-0 shad-0))
-       (main-shader (shader "demo-moire"
-                            :texture-0 shad-0
-                            :texture-1 shad-1)))
-  main-shader							; render main moire shader
-  )
-
-
-(shader "demo-moire"
-(uniform u_mode 2)
-(uniform u_colInv1 false)
-(uniform u_colInv0 true)
-(texture 0 shader 2)
-(texture 1 shader 1)
-)
-*/
-
-const myShaderLibrary = {};
-async function populateMyShaderLibrary() {
-    const savedList = await resourceCache.get('configsList');
-    if (typeof savedList === 'string') {
-        const names = JSON.parse(savedList);
-        for (const name of names) {
-            const fragKey = `config;${name};fragmentSource`;
-            const src = await resourceCache.get(fragKey);
-            const controlKey = `config;${name};controlSchema`;
-            const controlSchema = await resourceCache.get(controlKey);
-            if (typeof src === 'string') {
-                myShaderLibrary[name] = { frag: src, control: controlSchema };
-            }
-        }
-    }
-}
+let shaderLoadIndex;
+document.lisp = lisp;
+lisp.makeNative('shader', args => {
+    // args[0] is string representing name of shader to load
+    // load it
+    // args[1] is list of '(uniform value)
+    // args[2] is list of (texture-reference)
+    console.log('loading shader with args');
+    console.log(args);
+    shaderLoadIndex += 1;
+    return shaderBuffers[shaderLoadIndex - 1];
+});
 
 function applyDsl(txt) {
-    let tree, config;
+    shaderLoadIndex = 0;
     try {
-        tree = parseDSL(txt);
-        config = evalDSL(tree);
+        lisp.evalStr(txt);
     } catch (e) {
         console.error(e);
         return logError("DSL parse error:", e.message);
     }
 
-    LOG(`generated config`, config);
-    const o = myShaderLibrary[config.name];
-    let tabIndex = currentViewIndex;
-    if (!o?.frag) logError(`uh oh ${config.name} not found`);
-    else applyShader(tabIndex, o.frag, vertexShaderSource);
+    // LOG(`generated config`, config);
+    // const o = myShaderLibrary[config.name];
+    // let tabIndex = currentViewIndex;
+    // if (!o?.frag) logError(`uh oh ${config.name} not found`);
+    // else applyShader(tabIndex, o.frag, vertexShaderSource);
 
-    if (tabIndex < 0) {
-        tabIndex = shaderBuffers.length;
-        // create a fresh ShaderBuffer with your default schema
-        const sb = new ShaderBuffer(config.name,
-            new ShaderProgram(vertexShaderSource, o.frag, gl),
-            o.control,
-            tabIndex);
-        shaderBuffers.push(sb);
-        shaderBuffers[tabIndex] = sb;
-        createShaderTabs();
-        createControlSchemeTabs();
-    }
-    shaderBuffers[tabIndex].controlSchema = o.control;
-    console.log(o);
-    console.log(config.uniforms);
-    console.log(shaderBuffers[tabIndex].controlSchema);
-    // update uniform defaults given args
-    Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].setCustomUniform(k, config.uniforms[k]));
-    renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].controlSchema);
+    // if (tabIndex < 0) {
+    //     tabIndex = shaderBuffers.length;
+    //     // create a fresh ShaderBuffer with your default schema
+    //     const sb = new ShaderBuffer(config.name,
+    //         new ShaderProgram(vertexShaderSource, o.frag, gl),
+    //         o.control,
+    //         tabIndex);
+    //     shaderBuffers.push(sb);
+    //     shaderBuffers[tabIndex] = sb;
+    //     createShaderTabs();
+    //     createControlSchemeTabs();
+    // }
+    // shaderBuffers[tabIndex].setControlSchema(o.control);
+    // console.log(o);
+    // console.log(config.uniforms);
+    // console.log(shaderBuffers[tabIndex].getControlSchema());
+    // // update uniform defaults given args
+    // Object.keys(config.uniforms).forEach(k => shaderBuffers[tabIndex].setCustomUniform(k, config.uniforms[k]));
+    // renderControlsForShader(shaderBuffers[tabIndex], shaderBuffers[tabIndex].getControlSchema());
 
-    for (let t of config.textures) {
-        const inp = shaderBuffers[tabIndex].mediaInputs[t.slot];
-        if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
-        if (t.shader !== undefined) inp.selectTab(t.shader);
-    }
+    // for (let t of config.textures) {
+    //     const inp = shaderBuffers[tabIndex].mediaInputs[t.slot];
+    //     if (t.file) inp.setupUrlInput(), inp.inputControlsContainer.querySelector('input').value = t.file, inp.inputControlsContainer.querySelector('form').dispatchEvent(new Event('submit'));
+    //     if (t.shader !== undefined) inp.selectTab(t.shader);
+    // }
 
-    currentViewIndex = tabIndex;
+    // currentViewIndex = tabIndex;
     updateActiveViewUI();
     updateActiveControlUI();
 }
@@ -2246,6 +2362,7 @@ function setupShaderEditor() {
                 logMessage('❌ Shader compilation failed. See console for errors.');
                 return;
             } else {
+                sb.controller.refreshValues();
                 logMessage('✅ Shader compiled successfully.');
             }
         } else {
@@ -2257,6 +2374,23 @@ function setupShaderEditor() {
 //#endregion
 
 //#region setup
+
+const myShaderLibrary = {};
+async function populateMyShaderLibrary() {
+    const savedList = await resourceCache.get('configsList');
+    if (typeof savedList === 'string') {
+        const names = JSON.parse(savedList);
+        for (const name of names) {
+            const fragKey = `config;${name};fragmentSource`;
+            const src = await resourceCache.get(fragKey);
+            const controlKey = `config;${name};controlSchema`;
+            const controlSchema = await resourceCache.get(controlKey);
+            if (typeof src === 'string') {
+                myShaderLibrary[name] = { frag: src, control: controlSchema };
+            }
+        }
+    }
+}
 
 const cachedShaderData = {};
 document.addEventListener('DOMContentLoaded', async () => {
@@ -2442,19 +2576,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                     }
                 }
                 if (dat.urls[i]) {
-                    shaderBuffers[idx].mediaInputs[i].loadAndCache(cached, false);
+                    shaderBuffers[idx].mediaInputs[i].loadAndCache(dat.urls[i], false);
                 }
             }
         }
     })()
 
-    shaderBuffers.forEach(shaderBuffer => {
-        renderControlsForShader(shaderBuffer, shaderBuffer.controlSchema);
-    });
-
     for (const sb of shaderBuffers) {
         await loadControlState(sb);
     }
+
+    shaderBuffers.forEach(shaderBuffer => {
+        renderControlsForShader(shaderBuffer, shaderBuffer.getControlSchema());
+        shaderBuffer.renderTarget.reallocate();
+    });
 
     updateActiveViewUI();
 

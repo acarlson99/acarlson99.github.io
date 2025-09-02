@@ -65,6 +65,6 @@ clean:
 
 re: clean all
 
-host: all
+host:
 	php -S localhost:8080
 serve: host
