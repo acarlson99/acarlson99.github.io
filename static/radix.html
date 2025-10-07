@@ -94,7 +94,8 @@
         let numStrs = nums.map((a) => a.toString(radix));
         let len = numStrs.map((a) => a.length).reduce((a, b) => Math.max(a, b), 0);
         let stbl = document.getElementById("sortTable");
-        let headRow = document.createElement("tr");
+          let headRow = document.createElement("tr");
+		  headRow.appendChild(document.createElement("th"));
         for (let i = 0; i < len; i++) {
             let a = document.createElement("th");
             a.id = "col" + i;
@@ -107,6 +108,9 @@
         for (let i = 0; i < numStrs.length; i++) {
             let ns = numStrs[i].padStart(len, "0");
             let a = document.createElement("tr");
+            let ch = document.createElement("th");
+            ch.innerText = nums[i];
+            a.appendChild(ch);
             for (let j = 0; j < len; j++) {
                 let b = document.createElement("td");
                 b.className = "col" + j;
