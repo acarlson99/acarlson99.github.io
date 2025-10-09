@@ -1,0 +1,500 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Color-space playground — HSV / sRGB / linear / OKLab / OKLCH</title>
+  <link rel="stylesheet" href="/style.css">
+
+  <style>
+    .grid {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      border-radius: 10px;
+      padding: 12px;
+    }
+
+    .swatch {
+      height: 160px;
+      border-radius: 8px;
+    }
+
+    label {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 8px 0;
+      align-items: center;
+    }
+
+    input[type="range"] {
+      width: 160px;
+      margin-left: 8px;
+    }
+
+    input[type=number] {
+      width: 84px;
+    }
+
+    .muted {
+      color: #666;
+      font-size: 13px
+    }
+
+    footer {
+      margin-top: 18px;
+      color: #666;
+      font-size: 13px;
+    }
+
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>Color-space playground</h1>
+  <p class="muted">Edit any value (HSV hue, sRGB, linear RGB, OKLab, or OKLCH) and all other fields will update. Hue
+    shown in degrees.</p>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Color swatch</h2>
+      <div id="swatch" class="swatch" style="background:#888"></div>
+      <div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
+        <div>
+          <div><strong>CSS sRGB</strong></div>
+          <div id="cssHex" style="font-family:monospace;">#808080</div>
+        </div>
+        <div style="margin-left:auto; text-align:right;">
+          <div><small>clamped sRGB (0..255)</small></div>
+          <div id="srgbOut" style="font-family:monospace;">128,128,128</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Controls</h2>
+
+      <div class="controls">
+
+        <!-- HSV -->
+        <fieldset>
+          <legend><strong>HSV</strong> <small>(H° S% V%)</small></legend>
+          <label>Hue
+            <input id="h_hue" type="range" min="0" max="360" step="0.1">
+            <input id="n_hue" type="number" min="0" max="360" step="0.1">
+          </label>
+          <label>Saturation
+            <input id="h_sat" type="range" min="0" max="100" step="0.1">
+            <input id="n_sat" type="number" min="0" max="100" step="0.1">
+          </label>
+          <label>Value
+            <input id="h_val" type="range" min="0" max="100" step="0.1">
+            <input id="n_val" type="number" min="0" max="100" step="0.1">
+          </label>
+        </fieldset>
+
+        <!-- sRGB (0-255) -->
+        <fieldset>
+          <legend><strong>sRGB</strong> <small>(display gamma, 0–255)</small></legend>
+          <label>R <input id="sr_r" type="range" min="0" max="255" step="1"><input id="sr_r_n" type="number" min="0"
+              max="255" step="1"></label>
+          <label>G <input id="sr_g" type="range" min="0" max="255" step="1"><input id="sr_g_n" type="number" min="0"
+              max="255" step="1"></label>
+          <label>B <input id="sr_b" type="range" min="0" max="255" step="1"><input id="sr_b_n" type="number" min="0"
+              max="255" step="1"></label>
+        </fieldset>
+
+        <!-- linear RGB -->
+        <fieldset>
+          <legend><strong>Linear RGB</strong> <small>(0–1)</small></legend>
+          <label>R <input id="lr_r" type="range" min="0" max="1" step="0.001"><input id="lr_r_n" type="number" min="-1"
+              max="2" step="0.001"></label>
+          <label>G <input id="lr_g" type="range" min="0" max="1" step="0.001"><input id="lr_g_n" type="number" min="-1"
+              max="2" step="0.001"></label>
+          <label>B <input id="lr_b" type="range" min="0" max="1" step="0.001"><input id="lr_b_n" type="number" min="-1"
+              max="2" step="0.001"></label>
+        </fieldset>
+
+        <!-- OKLab -->
+        <fieldset>
+          <legend><strong>OKLab</strong> <small>(L a b)</small></legend>
+          <label>L <input id="ok_l" type="range" min="0" max="1" step="0.001"><input id="ok_l_n" type="number" min="-1"
+              max="2" step="0.001"></label>
+          <label>a <input id="ok_a" type="range" min="-0.37" max="0.37" step="0.001"><input id="ok_a_n" type="number"
+              min="-2" max="2" step="0.001"></label>
+          <label>b <input id="ok_b" type="range" min="-0.37" max="0.37" step="0.001"><input id="ok_b_n" type="number"
+              min="-2" max="2" step="0.001"></label>
+        </fieldset>
+
+        <!-- OKLCH -->
+        <fieldset>
+          <legend><strong>OKLCH</strong> <small>(L C h°)</small></legend>
+          <label>L <input id="och_l" type="range" min="0" max="1" step="0.001"><input id="och_l_n" type="number"
+              min="-1" max="2" step="0.001"></label>
+          <label>C <input id="och_c" type="range" min="0" max="0.37" step="0.001"><input id="och_c_n" type="number"
+              min="0" max="2" step="0.001"></label>
+          <label>h° <input id="och_h" type="range" min="0" max="360" step="0.1"><input id="och_h_n" type="number"
+              min="0" max="360" step="0.1"></label>
+        </fieldset>
+
+      </div>
+    </div>
+  </div>
+
+  <footer>Converted from GLSL conversion routines. Hue units: HSV H in degrees, OKLCH h in degrees.</footer>
+
+  <script>
+    /* ---------------------------
+       Math helpers (GLSL -> JS)
+       --------------------------- */
+
+    const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+    const mod = (x, m) => ((x % m) + m) % m;
+
+    /* ---------- sRGB <-> linear (component) ---------- */
+    /* from your GLSL */
+    function srgb2linear1(c) {
+      c = +c;
+      return (c <= 0.04045) ? (c / 12.92) : Math.pow((c + 0.055) / 1.055, 2.4);
+    }
+    function linear2srgb1(c) {
+      c = +c;
+      return (c <= 0.0031308) ? (12.92 * c) : (1.055 * Math.pow(c, 1.0 / 2.4) - 0.055);
+    }
+    function srgb2linear3(v) { return [srgb2linear1(v[0]), srgb2linear1(v[1]), srgb2linear1(v[2])]; }
+    function linear2srgb3(v) { return [linear2srgb1(v[0]), linear2srgb1(v[1]), linear2srgb1(v[2])]; }
+
+    /* ---------- HSV <-> linear RGB (ported) ---------- */
+    /* original uses H in 0..1, S 0..1, V 0..1 */
+    function hsv2linear(h, s, v) {
+      // convert as in your GLSL:
+      // vec3 k = mod(vec3(5.,3.,1.) + (h*6.), 6.);
+      // return hsv[2] - hsv[2]*hsv[1]*clamp(min(k,4.-k),vec3(0.),vec3(1.));
+      const h6 = h * 6.0;
+      const k = [mod(5 + h6, 6), mod(3 + h6, 6), mod(1 + h6, 6)];
+      const min_k = [Math.min(k[0], 4 - k[0]), Math.min(k[1], 4 - k[1]), Math.min(k[2], 4 - k[2])];
+      const t = min_k.map(x => clamp(x, 0, 1));
+      return [
+        v - v * s * t[0],
+        v - v * s * t[1],
+        v - v * s * t[2]
+      ];
+    }
+
+    function linear2hsv(c) {
+      // port of your linear2hsv
+      const R = c[0], G = c[1], B = c[2];
+      const V = Math.max(R, G, B);
+      const VmC = Math.min(R, G, B);
+      const C = V - VmC;
+      const L = V - (C / 2.0);
+
+      let H = 0;
+      const eps = 1e-6;
+      if (Math.abs(C) < eps) {
+        H = 0;
+      } else if (Math.abs(V - R) < eps) {
+        H = mod((G - B) / C, 6.0);
+      } else if (Math.abs(V - G) < eps) {
+        H = (B - R) / C + 2.0;
+      } else if (Math.abs(V - B) < eps) {
+        H = (R - G) / C + 4.0;
+      }
+      H = H / 6.0;
+
+      let S = 0;
+      if (Math.abs(V) > eps) S = C / V;
+
+      return [H, S, V];
+    }
+
+    /* ---------- OKLab <-> linear (ported) ---------- */
+    /* Use Math.cbrt for cube roots to handle negatives safely */
+    function linear2oklab(c) {
+      const r = c[0], g = c[1], b = c[2];
+      // linear sRGB -> LMS
+      const l = 0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b;
+      const m = 0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b;
+      const s = 0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b;
+      // nonlinearity (cube root)
+      const l_ = Math.cbrt(l);
+      const m_ = Math.cbrt(m);
+      const s_ = Math.cbrt(s);
+      // LMS -> OKLab
+      return [
+        0.2104542553 * l_ + 0.7936177850 * m_ - 0.0040720468 * s_,
+        1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_,
+        0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_
+      ];
+    }
+
+    function oklab2linear(c) {
+      const L = c[0], a = c[1], b = c[2];
+      // OKLab -> LMS'
+      const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+      const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+      const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+      // undo nonlinearity (cube)
+      const l = l_ * l_ * l_;
+      const m = m_ * m_ * m_;
+      const s = s_ * s_ * s_;
+      // LMS -> linear sRGB
+      return [
+        +4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+        -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+        -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+      ];
+    }
+
+    /* OKLab <-> OKLCH */
+    function oklab2oklch(lab) {
+      const L = lab[0];
+      const a = lab[1];
+      const b = lab[2];
+      const C = Math.hypot(a, b);
+      let h = Math.atan2(b, a); // -PI..PI
+      if (h < 0) h += 2 * Math.PI;
+      return [L, C, h]; // h is radians
+    }
+    function oklch2oklab(lch) {
+      const L = lch[0], C = lch[1], h = lch[2];
+      return [L, C * Math.cos(h), C * Math.sin(h)];
+    }
+    function linear2oklch(linear) {
+      return oklab2oklch(linear2oklab(linear));
+    }
+    function oklch2linear(lch) {
+      return oklab2linear(oklch2oklab(lch));
+    }
+
+    /* ---------------------------
+       Wiring UI
+       --------------------------- */
+
+    const $ = id => document.getElementById(id);
+    const swatch = $('swatch');
+    const cssHex = $('cssHex');
+    const srgbOut = $('srgbOut');
+
+    const inputs = {
+      // HSV
+      h_hue: $('h_hue'), n_hue: $('n_hue'),
+      h_sat: $('h_sat'), n_sat: $('n_sat'),
+      h_val: $('h_val'), n_val: $('n_val'),
+      // sRGB 0..255
+      sr_r: $('sr_r'), sr_r_n: $('sr_r_n'),
+      sr_g: $('sr_g'), sr_g_n: $('sr_g_n'),
+      sr_b: $('sr_b'), sr_b_n: $('sr_b_n'),
+      // linear RGB
+      lr_r: $('lr_r'), lr_r_n: $('lr_r_n'),
+      lr_g: $('lr_g'), lr_g_n: $('lr_g_n'),
+      lr_b: $('lr_b'), lr_b_n: $('lr_b_n'),
+      // oklab
+      ok_l: $('ok_l'), ok_l_n: $('ok_l_n'),
+      ok_a: $('ok_a'), ok_a_n: $('ok_a_n'),
+      ok_b: $('ok_b'), ok_b_n: $('ok_b_n'),
+      // oklch
+      och_l: $('och_l'), och_l_n: $('och_l_n'),
+      och_c: $('och_c'), och_c_n: $('och_c_n'),
+      och_h: $('och_h'), och_h_n: $('och_h_n'),
+    };
+
+    let programmaticUpdate = false;
+
+    function setPair(rangeElem, numElem, value) {
+      if (rangeElem) rangeElem.value = value;
+      if (numElem) numElem.value = value;
+    }
+
+    function clamp01(x) { return clamp(x, 0, 1); }
+
+    /* update UI from linearRGB color (in 0..1, may be out-of-gamut) */
+    function updateFromLinearRGB(linear) {
+      programmaticUpdate = true;
+      // HSV (use linear2hsv)
+      const hsv = linear2hsv(linear);
+      setPair(inputs.h_hue, inputs.n_hue, (hsv[0] * 360).toFixed(3));
+      setPair(inputs.h_sat, inputs.n_sat, (hsv[1] * 100).toFixed(3));
+      setPair(inputs.h_val, inputs.n_val, (hsv[2] * 100).toFixed(3));
+
+      // linear RGB fields: show raw linear values (not clamped)
+      setPair(inputs.lr_r, inputs.lr_r_n, Number(linear[0].toFixed(6)));
+      setPair(inputs.lr_g, inputs.lr_g_n, Number(linear[1].toFixed(6)));
+      setPair(inputs.lr_b, inputs.lr_b_n, Number(linear[2].toFixed(6)));
+
+      // sRGB (convert, clamp for display)
+      const srgb = linear2srgb3(linear).map(x => clamp01(x));
+      const srgb255 = srgb.map(x => Math.round(x * 255));
+      setPair(inputs.sr_r, inputs.sr_r_n, srgb255[0]);
+      setPair(inputs.sr_g, inputs.sr_g_n, srgb255[1]);
+      setPair(inputs.sr_b, inputs.sr_b_n, srgb255[2]);
+
+      // OKLab and OKLCH
+      const oklab = linear2oklab(linear);
+      setPair(inputs.ok_l, inputs.ok_l_n, Number(oklab[0].toFixed(6)));
+      setPair(inputs.ok_a, inputs.ok_a_n, Number(oklab[1].toFixed(6)));
+      setPair(inputs.ok_b, inputs.ok_b_n, Number(oklab[2].toFixed(6)));
+
+      const oklch = oklab2oklch(oklab);
+      setPair(inputs.och_l, inputs.och_l_n, Number(oklch[0].toFixed(6)));
+      setPair(inputs.och_c, inputs.och_c_n, Number(oklch[1].toFixed(6)));
+      setPair(inputs.och_h, inputs.och_h_n, Number((oklch[2] * 180 / Math.PI).toFixed(3)));
+
+      // update swatch and CSS hex
+      const srgbClamped = srgb.map(x => Math.round(clamp01(x) * 255));
+      const hex = srgbClamped.map(v => v.toString(16).padStart(2, '0')).join('');
+      swatch.style.background = `rgb(${srgbClamped.join(',')})`;
+      cssHex.textContent = `#${hex.toUpperCase()}`;
+      srgbOut.textContent = `${srgbClamped.join(',')}`;
+
+      programmaticUpdate = false;
+    }
+
+    /* Compute linear rgb from current UI state depending on which space changed.
+       We'll supply multiple event handlers that call a central function, passing which
+       'space' was changed so we know how to interpret numbers typed in. */
+
+    function parseNumber(el, fallback = 0) {
+      if (!el) return fallback;
+      const v = parseFloat(el.value);
+      return Number.isFinite(v) ? v : fallback;
+    }
+
+    /* When user edits HSV, compute linear RGB using hsv2linear */
+    function onHSVChange() {
+      if (programmaticUpdate) return;
+      const h = parseNumber(inputs.n_hue, 0) / 360;
+      const s = parseNumber(inputs.n_sat, 0) / 100;
+      const v = parseNumber(inputs.n_val, 0) / 100;
+      const lin = hsv2linear(h, s, v);
+      updateFromLinearRGB(lin);
+    }
+
+    /* When user edits sRGB (0..255), convert to linear then update */
+    function onSRGBChange() {
+      if (programmaticUpdate) return;
+      const r = parseNumber(inputs.sr_r_n, 0) / 255;
+      const g = parseNumber(inputs.sr_g_n, 0) / 255;
+      const b = parseNumber(inputs.sr_b_n, 0) / 255;
+      const lin = srgb2linear3([r, g, b]);
+      updateFromLinearRGB(lin);
+    }
+
+    /* When user edits linear RGB directly */
+    function onLinearRGBChange() {
+      if (programmaticUpdate) return;
+      const r = parseNumber(inputs.lr_r_n, 0);
+      const g = parseNumber(inputs.lr_g_n, 0);
+      const b = parseNumber(inputs.lr_b_n, 0);
+      updateFromLinearRGB([r, g, b]);
+    }
+
+    /* When user edits OKLab */
+    function onOKLabChange() {
+      if (programmaticUpdate) return;
+      const L = parseNumber(inputs.ok_l_n, 0);
+      const a = parseNumber(inputs.ok_a_n, 0);
+      const b = parseNumber(inputs.ok_b_n, 0);
+      const lin = oklab2linear([L, a, b]);
+      updateFromLinearRGB(lin);
+    }
+
+    /* When user edits OKLCH (h in degrees) */
+    function onOKLCHChange() {
+      if (programmaticUpdate) return;
+      const L = parseNumber(inputs.och_l_n, 0);
+      const C = parseNumber(inputs.och_c_n, 0);
+      const hdeg = parseNumber(inputs.och_h_n, 0);
+      const hrad = hdeg * Math.PI / 180.0;
+      const lin = oklch2linear([L, C, hrad]);
+      updateFromLinearRGB(lin);
+    }
+
+    /* Wire up all inputs: when range moves, mirror to number and call the appropriate handler.
+       To keep this short we attach general connectors. */
+
+    function wire(rangeEl, numEl, handler, transformRangeToNum = v => v, transformNumToRange = v => v) {
+      if (!rangeEl || !numEl) return;
+      rangeEl.addEventListener('input', () => {
+        if (programmaticUpdate) return;
+        programmaticUpdate = true;
+        numEl.value = transformRangeToNum(rangeEl.value);
+        programmaticUpdate = false;
+        handler();
+      });
+      numEl.addEventListener('input', () => {
+        if (programmaticUpdate) return;
+        programmaticUpdate = true;
+        rangeEl.value = transformNumToRange(numEl.value);
+        programmaticUpdate = false;
+        handler();
+      });
+    }
+
+    /* Hook HSV */
+    wire(inputs.h_hue, inputs.n_hue, onHSVChange,
+      v => Number(v), v => clamp(Number(v), 0, 360));
+    wire(inputs.h_sat, inputs.n_sat, onHSVChange,
+      v => Number(v), v => clamp(Number(v), 0, 100));
+    wire(inputs.h_val, inputs.n_val, onHSVChange,
+      v => Number(v), v => clamp(Number(v), 0, 100));
+
+    /* sRGB */
+    wire(inputs.sr_r, inputs.sr_r_n, onSRGBChange,
+      v => Number(v), v => clamp(Number(v), 0, 255));
+    wire(inputs.sr_g, inputs.sr_g_n, onSRGBChange,
+      v => Number(v), v => clamp(Number(v), 0, 255));
+    wire(inputs.sr_b, inputs.sr_b_n, onSRGBChange,
+      v => Number(v), v => clamp(Number(v), 0, 255));
+
+    /* linear RGB */
+    wire(inputs.lr_r, inputs.lr_r_n, onLinearRGBChange,
+      v => Number(Number(v).toFixed(6)), v => Number(v));
+    wire(inputs.lr_g, inputs.lr_g_n, onLinearRGBChange,
+      v => Number(Number(v).toFixed(6)), v => Number(v));
+    wire(inputs.lr_b, inputs.lr_b_n, onLinearRGBChange,
+      v => Number(Number(v).toFixed(6)), v => Number(v));
+
+    /* OKLab */
+    wire(inputs.ok_l, inputs.ok_l_n, onOKLabChange,
+      v => Number(Number(v).toFixed(6)), v => Number(v));
+    wire(inputs.ok_a, inputs.ok_a_n, onOKLabChange,
+      v => Number(Number(v).toFixed(6)), v => Number(v));
+    wire(inputs.ok_b, inputs.ok_b_n, onOKLabChange,
+      v => Number(Number(v).toFixed(6)), v => Number(v));
+
+    /* OKLCH */
+    wire(inputs.och_l, inputs.och_l_n, onOKLCHChange,
+      v => Number(Number(v).toFixed(6)), v => Number(v));
+    wire(inputs.och_c, inputs.och_c_n, onOKLCHChange,
+      v => Number(Number(v).toFixed(6)), v => Number(v));
+    wire(inputs.och_h, inputs.och_h_n, onOKLCHChange,
+      v => Number(v), v => clamp(Number(v), 0, 360));
+
+    /* initialize to a pleasant color (e.g. H=200°, S=60%, V=80%) */
+    function init() {
+      programmaticUpdate = true;
+      inputs.n_hue.value = 200; inputs.h_hue.value = 200;
+      inputs.n_sat.value = 60; inputs.h_sat.value = 60;
+      inputs.n_val.value = 80; inputs.h_val.value = 80;
+      programmaticUpdate = false;
+      onHSVChange();
+    }
+    init();
+
+  </script>
+</body>
+
+</html>
