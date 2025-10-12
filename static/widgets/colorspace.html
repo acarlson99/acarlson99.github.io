@@ -8,6 +8,13 @@
   <link rel="stylesheet" href="/style.css">
 
   <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem;
+    }
+
     .grid {
       display: grid;
       grid-template-columns: 320px 1fr;
@@ -18,6 +25,8 @@
     .panel {
       border-radius: 10px;
       padding: 12px;
+      width: 100%;
+      max-width: 600px;
     }
 
     .swatch {
@@ -43,14 +52,7 @@
     }
 
     .muted {
-      color: #666;
       font-size: 13px
-    }
-
-    footer {
-      margin-top: 18px;
-      color: #666;
-      font-size: 13px;
     }
 
     .controls {
@@ -61,16 +63,15 @@
   </style>
 </head>
 
-<body>
+<body id="body">
 
   <h1>Color-space playground</h1>
-  <p class="muted">Edit any value (HSV hue, sRGB, linear RGB, OKLab, or OKLCH) and all other fields will update. Hue
-    shown in degrees.</p>
+  <p class="muted">Flick my sliders about</p>
 
   <div class="grid">
     <div class="panel">
       <h2>Color swatch</h2>
-      <div id="swatch" class="swatch" style="background:#888"></div>
+      <div id="swatch" class="swatch"></div>
       <div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
         <div>
           <div><strong>CSS sRGB</strong></div>
@@ -153,8 +154,6 @@
     </div>
   </div>
 
-  <footer>Converted from GLSL conversion routines. Hue units: HSV H in degrees, OKLCH h in degrees.</footer>
-
   <script>
     /* ---------------------------
        Math helpers (GLSL -> JS)
@@ -178,7 +177,10 @@
 
     /* ---------- HSV <-> linear RGB (ported) ---------- */
     /* original uses H in 0..1, S 0..1, V 0..1 */
-    function hsv2linear(h, s, v) {
+    function hsv2linear(c) {
+      const h = c[0];
+      const s = c[1];
+      const v = c[2];
       // convert as in your GLSL:
       // vec3 k = mod(vec3(5.,3.,1.) + (h*6.), 6.);
       // return hsv[2] - hsv[2]*hsv[1]*clamp(min(k,4.-k),vec3(0.),vec3(1.));
@@ -320,6 +322,23 @@
 
     function clamp01(x) { return clamp(x, 0, 1); }
 
+    let textColorF = (v) => {
+      let lin = srgb2linear3(v);
+      let lab = linear2oklab(lin);
+      let lch = linear2oklch(lin);
+      lch[0] = 0.25 + 0.5 * lch[0];
+      lch[2] += Math.PI * 0.50;
+      return linear2srgb3(oklch2linear(lch));
+
+      // let hsv = linear2hsv(lin);
+      // hsv[0] += 0.5;
+      // let srgb = linear2srgb3(hsv2linear(hsv));
+      // return srgb;
+
+      // return v.map(n => 1.0 - n);
+      // return v;
+    };
+
     /* update UI from linearRGB color (in 0..1, may be out-of-gamut) */
     function updateFromLinearRGB(linear) {
       programmaticUpdate = true;
@@ -354,10 +373,15 @@
 
       // update swatch and CSS hex
       const srgbClamped = srgb.map(x => Math.round(clamp01(x) * 255));
+      const tcol = textColorF(srgb);
+      // console.log(tcol, srgb);
+      const srgb2Clamped = tcol.map(x => Math.round(clamp01(x) * 255));
       const hex = srgbClamped.map(v => v.toString(16).padStart(2, '0')).join('');
-      swatch.style.background = `rgb(${srgbClamped.join(',')})`;
+      const body = $('body');
+      body.style.background = `rgb(${srgbClamped.join(',')})`;
       cssHex.textContent = `#${hex.toUpperCase()}`;
       srgbOut.textContent = `${srgbClamped.join(',')}`;
+      body.style.color = `rgb(${srgb2Clamped.join(',')})`;
 
       programmaticUpdate = false;
     }
@@ -378,7 +402,7 @@
       const h = parseNumber(inputs.n_hue, 0) / 360;
       const s = parseNumber(inputs.n_sat, 0) / 100;
       const v = parseNumber(inputs.n_val, 0) / 100;
-      const lin = hsv2linear(h, s, v);
+      const lin = hsv2linear([h, s, v]);
       updateFromLinearRGB(lin);
     }
 
@@ -486,9 +510,9 @@
     /* initialize to a pleasant color (e.g. H=200°, S=60%, V=80%) */
     function init() {
       programmaticUpdate = true;
-      inputs.n_hue.value = 200; inputs.h_hue.value = 200;
-      inputs.n_sat.value = 60; inputs.h_sat.value = 60;
-      inputs.n_val.value = 80; inputs.h_val.value = 80;
+      inputs.n_hue.value = Math.random() * 256; inputs.h_hue.value = inputs.n_hue.value;
+      inputs.n_sat.value = Math.random() * 100; inputs.h_sat.value = inputs.n_sat.value;
+      inputs.n_val.value = Math.random() * 100; inputs.h_val.value = inputs.n_val.value;
       programmaticUpdate = false;
       onHSVChange();
     }
