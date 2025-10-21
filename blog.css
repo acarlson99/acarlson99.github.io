@@ -23,3 +23,11 @@
 #table-of-contents a:hover {
   text-decoration: underline;
 }
+
+.shader-canvas {
+	max-width: 25vw; max-height: 25vw;
+}
+
+img {
+	max-width: 25vw; max-height: 25vw;
+}

@@ -1,6 +1,5 @@
 #+HTML_HEAD: <link rel="stylesheet" type="text/css" href="style.css">
 #+HTML_HEAD: <link rel="stylesheet" type="text/css" href="blog.css">
-#+HTML_HEAD: <style>img { max-width: 25vw; max-height: 25vw; }</style>
 #+OPTIONS: toc:t
 
 this is a work in progress
@@ -30,10 +29,14 @@ https://en.wikipedia.org/wiki/Waveform
   }
 #+END_SRC
 
+#+RESULTS: sin
+#+begin_export html
+#+end_export
+
 Now we can do a fun trick to create a gradient
 
 #+NAME: sin-gradient
-#+BEGIN_SRC glsl :file ./static/shadergen/sin-gradient.png :width 1080 :height 566 :exports both
+#+BEGIN_SRC glsl :file ./static/shadergen/sin-gradient.png :width 1000 :height 200 :exports both
   #define PI 3.14159
 
   void main() {
@@ -69,7 +72,7 @@ And even make some [[id:97fcb215-a181-4ccb-ac1f-3cadb942a9da][illusions]].
 
 #+NAME: square-gradient
 #+BEGIN_SRC glsl :file ./static/shadergen/square-gradient.png :width 1000 :height 200 :exports both
-  #define PI 355/113
+  #define PI 355./113.
   void main() {
       vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / iResolution.xy;
 
@@ -165,6 +168,35 @@ And even make some [[id:97fcb215-a181-4ccb-ac1f-3cadb942a9da][illusions]].
 #+END_SRC
 
 * low-resolution patterns (like for light arrays)
+
+** Motion
+
+#+NAME: checkerboard-1
+#+BEGIN_SRC glsl :file /dev/null :exports code :noweb no-export :noweb-prefix no
+
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - 0.5 * iResolution.xy) / iResolution.xy;
+      vec2 grid = floor((uv + 0.5) * vec2(6.0,3.)); // 6x6 repeating grid
+      float pattern = 1.-mod(grid.x + grid.y, N);
+      fragColor = vec4(vec3(pattern), 1.0);
+  }
+#+END_SRC
+
+Here we define a 6x6 grid, with every second cell turned on.  This creates a checkerboard pattern.
+
+#+NAME: checkerboard-2
+#+BEGIN_SRC glsl :file ./static/shadergen/checkerboard-2.png :width 1080 :height (/ 1080 2) :exports both :noweb no-export :noweb-prefix no
+  #define N 2.0
+  // <<checkerboard-1>>
+#+END_SRC
+
+By adding a second dark cell (i.e. every third cell is turned on) we can create a motion effect.
+
+#+NAME: checkerboard-3
+#+BEGIN_SRC glsl :file ./static/shadergen/checkerboard-3.png :width 1080 :height (/ 1080 2) :exports both :noweb no-export :noweb-prefix no
+  #define N 3.0
+  // <<checkerboard-1>>
+#+END_SRC
 
 * SDF
 
@@ -291,7 +323,7 @@ Given the above definitions we can manupulate colors thusly
       vec3 c1 = hsv2linear(hsv1);
       vec3 c2 = hsv2linear(hsv2);
       float sqsc = 6.;
-      float wav = sin(y*2.*PI*sqsc+PI/2)*sin(uv.x*2.*PI*sqsc);
+      float wav = sin(y*2.*PI*sqsc+PI/2.)*sin(uv.x*2.*PI*sqsc);
 
       // add a couple neat little effects
       float blur = 0.25;
@@ -623,7 +655,7 @@ Idea yoinked from this xorDev post https://twitter.com/XorDev/status/17303307838
       float id = floor(fract(uv.x*2.)*n);
       vec3 col = mix(ca,cb, id/(n-1.));
 
-      vec3 col2 = mix(ca,cb, (id+1)/(n-1));
+      vec3 col2 = mix(ca,cb, (id+1.)/(n-1.));
 
       // top to bottom
       switch (band) {
@@ -889,7 +921,7 @@ Or we could get artsy with it using our [[id:a4337c68-8ceb-422f-947f-67f9511df92
       vec3 col = vec3(1.,1.,1.);
 
       float a = atan(uvz.y,uvz.x);
-      float wav = sin(a*6+sin(length(uvz)*PI*6.*2.)*PI+length(uvz)*PI*2.*6.);
+      float wav = sin(a*6.+sin(length(uvz)*PI*6.*2.)*PI+length(uvz)*PI*2.*6.);
 
       vec3 lch = vec3(1., length(uvz), atan(uvz.y,uvz.x)+wav);
       vec3 ca = oklch2linear(lch);
