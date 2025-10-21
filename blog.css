@@ -14,12 +14,6 @@
   font-size: 0.9em;
 }
 
-/* Push main content to the right */
-#content {
-  margin-left: 260px;
-  padding: 1em;
-}
-
 /* Make TOC links simple and readable */
 #table-of-contents a {
   text-decoration: none;
