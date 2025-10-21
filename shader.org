@@ -1,6 +1,7 @@
 #+HTML_HEAD: <link rel="stylesheet" type="text/css" href="style.css">
 #+HTML_HEAD: <link rel="stylesheet" type="text/css" href="blog.css">
 #+HTML_HEAD: <style>img { max-width: 25vw; max-height: 25vw; }</style>
+#+OPTIONS: toc:t
 
 this is a work in progress
 
@@ -39,7 +40,7 @@ Now we can do a fun trick to create a gradient
       vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / iResolution.xy;
       float th = uv.x;
 
-      vec3 phase = (vec3(0.,1.,2.)/6.*PI - PI/3.)*3.;
+      vec3 phase = vec3(1.,2.,0.)*2.*PI/3.;
 
       float amp = 1.;
       float wavelength = 1.;
@@ -66,6 +67,21 @@ And even make some [[id:97fcb215-a181-4ccb-ac1f-3cadb942a9da][illusions]].
 #+RESULTS: square
 [[file:./static/shadergen/square.png]]
 
+#+NAME: square-gradient
+#+BEGIN_SRC glsl :file ./static/shadergen/square-gradient.png :width 1000 :height 200 :exports both
+  #define PI 355/113
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / iResolution.xy;
+
+  #define sign(a) (vec3(sign(a[0]),sign(a[1]),sign(a[2])))
+      // really this is just `sign(sin(x))`
+      vec3 col = sign(sin(
+                          vec3(0.,1.,2.)*2.*PI/3.
+                          +(uv.x*3.14*2.)*3.));
+      fragColor = vec4(.5+.5*col, 1.);
+  }
+#+END_SRC
+
 ** Triangle
 
 #+NAME: triangle
@@ -87,6 +103,25 @@ And even make some [[id:97fcb215-a181-4ccb-ac1f-3cadb942a9da][illusions]].
 
 #+RESULTS: triangle
 [[file:./static/shadergen/triangle.png]]
+
+#+NAME: triangle-gradient
+#+BEGIN_SRC glsl :file ./static/shadergen/triangle-gradient.png :width 1000 :height 200 :exports both
+  #define PI 3.14159
+
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / iResolution.xy;
+
+      float th = uv.x;
+      float phase = 0.;
+      float amp = 1.;
+      float wavelength = 1./3.;
+
+      vec3 col = ((2.*amp)/PI)* asin(sin(
+                                         vec3(0.,1.,2.)*2.*PI/3.
+                                         +(2.*PI*th - phase)/wavelength));
+      fragColor = vec4(.5*.5+col, 1.);
+  }
+#+END_SRC
 
 ** Sawtooth
 
@@ -110,6 +145,24 @@ And even make some [[id:97fcb215-a181-4ccb-ac1f-3cadb942a9da][illusions]].
 #+RESULTS: sawtooth
 [[file:./static/shadergen/sawtooth.png]]
 
+#+NAME: sawtooth-gradient
+#+BEGIN_SRC glsl :file ./static/shadergen/sawtooth-gradient.png :width 1000 :height 200 :exports both
+  #define PI 3.14159
+
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / iResolution.xy;
+
+      float th = uv.x;
+      float phase = 0.;
+      float amp = 1.;
+      float wavelength = 1./3.;
+
+      vec3 col = (2.*amp/PI) * atan(tan(
+                                         vec3(0.,1.,2.)*PI*2./3.
+                                         +(th*2.*PI - phase) / (2.*wavelength)));
+      fragColor = vec4(col, 1.);
+  }
+#+END_SRC
 
 * low-resolution patterns (like for light arrays)
 
@@ -138,8 +191,6 @@ Adaption of https://en.wikipedia.org/wiki/HSL_and_HSV#HSV_to_RGB_alternative
 
   #ifndef HSV_CONVERSION_FNS
   #define HSV_CONVERSION_FNS
-
-  #define PI 3.141592653589
 
   vec3 hsv2linear(vec3 hsv){
       vec3 k = mod(vec3(5.,3.,1.) + (hsv[0]*6.), 6.);
@@ -185,7 +236,7 @@ Adaption of https://en.wikipedia.org/wiki/HSL_and_HSV#HSV_to_RGB_alternative
       return vec3(H,S,V);
   }
 
-  #endif
+  #endif // HSV_CONVERSION_FNS
 #+END_SRC
 
 If there are 3 colors we want to mix in 6 permutations:
@@ -212,6 +263,8 @@ Given the above definitions we can manupulate colors thusly
 #+NAME: hsv-colorspace-demo
 #+BEGIN_SRC glsl :file ./static/shadergen/hsv-colorspace-demo.png :width 1080 :height 1080 :exports both :noweb no-export :noweb-prefix no
   // <<hsv-conversion-fns>>
+
+  #define PI 3.141592653589
 
   void main() {
       vec2 uv = gl_FragCoord.xy / iResolution.xy;
@@ -300,7 +353,7 @@ Based on https://en.wikipedia.org/wiki/SRGB#Transfer_function_(%22gamma%22)
       return vec3(linear2srgb(c.r), linear2srgb(c.g), linear2srgb(c.b));
   }
 
-  #endif
+  #endif // RGB_CONVERSION_FNS
 #+END_SRC
 
 **** Example
@@ -401,7 +454,7 @@ Note that Lightness has a value range of [0..1] and A,B have range [-0.37 .. 0.3
       return linear2srgb( oklab2linear(lab) ); // OKLab → linear → gamma
   }
 
-  #endif
+  #endif // OKLAB_CONVERSION_FNS
 #+END_SRC
 
 **** Example
@@ -489,7 +542,7 @@ H(l a b) = atan2(b,a)
       return oklab2oklch(linear2oklab(linear));
   }
 
-  #endif
+  #endif // OKLCH_CONVERSION_FNS
 #+END_SRC
 
 **** Example
@@ -531,7 +584,7 @@ Idea yoinked from this xorDev post https://twitter.com/XorDev/status/17303307838
 
   #ifndef MODE
   # define MODE 0
-  #endif
+  #endif // MODE
 
   void main() {
       vec2 uv = gl_FragCoord.xy / iResolution.xy;
@@ -602,7 +655,7 @@ Idea yoinked from this xorDev post https://twitter.com/XorDev/status/17303307838
           col = abs(linear2oklch(col).rrr-linear2oklch(col2).rrr);
       else
           col = vec3(0.)+(col-col2);
-  #endif
+  #endif // MODE
 
       fragColor = vec4(col,1.0);
   }
@@ -628,48 +681,11 @@ We can even visualize the change between cells.  On the left is change in RGB va
   // <<color-mix>>
 #+END_SRC
 
-*** lch hsv comparison
-
-#+NAME: color-mix-cmp-1
-#+BEGIN_SRC glsl :file ./static/shadergen/color-mix-shader-out-whaa.png :width 1080 :height 1080 :exports both :noweb no-export :noweb-prefix no
-  // <<hsv-conversion-fns>>
-  // <<srgb-conversion-fns>>
-  // <<oklab-conversion-fns>>
-  // <<oklch-conversion-fns>>
-
-  void main() {
-      vec2 uv = gl_FragCoord.xy / iResolution.xy;
-      vec2 uvz = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
-
-      vec3 col = vec3(1.,1.,1.);
-
-      float a = atan(uvz.y,uvz.x);
-      float wav = sin(a*6+sin(length(uvz)*PI*6.*2.)*PI+length(uvz)*PI*2.*6.);
-
-      vec3 lch = vec3(1., length(uvz), atan(uvz.y,uvz.x)+wav);
-      vec3 ca = oklch2linear(lch);
-      vec3 cb = hsv2linear(vec3(lch[2]/2./PI+0.25, lch[1], lch[0]));
-
-      float blur = fwidth(wav+.5);
-      // This should highlight different properties of the
-      // LCH `chroma` value and
-      // HSV `saturation` value
-      col = mix(ca,cb,smoothstep(-blur,blur,wav));
-
-      fragColor = vec4(col,1.0);
-  }
-#+END_SRC
-
-#+RESULTS: color-mix-cmp-1
-[[file:./static/shadergen/color-mix-shader-out-whaa.png]]
-
 ** All the functions for your copy-pasting pleasure
 
 #+NAME: colorspace-megadump
 #+BEGIN_SRC glsl :file /dev/null :exports code :noweb yes :noweb-prefix no
   // <<hsv-conversion-fns>>
-  // <<srgb-conversion-fns>>
-  // <<oklab-conversion-fns>>
   // <<oklch-conversion-fns>>
 #+END_SRC
 
@@ -856,3 +872,58 @@ Or we could get artsy with it using our [[id:a4337c68-8ceb-422f-947f-67f9511df92
       fragColor = vec4(.5+.5*c, 1.);
   }
 #+END_SRC
+
+**** lch hsv gradient throbs and pulses
+
+#+NAME: color-mix-cmp-1
+#+BEGIN_SRC glsl :file ./static/shadergen/color-mix-shader-out-whaa.png :width 1080 :height 1080 :exports both :noweb no-export :noweb-prefix no
+  // <<hsv-conversion-fns>>
+  // <<oklch-conversion-fns>>
+
+  #define PI 3.141592653589
+
+  void main() {
+      vec2 uv = gl_FragCoord.xy / iResolution.xy;
+      vec2 uvz = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
+
+      vec3 col = vec3(1.,1.,1.);
+
+      float a = atan(uvz.y,uvz.x);
+      float wav = sin(a*6+sin(length(uvz)*PI*6.*2.)*PI+length(uvz)*PI*2.*6.);
+
+      vec3 lch = vec3(1., length(uvz), atan(uvz.y,uvz.x)+wav);
+      vec3 ca = oklch2linear(lch);
+      vec3 cb = hsv2linear(vec3(lch[2]/2./PI+0.25, lch[1], lch[0]));
+
+      float blur = fwidth(wav+.5);
+      // This should highlight different properties of the
+      // LCH `chroma` value and
+      // HSV `saturation` value
+      col = mix(ca,cb,smoothstep(-blur,blur,wav));
+
+      fragColor = vec4(col,1.0);
+  }
+#+END_SRC
+
+** Perspective
+
+Not even sure with this one, but the tiles kinda make crosses in different directions
+
+#+NAME: illusion-perspective
+#+BEGIN_SRC glsl :file ./static/shadergen/illusion-perspective.png :width 1024 :height 1024 :exports both
+  #define PI 335./113.
+
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy) / iResolution.xy;
+
+      vec3 col = vec3(1.);
+      // sin(x)+sin(y) for checkers
+      col *= step(0.,cos(uv.x*PI*20.+uv.y*PI*0.)*cos(uv.y*PI*10.+uv.x*PI*10.));
+      col *= mix(
+          mix(1.,.25,.5+uv.x),
+          mix(.25,1.,.5+uv.x),
+          step(0.,uv.y));
+      fragColor = vec4(col,1.);
+  }
+#+END_SRC
+
