@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Music Notes</title>
+<!-- 
+    This is really a super duper basic music notation webpage
+    mostly written by chatgpt
+    It basically only supports quarter notes in 4/4 time
+    and that's all I need it to do
+    , quite frankly
+-->
+<link rel="stylesheet" href="/style.css">
+<style>
+  body { font-family: sans-serif;  display:flex;  flex-direction:column; align-items:center; }
+  /* body { font-family: sans-serif; background:#111; color:#eee; display:flex; flex-direction:column; align-items:center; } */
+  canvas { margin-top:20px; background-color: var(--secondary-bg-color); border:1px solid var(--dropshadow-color); }
+  /* canvas { background:#1a1a1a; margin-top:20px; border:1px solid #444; } */
+  .toolbar { margin-top:10px; }
+  button { margin-right:8px; padding:6px 12px; }
+  input {width: 1em;}
+</style>
+</head>
+<body>
+<h2>Sheet Music</h2>
+<div class="toolbar">
+  <button id="addMeasure">Add Row</button>
+  <input id="setBPMField" value="4">
+  <button id="setBPM">Set BPM</button>
+  <input id="setMeasuresPerRowField" value="8">
+  <button id="setMeasuresPerRow">Measures Per Row</button>
+  <button id="clear">Clear</button>
+  <button id="export">Export JSON</button>
+</div>
+<canvas id="grid" width="1000" height="1000"></canvas>
+<script>
+const canvas = document.getElementById('grid');
+const ctx = canvas.getContext('2d');
+
+// ---- Layout config ----
+// go ahead and change these around, it shouldn't break things too much
+let beatsPerMeasure = 4;
+let measuresPerRow = 8; // wrap systems automatically
+let measures = measuresPerRow;
+
+let staffSpacing = 12;
+let lines = 5;
+let pitchStep = staffSpacing/2;
+let rowHeight = 140;
+let margin = 40;
+
+let notes = new Set(); // "time,pitch"
+
+function totalBeats(){ return measures*beatsPerMeasure; }
+function cellW(){ return (canvas.width-margin*2)/(beatsPerMeasure*measuresPerRow); }
+
+function pitchToY(p,row){
+  const staffTop = margin + row*rowHeight;
+  return staffTop + (lines-1)*staffSpacing - p*pitchStep;
+}
+
+const htmlBody = document.getElementsByTagName('body')[0];
+const colorBar = getComputedStyle(htmlBody).getPropertyValue('--primary-color');
+const colorStaff = getComputedStyle(htmlBody).getPropertyValue('--tertiary-color');
+const colorNotes = getComputedStyle(htmlBody).getPropertyValue('--primary-color');
+
+function drawStaffRow(row){
+  const staffTop = margin + row*rowHeight;
+  ctx.strokeStyle = colorStaff;
+  ctx.lineWidth=1.5;
+  for(let i=0;i<lines;i++){
+    const y=staffTop+i*staffSpacing;
+    ctx.beginPath(); ctx.moveTo(margin,y); ctx.lineTo(canvas.width-margin,y); ctx.stroke();
+  }
+}
+
+function drawBarLines(){
+  ctx.strokeStyle = colorBar;
+  ctx.lineWidth=2;
+  const w = cellW();
+  const _drawF = (row,col)  => {
+    const x=margin+col*beatsPerMeasure*w;
+    const staffTop = margin + row*rowHeight;
+    ctx.beginPath();
+    ctx.moveTo(x,staffTop-20);
+    ctx.lineTo(x,staffTop+(lines-1)*staffSpacing+20);
+    ctx.stroke();
+  }
+  for(let m=0;m<=measures;m++){
+    const row=Math.floor(m/measuresPerRow);
+    const col=m%measuresPerRow;
+    _drawF(row,col);
+    if (col==0 && row>=1) _drawF(row-1,measuresPerRow);
+  }
+}
+
+function drawLedgerLines(x,y,staffTop){
+  const topLine=staffTop;
+  const bottomLine=staffTop+(lines-1)*staffSpacing;
+  ctx.strokeStyle=colorStaff;
+  ctx.lineWidth=1.2;
+  if(y<topLine){
+    for(let yy=topLine-pitchStep; yy>=y; yy-=pitchStep*2){ ctx.beginPath(); ctx.moveTo(x-8,yy); ctx.lineTo(x+8,yy); ctx.stroke(); }
+  }
+  if(y>bottomLine){
+    for(let yy=bottomLine+pitchStep; yy<=y; yy+=pitchStep*2){ ctx.beginPath(); ctx.moveTo(x-8,yy); ctx.lineTo(x+8,yy); ctx.stroke(); }
+  }
+}
+
+function drawNotes(){
+  const w = cellW();
+  for(const n of notes){
+    const [t,p]=n.split(',').map(Number);
+    const measure=Math.floor(t/beatsPerMeasure);
+    const beat=t%beatsPerMeasure;
+    const row=Math.floor(measure/measuresPerRow);
+    const col=measure%measuresPerRow;
+
+    const x=margin+(col*beatsPerMeasure+beat)*w+w/2;
+    const y=pitchToY(p,row);
+    const staffTop = margin + row*rowHeight;
+
+    drawLedgerLines(x,y,staffTop);
+    ctx.beginPath(); ctx.ellipse(x,y,7,5,0,0,Math.PI*2); ctx.fillStyle=colorNotes; ctx.fill();
+  }
+}
+
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const rows=Math.ceil(measures/measuresPerRow);
+  for(let r=0;r<rows;r++) drawStaffRow(r);
+  drawBarLines();
+  drawNotes();
+}
+
+draw();
+
+canvas.addEventListener('mousedown',e=>{
+  const rect=canvas.getBoundingClientRect();
+  const mx=e.clientX-rect.left;
+  const my=e.clientY-rect.top;
+  const w=cellW();
+
+  const col=Math.floor((mx-margin)/(beatsPerMeasure*w));
+  const beat=Math.floor((mx-margin)/w)%beatsPerMeasure;
+  const row=Math.floor((my-margin)/rowHeight + margin/rowHeight);
+  const measure=row*measuresPerRow+col;
+  if(measure<0||measure>=measures) return;
+
+  const p=Math.round((margin+row*rowHeight+(lines-1)*staffSpacing - my)/pitchStep);
+  const t=measure*beatsPerMeasure+beat;
+
+  console.log({
+    mx,my,
+    col,beat,row,measure,p,t
+  })
+
+  const key=`${t},${p}`;
+  if(notes.has(key)) notes.delete(key); else notes.add(key);
+  draw();
+});
+
+document.getElementById('addMeasure').onclick=()=>{ measures += measuresPerRow; draw(); };
+document.getElementById('setBPM').onclick=()=>{ 
+    let s = document.getElementById('setBPMField').value;
+    let n = Number(s);
+    if (isFinite(n)) beatsPerMeasure = n;
+    draw();
+};
+document.getElementById('setBPM').click();
+
+document.getElementById('setMeasuresPerRow').onclick=()=>{ 
+    let s = document.getElementById('setMeasuresPerRowField').value;
+    let n = Number(s);
+    if (isFinite(n)) measuresPerRow = n;
+    draw();
+};
+document.getElementById('setMeasuresPerRow').click();
+
+document.getElementById('clear').onclick=()=>{ notes.clear(); draw(); };
+
+document.getElementById('export').onclick=()=>{
+  const arr=[...notes].map(s=>{ const [t,p]=s.split(',').map(Number); return {time:t,pitch:p}; });
+  const blob=new Blob([JSON.stringify(arr,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='notes.json'; a.click();
+};
+</script>
+</body>
+</html>
