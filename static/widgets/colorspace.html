@@ -32,6 +32,7 @@
     .swatch {
       height: 160px;
       border-radius: 8px;
+      border-style: solid;
     }
 
     label {
@@ -72,7 +73,7 @@
     <div class="panel">
       <h2>Color swatch</h2>
       <div id="swatch" class="swatch"></div>
-      <div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
+      <div>
         <div>
           <div><strong>CSS sRGB</strong></div>
           <div id="cssHex" style="font-family:monospace;">#808080</div>
@@ -321,13 +322,16 @@
     }
 
     function clamp01(x) { return clamp(x, 0, 1); }
+    function mix(x,y,a) { return x * (1 - a) + y * a; }
 
     let textColorF = (v) => {
       let lin = srgb2linear3(v);
       let lab = linear2oklab(lin);
+      // lab[1] *= -1;
+      // lab[2] *= -1;
       let lch = linear2oklch(lin);
-      lch[0] = 0.25 + 0.5 * lch[0];
-      lch[2] += Math.PI * 0.50;
+      lch[0] = mix(0.25,0.75, 1-lch[0] );
+      lch[2] += Math.PI * 1/3;
       return linear2srgb3(oklch2linear(lch));
 
       // let hsv = linear2hsv(lin);
@@ -338,6 +342,28 @@
       // return v.map(n => 1.0 - n);
       // return v;
     };
+
+    let textColorF2 = (v) => {
+      let lin = srgb2linear3(v);
+      let lab = linear2oklab(lin);
+      // lab[1] *= -1;
+      // lab[2] *= -1;
+      let lch = linear2oklch(lin);
+      lch[0] = mix(0.25,0.75, 1-lch[0] );
+      lch[2] -= Math.PI * 1/3;
+      return linear2srgb3(oklch2linear(lch));
+    };
+
+    let textColorF3 = (v) => {
+      let lin = srgb2linear3(v);
+      let lab = linear2oklab(lin);
+      // lab[1] *= -1;
+      // lab[2] *= -1;
+      let lch = linear2oklch(lin);
+      lch[0] *= 0.95;
+      lch[2] += Math.PI * 1/4;
+      return linear2srgb3(oklch2linear(lch));
+    }
 
     /* update UI from linearRGB color (in 0..1, may be out-of-gamut) */
     function updateFromLinearRGB(linear) {
@@ -373,15 +399,29 @@
 
       // update swatch and CSS hex
       const srgbClamped = srgb.map(x => Math.round(clamp01(x) * 255));
-      const tcol = textColorF(srgb);
-      // console.log(tcol, srgb);
-      const srgb2Clamped = tcol.map(x => Math.round(clamp01(x) * 255));
+      const borderCol = textColorF(srgb);
+      // console.log(borderCol, srgb);
+      const borderColClamped = borderCol.map(x => Math.round(clamp01(x) * 255));
+      const borderCol2 = textColorF2(srgb);
+      const borderCol2Clamped = borderCol2.map(x => Math.round(clamp01(x) * 255));
+      const borderCol3 = textColorF3(srgb);
+      const borderCol3Clamped = borderCol3.map(x => Math.round(clamp01(x) * 255));
       const hex = srgbClamped.map(v => v.toString(16).padStart(2, '0')).join('');
       const body = $('body');
       body.style.background = `rgb(${srgbClamped.join(',')})`;
       cssHex.textContent = `#${hex.toUpperCase()}`;
       srgbOut.textContent = `${srgbClamped.join(',')}`;
-      body.style.color = `rgb(${srgb2Clamped.join(',')})`;
+      body.style.color = `rgb(${borderCol2Clamped.join(',')})`;
+      document.getElementById('swatch').style.borderColor = `rgb(${borderColClamped.join(',')})`;
+
+      Object.values(document.getElementsByTagName('fieldset')).forEach(e => {
+        e.style.borderColor = `rgb(${borderColClamped.join(',')})`;
+      });
+
+      Object.values(document.getElementsByClassName('muted')).forEach(e => {
+        e.style.color = `rgb(${borderCol3Clamped.join(',')})`;
+        // e.style.color = 'orange';
+      });
 
       programmaticUpdate = false;
     }
