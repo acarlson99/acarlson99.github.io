@@ -36,15 +36,19 @@ code {
     font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
     background-color: var(--secondary-bg-color);
     padding: 0.2em 0.4em;
-    border-radius: 4px;
     font-size: 0.95em;
 }
 
 /* Block code */
 pre {
-    background-color: var(--secondary-bg-color);
-    padding: 1em;
-    overflow-x: auto;
-    border-radius: 4px;
+
     font-family: Menlo, Monaco, Consolas, "Courier New", monospace;
+    background-color: var(--secondary-bg-color);
+    padding: 0.2em 0.4em;
+    font-size: 0.95em;
+
+	border-width: 1px;
+	border-style: solid;
+	border-color: var(--dropshadow-color);
+    border-radius: 0px;
 }
