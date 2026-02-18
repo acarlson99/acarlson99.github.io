@@ -772,23 +772,38 @@ https://en.wikipedia.org/wiki/Peripheral_drift_illusion
       float sc = 30.;
       float blur = sc/iResolution.y;
 
+      vec3 outline1 = vec3(0.);
+      vec3 outline2 = vec3(1.);
+      vec3 circleColor = vec3(.9,.8,.9);
+      vec3 bgColor = vec3(.5);
+
+  #define RGB(r,g,b) (vec3(r,g,b)/256.)
+      vec3 oxidizediron = RGB(155, 41, 21);
+      outline1 = RGB(4, 31, 30);
+      outline1 = RGB(12, 18, 12);
+      outline2 = RGB(247, 219, 167);
+      circleColor = RGB(239, 121, 138);
+      bgColor = RGB(80, 162, 167);
+
+      circleColor = oxidizediron;
+
       vec2 p = fract(uvz*sc)-.5;
 
       uvz = floor(uvz*sc)/sc;
 
       vec3 col = vec3(0.);
       float d = length(abs(p));
-      float smallCircle = 1.- smoothstep(.3,.3+blur,d);
-      float bigCircle = 1.-smoothstep(.4,.4+blur,d);
-      vec3 outlineCol = mix(vec3(0.),vec3(1.), bigCircle);
+      float radius = .3;
+      float thickness = .075;
+      float smallCircle = 1.- smoothstep(radius,radius+blur,d);
+      float bigCircle = 1.-smoothstep(radius+thickness,radius+thickness+blur,d);
       uvz *= PI*2.;
       float wav = atan(uvz.x,uvz.y)*3.
           +cos(uvz.x*2.)
           +sin(uvz.y*3.);
-      if ((rot(wav)*p).y<0.)
-          outlineCol *= .0;
-      col = mix(outlineCol, vec3(0.9,.8,.9), smallCircle);
-      col = mix(vec3(.5), col, bigCircle);
+      vec3 outlineCol = mix(outline2,outline1,step((rot(wav)*p).y,0.));
+      col = mix(outlineCol, circleColor, smallCircle);
+      col = mix(bgColor, col, bigCircle);
 
       //   col = vec3(outlineCol);
       // col *= .5+.5*vec3(sin(wav));
