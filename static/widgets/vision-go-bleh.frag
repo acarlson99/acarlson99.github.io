@@ -2,6 +2,13 @@
 precision highp float;
 
 /*
+This shader is responsible for inducing the waterfall illusion
+see https://en.wikipedia.org/wiki/Motion_aftereffect
+
+you can also get some based peripheral drifting if you play your colors right
+
+
+
 idk abt licensing, but pls be chill about it
 
 credit me when you feel it is necessary
