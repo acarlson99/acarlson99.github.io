@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+html,body,canvas{
+    margin:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+}
+#ui{
+    position:absolute;
+    top:10px;
+    left:10px;
+    background:#fff8;
+    padding:8px;
+    font:12px sans-serif;
+    opacity: 0.25;
+    transition: opacity 0.3s ease-in-out;
+}
+#ui:hover {
+    opacity: 1.0; /* Fully visible when the mouse is over it */
+}
+label{
+    display:block;
+}
+
+/* all this bullshit for a little popup box */
+/* The dim overlay that covers the entire screen */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.5); /* Dim background */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000; /* Ensure it stays above the canvas and #ui */
+}
+
+/* The actual popup box */
+.modal-box {
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 500px;
+    font-family: sans-serif;
+}
+
+.modal-box textarea {
+    width: 100%;
+    height: 100px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.modal-box .actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="ui"></div>
+
+<script type="module">
+
+const N_TRANSFORMS = 5;
+
+// Canvas setup
+const canvas = document.getElementById("c");
+const gl = canvas.getContext("webgl2", { preserveDrawingBuffer: true });
+
+function resize() {
+    canvas.width = innerWidth;
+    canvas.height = innerHeight;
+    gl.viewport(0,0,canvas.width,canvas.height);
+}
+addEventListener("resize", resize);
+resize();
+
+// Load Shader
+const vs = await fetch("passthrough.vert").then(r => r.text());
+const fs = await fetch("vision-go-bleh.frag").then(r => r.text());
+
+function shader(type, src){
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src);
+    gl.compileShader(s);
+    if(!gl.getShaderParameter(s, gl.COMPILE_STATUS))
+        throw gl.getShaderInfoLog(s);
+    return s;
+}
+
+const program = gl.createProgram();
+gl.attachShader(program, shader(gl.VERTEX_SHADER, vs));
+gl.attachShader(program, shader(gl.FRAGMENT_SHADER, fs));
+gl.linkProgram(program);
+
+if(!gl.getProgramParameter(program, gl.LINK_STATUS))
+    throw gl.getProgramInfoLog(program);
+
+gl.useProgram(program);
+
+const quad = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([
+        -1,-1,
+         1,-1,
+        -1, 1,
+         1, 1
+    ]),
+    gl.STATIC_DRAW
+);
+
+const pos = gl.getAttribLocation(program, "position");
+gl.enableVertexAttribArray(pos);
+gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
+
+
+// Shader vars
+const uniforms = {
+    resolution: gl.getUniformLocation(program, "resolution"),
+    u_Time: gl.getUniformLocation(program, "u_Time"),
+
+    u_patternSpeed: gl.getUniformLocation(program, "u_patternSpeed"),
+    u_patternPhase: gl.getUniformLocation(program, "u_patternPhase"),
+    u_patternPeriod: gl.getUniformLocation(program, "u_patternPeriod"),
+    u_colorSplit: gl.getUniformLocation(program, "u_colorSplit"),
+
+    u_directionSwapPhase:
+        gl.getUniformLocation(program, "u_directionSwapPhase"),
+    u_directionSwapPeriod:
+        gl.getUniformLocation(program, "u_directionSwapPeriod"),
+
+    u_transforms:
+        gl.getUniformLocation(program, "u_transforms"),
+
+    u_mirror: gl.getUniformLocation(program, "u_mirror"),
+    u_flip: gl.getUniformLocation(program, "u_flip"),
+    u_rotation: gl.getUniformLocation(program, "u_rotation"),
+
+    u_lineWidth: gl.getUniformLocation(program, "u_lineWidth"),
+    u_lineBlur: gl.getUniformLocation(program, "u_lineBlur")
+};
+
+const params = {
+    u_patternSpeed: 0.2,
+    u_patternPhase: 0,
+    u_patternPeriod: [0,2],
+    u_colorSplit: 0.075,
+
+    u_directionSwapPhase: -0.2,
+    u_directionSwapPeriod: [1,0],
+
+    u_transforms: [1,4,0,0,0],
+
+    u_mirror: [0,0],
+    u_flip: [0,0],
+    u_rotation: 0,
+
+    u_lineWidth: 0,
+    u_lineBlur: 0.5
+};
+let sliders = {};
+
+// Populate UI
+const ui = document.getElementById("ui");
+
+function addSlider(name, uniform, index, min, max, step) {
+
+    const row = document.createElement("div");
+
+    const label = document.createElement("span");
+    label.textContent =
+        name ;
+        // index == null
+        //     ? uniform
+        //     : `${uniform}[${index}]`;
+
+    const value = document.createElement("span");
+
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = min;
+    slider.max = max;
+    slider.step = step;
+
+    const getValue = () =>
+        index === null
+            ? params[uniform]
+            : params[uniform][index];
+
+    const setValue = v => {
+        if(index === null)
+            params[uniform] = v;
+        else
+            params[uniform][index] = v;
+    };
+
+    slider.value = getValue();
+    value.textContent = slider.value;
+
+    slider.oninput = () => {
+        const v = parseFloat(slider.value);
+        console.log("PARSED", v);
+        setValue(v);
+        value.textContent = slider.value;
+    };
+    slider.loadValue = (v) => {
+        // slider.value = index === null ? v : v[index];
+        slider.value = v;
+        slider.oninput();
+    }
+
+    row.append(label, slider, value);
+    ui.appendChild(row);
+    if (sliders[uniform] === undefined) sliders[uniform] = [];
+    sliders[uniform].push(slider);
+}
+
+// eg
+// {"u_patternSpeed":3.9,"u_patternPhase":0,"u_patternPeriod":[0,10],"u_colorSplit":0.075,"u_directionSwapPhase":-0.2,"u_directionSwapPeriod":[1,0],"u_transforms":[1,4,0,8,0],"u_mirror":[1,0],"u_flip":[0,0],"u_rotation":0.381,"u_lineWidth":-0.667,"u_lineBlur":0.538}
+// {"u_patternSpeed":6.7,"u_patternPhase":0,"u_patternPeriod":[0,33.5],"u_colorSplit":0.075,"u_directionSwapPhase":-0.2,"u_directionSwapPeriod":[1,0],"u_transforms":[1,4,0,8,0],"u_mirror":[1,0],"u_flip":[0,0],"u_rotation":0.381,"u_lineWidth":0,"u_lineBlur":0.538}
+function loadParams(str) {
+    const obj = JSON.parse(str);
+    Object.keys(obj).forEach(k => {
+        if (sliders[k] === undefined) return;
+        console.log('set', k, 'from', params[k], 'to', obj[k]);
+        const subs = sliders[k];
+        if (subs.length === 1) subs[0].loadValue(obj[k])
+        else for (let i=0; i<subs.length; i++) {
+            subs[i].loadValue(obj[k][i])
+        }
+        // subs.forEach(slid => slid.loadValue(obj[k]));
+        console.log('set it to', params[k]);
+    });
+    // load transforms separately
+    let k = 'u_transforms';
+    if (obj[k] !== undefined) {
+        for(let i=0;i<N_TRANSFORMS;i++) {
+            transformElements[i].loadValue(obj[k][i]);
+        }
+    }
+}
+function getParams() {
+    return JSON.stringify(params);
+}
+
+let transformElements = {};
+const transformNames = [
+    "none",
+    "polar",
+    "invPolar",
+    "logPolar",
+    "invLogPolar",
+    "inverse",
+    "square",
+    "sqrt",
+    "parabolic"
+];
+
+function addTransform(index){
+
+    const row = document.createElement("div");
+
+    const label = document.createElement("span");
+    label.textContent = `transform ${index}`;
+
+    const select = document.createElement("select");
+
+    transformNames.forEach((name,i)=>{
+        const opt = document.createElement("option");
+        opt.value = i;
+        opt.textContent = name;
+        select.appendChild(opt);
+    });
+
+    select.value = params.u_transforms[index];
+
+    select.onchange = ()=>{
+        params.u_transforms[index] =
+            parseFloat(select.value);
+    };
+
+    select.loadValue = (v) => {
+        select.value = v;
+        params.u_transforms[index] = v;
+    };
+    transformElements[index] = select;
+
+    row.append(label, select);
+    ui.appendChild(row);
+}
+
+addSlider("Speed", "u_patternSpeed", null, -10, 10, 0.01);
+// addSlider("Phase", "u_patternPhase", null, -1, 1, 0.01); // not tremendously useful
+
+addSlider("Period X", "u_patternPeriod", 0, 0, 60, 0.25);
+addSlider("Period Y", "u_patternPeriod", 1, 0, 60, 0.25);
+
+addSlider("Overlay Period X", "u_directionSwapPeriod", 0, -10, 10, 0.25);
+addSlider("Overlay Period Y", "u_directionSwapPeriod", 1, -10, 10, 0.25);
+addSlider("Overlay Phase", "u_directionSwapPhase", null, -1, 1, 0.01);
+
+addSlider("mirror X", "u_mirror", 0, 0, 1, 0.25);
+addSlider("mirror Y", "u_mirror", 1, 0, 1, 0.25);
+
+addSlider("Flip X", "u_flip", 0, 0, 1, 1);
+addSlider("Flip Y", "u_flip", 1, 0, 1, 1);
+
+addSlider("Rotate", "u_rotation", null, -1, 1, 0.001);
+addSlider("Color Split", "u_colorSplit", null, -3, 3, 0.001);
+
+addSlider("Line Width", "u_lineWidth", null, -1, 1, 0.001);
+addSlider("Line Edge Blur", "u_lineBlur", null, 0, 1, 0.001);
+
+for(let i=0;i<N_TRANSFORMS;i++)
+    addTransform(i);
+
+
+let currentTime = 0.0;
+let prevTime = Date.now();
+let elapsedTime = 0.0;
+let running = true;
+
+// Recording
+const stream = canvas.captureStream(60); // 60 FPS
+const recorder = new MediaRecorder(stream, {
+    mimeType: "video/webm",
+    videoBitsPerSecond: 20_000_000
+});
+
+const chunks = [];
+
+recorder.ondataavailable = e => {
+    if (e.data.size) chunks.push(e.data);
+};
+
+recorder.onstop = () => {
+    const blob = new Blob(chunks, { type: "video/webm" });
+
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "funky-visual-stimulus.webm";
+    a.click();
+};
+
+function addRecordButton() {
+    const row = document.createElement("div");
+    row.style.marginTop = "15px";
+
+    const button = document.createElement("button");
+    button.textContent = "🔴 Start Recording";
+    button.style.padding = "8px 16px";
+    button.style.cursor = "pointer";
+
+    let isRecording = false;
+
+    button.onclick = () => {
+        if (!isRecording) {
+            chunks.length = 0; // Clear any old data chunks before starting
+            recorder.start();
+            button.textContent = "⏹️ Stop Recording";
+            button.style.background = "#ff4d4d"; // red means recording
+            button.style.color = "white";
+            isRecording = true;
+            console.log("Recording started...");
+        } else {
+            // Stop recording
+            recorder.stop();
+            button.textContent = "🔴 Start Recording";
+            button.style.background = "";
+            button.style.color = "";
+            isRecording = false;
+            console.log("Recording stopped. Downloading file...");
+        }
+    };
+
+    row.append(button);
+    ui.appendChild(row);
+}
+
+addRecordButton();
+
+// Loop
+function frame(){
+    let ct = Date.now();
+    let dt = ct - prevTime;
+    if (running) {
+        elapsedTime += dt;
+    }
+    prevTime = ct;
+
+    gl.useProgram(program);
+
+    gl.uniform2f(
+        uniforms.resolution,
+        canvas.width,
+        canvas.height
+    );
+    gl.uniform1f(
+        uniforms.u_Time,
+        elapsedTime/1000 // ms->s
+    );
+    // console.log(elapsedTime);
+
+    gl.uniform1f(
+        uniforms.u_patternSpeed,
+        params.u_patternSpeed
+    );
+
+    gl.uniform1f(
+        uniforms.u_patternPhase,
+        params.u_patternPhase
+    );
+
+    gl.uniform2fv(
+        uniforms.u_patternPeriod,
+        params.u_patternPeriod
+    );
+
+    gl.uniform1f(
+        uniforms.u_colorSplit,
+        params.u_colorSplit
+    );
+
+    gl.uniform1f(
+        uniforms.u_lineColorPeriod,
+        params.u_lineColorPeriod
+    );
+
+    gl.uniform1f(
+        uniforms.u_directionSwapPhase,
+        params.u_directionSwapPhase
+    );
+
+    gl.uniform2fv(
+        uniforms.u_directionSwapPeriod,
+        params.u_directionSwapPeriod
+    );
+
+    gl.uniform1fv(
+        uniforms.u_transforms,
+        params.u_transforms
+    );
+
+    gl.uniform2fv(
+        uniforms.u_mirror,
+        params.u_mirror
+    );
+    gl.uniform2fv(
+        uniforms.u_flip,
+        params.u_flip
+    );
+
+    gl.uniform1f(
+        uniforms.u_rotation,
+        params.u_rotation
+    );
+
+    gl.uniform1f(
+        uniforms.u_lineWidth,
+        params.u_lineWidth
+    );
+    gl.uniform1f(
+        uniforms.u_lineBlur,
+        params.u_lineBlur
+    );
+
+    gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
+
+    requestAnimationFrame(frame);
+}
+
+frame();
+
+// alert("FLASH WARNING: dis bad boy will fuck with your vision.  It's not flashy, but can be visually intense.  Proceed with caution, especially if you get dizzy easily");
+
+// console.log(JSON.stringify(params));
+
+// loadParams('{"u_patternSpeed":0.8,"u_patternPhase":0,"u_patternPeriod":[0,2],"u_colorSplit":0.075,"u_directionSwapPhase":-0.2,"u_directionSwapPeriod":[1,0],"u_transforms":[1,4,0,0,0],"u_mirror":[0,0],"u_flip":[0,0],"u_rotation":0,"u_lineWidth":0,"u_lineBlur":0.5}');
+
+function processSubmittedText(text) {
+    console.log("Processing input text:", text);
+    loadParams(text)
+}
+
+function addParamButton() {
+    const row = document.createElement("div");
+    row.style.marginTop = "10px";
+
+    const openBtn = document.createElement("button");
+    openBtn.textContent = "📋 Load/Save Params";
+    openBtn.style.padding = "8px 16px";
+
+    openBtn.onclick = () => {
+        // 1. Create the overlay background
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay";
+
+        // 2. Create the popup container box
+        const box = document.createElement("div");
+        box.className = "modal-box";
+
+        // 3. Create elements inside the box
+        const title = document.createElement("strong");
+        title.textContent = "Paste your data below:";
+
+        const textarea = document.createElement("textarea");
+        textarea.placeholder = "Paste text here...";
+        textarea.innerText = getParams();
+
+        const actionsRow = document.createElement("div");
+        actionsRow.className = "actions";
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.textContent = "Cancel";
+        
+        const submitBtn = document.createElement("button");
+        submitBtn.textContent = "Submit";
+        submitBtn.style.background = "#007bff";
+        submitBtn.style.color = "white";
+        submitBtn.style.border = "none";
+        submitBtn.style.padding = "5px 12px";
+        submitBtn.style.borderRadius = "4px";
+        submitBtn.style.cursor = "pointer";
+
+        // 4. Setup Button behaviors
+        const closeModal = () => overlay.remove(); // Removes modal element from the DOM entirely
+        
+        cancelBtn.onclick = closeModal;
+        
+        submitBtn.onclick = () => {
+            const inputData = textarea.value;
+            processSubmittedText(inputData); // Run your logic
+            closeModal(); // Self-destruct popup
+        };
+
+        // 5. Assemble and append to body
+        actionsRow.append(cancelBtn, submitBtn);
+        box.append(title, textarea, actionsRow);
+        overlay.append(box);
+        document.body.appendChild(overlay);
+
+        textarea.focus();
+    };
+
+    row.append(openBtn);
+    ui.appendChild(row);
+}
+
+addParamButton();
+
+
+// URL param loading
+// Encodes a standard string into URL-Safe Base64
+function base64UrlEncode(str) {
+    const b64 = btoa(unescape(encodeURIComponent(str)));
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// Decodes a URL-Safe Base64 string back into a standard string
+function base64UrlDecode(b64url) {
+    let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) {
+        b64 += '=';
+    }
+    return decodeURIComponent(escape(atob(b64)));
+}
+
+function checkUrlForParams() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const encodedData = urlParams.get('p'); // Looks for ?p=your_base64_string
+
+    if (encodedData) {
+        try {
+            console.log("Found encoded parameters in URL. Parsing...");
+            const jsonString = base64UrlDecode(encodedData);
+            loadParams(jsonString);
+        } catch (e) {
+            console.error("Failed to parse URL configuration strings:", e);
+        }
+    }
+}
+
+// Execute on script load
+checkUrlForParams();
+
+function addShareButton() {
+    const row = document.createElement("div");
+    row.style.marginTop = "10px";
+
+    const button = document.createElement("button");
+    button.textContent = "🔗 Copy Share Link";
+    button.style.padding = "8px 16px";
+
+    button.onclick = () => {
+        // 1. Get current params string
+        const jsonStr = getParams();
+        
+        // 2. Encode to URL-safe Base64
+        const encoded = base64UrlEncode(jsonStr);
+        
+        // 3. Build the absolute URL linking back to this exact page
+        const shareUrl = `${window.location.origin}${window.location.pathname}?p=${encoded}`;
+        
+        // 4. Save directly to clipboard
+        navigator.clipboard.writeText(shareUrl).then(() => {
+            const originalText = button.textContent;
+            button.textContent = "✅ Copied to Clipboard!";
+            button.style.background = "#28a745";
+            button.style.color = "white";
+            
+            // Revert the button styling after 2 seconds
+            setTimeout(() => {
+                button.textContent = originalText;
+                button.style.background = "";
+                button.style.color = "";
+            }, 2000);
+        }).catch(err => {
+            console.error("Could not copy link automatically: ", err);
+            // Fallback: prompt the user to manually copy it if clipboard access is denied
+            alert(`Here is your link:\n\n${shareUrl}`);
+        });
+    };
+
+    row.append(button);
+    ui.appendChild(row);
+}
+
+// Append the share button right under your other controllers
+addShareButton();
+
+</script>
+</body>
+</html>
