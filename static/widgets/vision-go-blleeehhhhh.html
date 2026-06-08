@@ -81,8 +81,14 @@ const N_TRANSFORMS = 5;
 
 // Canvas setup
 const canvas = document.getElementById("c");
+
+canvas.addEventListener("webglcontextcreationerror", (event) => {
+  console.error("WebGL Context Creation Failed:", event.statusMessage || "Unknown error");
+}, { once: true });
+
 const gl = canvas.getContext("webgl2", { preserveDrawingBuffer: true });
 if (!gl) console.warn("Failed to create webgl2 context");
+else console.log("Successfully created webgl2 context");
 
 function resize() {
     canvas.width = innerWidth;
