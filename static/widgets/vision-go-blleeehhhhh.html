@@ -197,24 +197,56 @@ const uniforms = {
 
 console.log("Uniforms loaded...");
 
-const params = {
-    u_patternSpeed: 0.2,
-    u_patternPhase: 0,
-    u_patternPeriod: [0,2],
-    u_colorSplit: 0.075,
+const presets = [
+    {
+        u_patternSpeed: 0.2,
+        u_patternPeriod: [0,2],
+        u_patternPhase: 0, // unused
+        u_colorSplit: 0.075,
 
-    u_directionSwapPhase: -0.2,
-    u_directionSwapPeriod: [1,0],
+        u_directionSwapPhase: -0.2,
+        u_directionSwapPeriod: [1,0],
 
-    u_transforms: [1,4,0,0,0],
+        u_transforms: [1,4,0,0,0],
 
-    u_mirror: [0,0],
-    u_flip: [0,0],
-    u_rotation: 0,
+        u_mirror: [0,0],
+        u_flip: [0,0],
+        u_rotation: 0,
 
-    u_lineWidth: 0,
-    u_lineBlur: 0.5
-};
+        u_lineWidth: 0,
+        u_lineBlur: 0.5
+    },
+    {
+        "u_patternSpeed":0.5,
+        "u_patternPhase":0,
+        "u_patternPeriod":[0,22.75],
+        "u_colorSplit":0.2,
+        "u_directionSwapPhase":-0.2,
+        "u_directionSwapPeriod":[1,-1],
+        "u_transforms":[1,4,0,8,0],
+        "u_mirror":[1,0],
+        "u_flip":[0,0],
+        "u_rotation":-0.633,
+        "u_lineWidth":-0.095,
+        "u_lineBlur":1
+    },
+    {
+        "u_patternSpeed":0.8,
+        "u_patternPeriod":[4,0],
+        "u_patternPhase":0,
+        "u_colorSplit":0.75,
+        "u_directionSwapPhase":-0.2,
+        "u_directionSwapPeriod":[0,0],
+        "u_transforms":[0,1,5,0,0],
+        "u_mirror":[0,0],
+        "u_flip":[0,0],
+        "u_rotation":-0.248,
+        "u_lineWidth":-0.095,
+        "u_lineBlur":1
+    }
+];
+
+const params = presets[Math.floor(Math.random()*3)];
 let sliders = {};
 
 // Populate UI
@@ -225,13 +257,13 @@ function addSlider(name, uniform, index, min, max, step) {
     const row = document.createElement("div");
 
     const label = document.createElement("span");
-    label.textContent =
-        name ;
-        // index == null
-        //     ? uniform
-        //     : `${uniform}[${index}]`;
+    label.textContent = name;
 
-    const value = document.createElement("span");
+    const value = document.createElement("input");
+    value.type = "number";
+    value.min = min;
+    value.max = max;
+    value.step = step;
 
     const slider = document.createElement("input");
     slider.type = "range";
@@ -252,26 +284,33 @@ function addSlider(name, uniform, index, min, max, step) {
     };
 
     slider.value = getValue();
-    value.textContent = slider.value;
+    value.value = slider.value;
 
     slider.oninput = () => {
         const v = parseFloat(slider.value);
-        console.log("PARSED", v);
         setValue(v);
-        value.textContent = slider.value;
+        value.value = slider.value;
     };
-    slider.loadValue = (v) => {
-        // slider.value = index === null ? v : v[index];
+
+    value.oninput = () => {
+        const v = parseFloat(value.value);
+        if (isNaN(v)) return;
+        setValue(v);
         slider.value = v;
+    };
+
+    slider.loadValue = (v) => {
+        slider.value = v;
+        value.value = v;
         slider.oninput();
-    }
+    };
 
     row.append(label, slider, value);
     ui.appendChild(row);
+
     if (sliders[uniform] === undefined) sliders[uniform] = [];
     sliders[uniform].push(slider);
 }
-
 // eg
 // {"u_patternSpeed":3.9,"u_patternPhase":0,"u_patternPeriod":[0,10],"u_colorSplit":0.075,"u_directionSwapPhase":-0.2,"u_directionSwapPeriod":[1,0],"u_transforms":[1,4,0,8,0],"u_mirror":[1,0],"u_flip":[0,0],"u_rotation":0.381,"u_lineWidth":-0.667,"u_lineBlur":0.538}
 // {"u_patternSpeed":6.7,"u_patternPhase":0,"u_patternPeriod":[0,33.5],"u_colorSplit":0.075,"u_directionSwapPhase":-0.2,"u_directionSwapPeriod":[1,0],"u_transforms":[1,4,0,8,0],"u_mirror":[1,0],"u_flip":[0,0],"u_rotation":0.381,"u_lineWidth":0,"u_lineBlur":0.538}
