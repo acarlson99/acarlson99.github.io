@@ -379,63 +379,65 @@ let running = true;
 
 // Recording
 const stream = canvas.captureStream(60); // 60 FPS
-const recorder = new MediaRecorder(stream, {
-    mimeType: "video/webm",
-    videoBitsPerSecond: 20000000
-    // videoBitsPerSecond: 20_000_000
-});
+if (stream) {
+    const recorder = new MediaRecorder(stream, {
+        mimeType: "video/webm",
+        videoBitsPerSecond: 20000000
+        // videoBitsPerSecond: 20_000_000
+    });
 
-const chunks = [];
+    const chunks = [];
 
-recorder.ondataavailable = e => {
-    if (e.data.size) chunks.push(e.data);
-};
-
-recorder.onstop = () => {
-    const blob = new Blob(chunks, { type: "video/webm" });
-
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "funky-visual-stimulus.webm";
-    a.click();
-};
-
-function addRecordButton() {
-    const row = document.createElement("div");
-    row.style.marginTop = "15px";
-
-    const button = document.createElement("button");
-    button.textContent = "🔴 Start Recording";
-    button.style.padding = "8px 16px";
-    button.style.cursor = "pointer";
-
-    let isRecording = false;
-
-    button.onclick = () => {
-        if (!isRecording) {
-            chunks.length = 0; // Clear any old data chunks before starting
-            recorder.start();
-            button.textContent = "⏹️ Stop Recording";
-            button.style.background = "#ff4d4d"; // red means recording
-            button.style.color = "white";
-            isRecording = true;
-            console.log("Recording started...");
-        } else {
-            // Stop recording
-            recorder.stop();
-            button.textContent = "🔴 Start Recording";
-            button.style.background = "";
-            button.style.color = "";
-            isRecording = false;
-            console.log("Recording stopped. Downloading file...");
-        }
+    recorder.ondataavailable = e => {
+        if (e.data.size) chunks.push(e.data);
     };
 
-    row.append(button);
-    ui.appendChild(row);
-}
+    recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: "video/webm" });
 
-addRecordButton();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "funky-visual-stimulus.webm";
+        a.click();
+    };
+
+    function addRecordButton() {
+        const row = document.createElement("div");
+        row.style.marginTop = "15px";
+
+        const button = document.createElement("button");
+        button.textContent = "🔴 Start Recording";
+        button.style.padding = "8px 16px";
+        button.style.cursor = "pointer";
+
+        let isRecording = false;
+
+        button.onclick = () => {
+            if (!isRecording) {
+                chunks.length = 0; // Clear any old data chunks before starting
+                recorder.start();
+                button.textContent = "⏹️ Stop Recording";
+                button.style.background = "#ff4d4d"; // red means recording
+                button.style.color = "white";
+                isRecording = true;
+                console.log("Recording started...");
+            } else {
+                // Stop recording
+                recorder.stop();
+                button.textContent = "🔴 Start Recording";
+                button.style.background = "";
+                button.style.color = "";
+                isRecording = false;
+                console.log("Recording stopped. Downloading file...");
+            }
+        };
+
+        row.append(button);
+        ui.appendChild(row);
+    }
+
+    addRecordButton();
+}
 
 // Loop
 function frame(){
