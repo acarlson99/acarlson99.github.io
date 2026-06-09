@@ -95,7 +95,7 @@ label{
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
-await sleep(1000*5);
+if (new URLSearchParams(window.location.search).get('sleep')) { await sleep(1000*5); }
 console.log("begin load...");
 const N_TRANSFORMS = 5;
 
