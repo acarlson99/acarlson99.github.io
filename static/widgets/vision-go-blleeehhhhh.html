@@ -69,12 +69,12 @@ label{
 </style>
 </head>
 <body>
+<div id="errortext">
+    if you can read this then your browser probably does not support this app.  Sorry about that :)
+</div>
 
 <!-- for more info see https://en.wikipedia.org/wiki/Motion_aftereffect -->
 <canvas id="c"></canvas>
-
-    if you can read this then your browser probably does not support this app.  Sorry about that :)
-
 <div id="ui"></div>
 
 <script>
@@ -116,6 +116,8 @@ function resize() {
 }
 addEventListener("resize", resize);
 resize();
+
+document.getElementById("errortext").innerText = "";
 
 // Load Shader
 const vs = await fetch("passthrough.vert").then(r => r.text());
