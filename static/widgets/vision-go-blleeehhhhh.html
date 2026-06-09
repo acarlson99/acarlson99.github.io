@@ -119,8 +119,11 @@ addEventListener("resize", resize);
 resize();
 
 // Load Shader
+console.log("loading shader code");
 const vs = await fetch("passthrough.vert").then(r => r.text());
+console.log("loaded vertex shader...\n", vs);
 const fs = await fetch("vision-go-bleh.frag").then(r => r.text());
+console.log("loaded fragment shader...\n", fs);
 
 function shader(type, src){
     const s = gl.createShader(type);
@@ -132,14 +135,20 @@ function shader(type, src){
 }
 
 const program = gl.createProgram();
+console.log("create program...");
 gl.attachShader(program, shader(gl.VERTEX_SHADER, vs));
 gl.attachShader(program, shader(gl.FRAGMENT_SHADER, fs));
+console.log("linking program...");
 gl.linkProgram(program);
 
-if(!gl.getProgramParameter(program, gl.LINK_STATUS))
+if(!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error("Unable to link program!");
     throw gl.getProgramInfoLog(program);
+}
 
 gl.useProgram(program);
+
+console.log("program linked...");
 
 const quad = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, quad);
@@ -153,6 +162,7 @@ gl.bufferData(
     ]),
     gl.STATIC_DRAW
 );
+console.log("GL quad bound...");
 
 const pos = gl.getAttribLocation(program, "position");
 gl.enableVertexAttribArray(pos);
@@ -184,6 +194,8 @@ const uniforms = {
     u_lineWidth: gl.getUniformLocation(program, "u_lineWidth"),
     u_lineBlur: gl.getUniformLocation(program, "u_lineBlur")
 };
+
+console.log("Uniforms loaded...");
 
 const params = {
     u_patternSpeed: 0.2,
@@ -427,6 +439,7 @@ addRecordButton();
 
 // Loop
 function frame(){
+    console.log("animation loop begin...");
     let ct = Date.now();
     let dt = ct - prevTime;
     if (running) {
