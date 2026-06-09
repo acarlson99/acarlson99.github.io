@@ -87,7 +87,7 @@ canvas.addEventListener("webglcontextcreationerror", (event) => {
 }, { once: true });
 
 const gl = canvas.getContext("webgl2", { preserveDrawingBuffer: true });
-if (!gl) console.warn("Failed to create webgl2 context");
+if (!gl) console.error("Failed to create webgl2 context");
 else console.log("Successfully created webgl2 context");
 
 function resize() {
