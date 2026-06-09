@@ -34,10 +34,12 @@ uniform vec2 u_directionSwapPeriod; // phaseP[1,2]
 
 uniform vec2 u_mirror;
 uniform vec2 u_flip;
+uniform vec2 u_center;
 uniform float u_rotation;
 
 uniform float u_lineWidth;
 uniform float u_lineBlur;
+uniform float u_coordOverlay;
 
 #define rgb(r,g,b) (vec3(r,g,b)/255.)
 
@@ -155,6 +157,16 @@ vec2 sqrtMap(vec2 z) {
     // return r * vec2(cos(t), sin(t));
 }
 
+// credit to @krisselden for this one
+// https://fragcoord.xyz/s/b4wyoqv5
+vec2 bipolarMap(vec2 p) {
+    // p *= 3.;
+    float p_length_squared = dot(p, p);
+    float tau = atanh(2.0 * p.x / (p_length_squared + 1.))/TAU;
+    float sigma = atan(2.0 * p.y, p_length_squared - 1.);
+    return vec2(tau,sigma);
+}
+
 vec2 coordMap(vec2 p) {
     for (int i=0; i<u_transforms.length(); i++) {
         int idx = int(u_transforms[i]);
@@ -187,6 +199,11 @@ vec2 coordMap(vec2 p) {
         case 8:
             p = parabolicMap(p);
             break;
+        case 9:
+            p = bipolarMap(p);
+            break;
+        case 10:
+            p.xy = sqrt(abs(p.xy));
         }
     }
     return p;
@@ -217,6 +234,8 @@ void main()
 
 	// vec2 res = uTD2DInfos[0].res.xy;
 	vec2 center = vec2(.5);
+    // center = vec2(0.);
+    center = u_center;
 	// center = vec2(.45,.91);
 
     vec2 p = uv;
@@ -236,7 +255,7 @@ void main()
     );
 
 	// vec2 q = vec2((length(p)), atan(p.y,p.x)/3.14/2.);
-	vec2 q = coordMap(p);
+	vec2 q = coordMap(p*2.);
 
 	// float blur = 0.5;
 	// float m = 0.;
@@ -260,6 +279,8 @@ void main()
     float phaseDirection = sign(sin(sum(TAU*(polarMap(p.xy)*u_directionSwapPeriod + u_directionSwapPhase))));
 	float phase = u_patternPhase + u_Time*u_patternSpeed*phaseDirection;
 	vec3 color = smoothstep(m-blur,m+blur,sin((vec3(0.,1.,2.)/3.*u_colorSplit+phase+sum(q.xy*(u_patternPeriod)))*3.14*2.));
+
+    color.rg = mix(color.rg, fract(q.xy), u_coordOverlay);
 
     fragColor = vec4(color,1.);
 #endif
