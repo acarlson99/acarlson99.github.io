@@ -78,17 +78,22 @@ label{
 <script>
     // Catch standard runtime errors
     window.onerror = function(message, source, lineno, colno, error) {
-        alert("GLOBAL ERROR: " + message + "\nLine: " + lineno);
+        let s = "GLOBAL ERROR: " + message + "\nLine: " + lineno;
+        console.log(s);
+        alert(s);
         return false;
     };
 
     // Catch failed promises (like your fetch requests failing)
     window.onunhandledrejection = function(event) {
-        alert("UNHANDLED PROMISE REJECTION: " + event.reason);
+        s = "UNHANDLED PROMISE REJECTION: " + event.reason;
+        console.log(s);
+        alert(s);
     };
 </script>
 
 <script type="module">
+console.log("begin load...");
 const N_TRANSFORMS = 5;
 
 // Canvas setup
