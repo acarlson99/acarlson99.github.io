@@ -342,7 +342,8 @@ const presets = [
         "u_lineBlur":1,
         "u_coordOverlay":0
     },
-    {"name":"been here before","u_patternSpeed":1.03,"u_patternPeriod":[29.5,13.25],"u_patternPhase":0,"u_colorSplit":-2.375,"u_directionSwapPhase":-0.62,"u_directionSwapPeriod":[8.5,0.5],"u_transforms":[7,2,2,2,9],"u_mirror":[1,1],"u_flip":[0,1],"u_center":[0.75,1.1],"u_rotation":0.654,"u_lineWidth":0.485,"u_lineBlur":0.542,"u_coordOverlay":0.4}
+    {"name":"been there before","u_patternSpeed":1.03,"u_patternPeriod":[29.5,13.25],"u_patternPhase":0,"u_colorSplit":-2.375,"u_directionSwapPhase":-0.62,"u_directionSwapPeriod":[8.5,0.5],"u_transforms":[7,2,2,2,9],"u_mirror":[1,1],"u_flip":[0,1],"u_center":[0.75,1.1],"u_rotation":0.654,"u_lineWidth":0.485,"u_lineBlur":0.542,"u_coordOverlay":0.4},
+    {"name":"all the tuuubes combine","u_patternSpeed":2,"u_patternPeriod":[25.25,30.25],"u_patternPhase":0,"u_colorSplit":-2.443,"u_directionSwapPhase":-0.07,"u_directionSwapPeriod":[0,0],"u_transforms":[8,8,10,3,10],"u_mirror":[1,0.75],"u_flip":[0,1],"u_center":[0.65,0.5],"u_rotation":-0.415,"u_lineWidth":0.987,"u_lineBlur":0.688,"u_coordOverlay":0.6}
 ];
 
 function getParams() {
@@ -393,7 +394,6 @@ const transformNames = [
 ];
 const presetIdx = Math.floor(Math.random()*presets.length);
 const params = JSON.parse(JSON.stringify(presets[presetIdx]));
-params.u_coordOverlay = 0;
 let sliders = {};
 const randomizableControls = [];
 
