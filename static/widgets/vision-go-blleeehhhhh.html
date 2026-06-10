@@ -200,8 +200,9 @@ const uniforms = {
 console.log("Uniforms loaded...");
 
 const presets = [
+    {"name":"single circle","u_patternSpeed":3,"u_patternPeriod":[21,0],"u_patternPhase":0,"u_colorSplit":0.075,"u_directionSwapPhase":-0.1,"u_directionSwapPeriod":[1,0],"u_transforms":[1,0,0,0,0],"u_mirror":[0,0],"u_flip":[0,0],"u_center":[0.5,0.5],"u_rotation":0,"u_lineWidth":0,"u_lineBlur":0.5,"u_coordOverlay":0},
     {
-        "name": "gentle circle",
+        "name": "gentle torous",
         "u_patternSpeed": 0.2,
         "u_patternPeriod": [0,2],
         "u_patternPhase": 0, // unused
@@ -341,6 +342,7 @@ const presets = [
         "u_coordOverlay":0
     },
     {"name":"column","u_patternSpeed":4.9,"u_patternPeriod":[0,60],"u_patternPhase":0,"u_colorSplit":0.5,"u_directionSwapPhase":-0.2,"u_directionSwapPeriod":[-0.25,0],"u_transforms":[0,9,3,0,0],"u_mirror":[1,0],"u_flip":[0,0],"u_center":[-0.55,1.1],"u_rotation":0,"u_lineWidth":-0.195,"u_lineBlur":0.26,"u_coordOverlay":0}
+    // TODO: make a preset that kinda summons faces
 ];
 
 function getParams() {
@@ -393,6 +395,7 @@ const presetIdx = Math.floor(Math.random()*presets.length);
 const params = JSON.parse(JSON.stringify(presets[presetIdx]));
 params.u_coordOverlay = 0;
 let sliders = {};
+const randomizableControls = [];
 
 // Populate UI
 const ui = document.getElementById("ui");
@@ -450,6 +453,19 @@ function addSlider(name, uniform, index, min, max, step) {
         slider.oninput();
     };
 
+    slider.randomize = () => {
+        const min = parseFloat(slider.min);
+        const max = parseFloat(slider.max);
+        const step = parseFloat(slider.step);
+
+        const nSteps = Math.round((max - min) / step);
+        const v = min + Math.floor(Math.random() * (nSteps + 1)) * step;
+
+        slider.loadValue(v);
+    };
+
+    randomizableControls.push(slider);
+
     row.append(label, slider, value);
     ui.appendChild(row);
 
@@ -486,10 +502,28 @@ function addTransform(index){
     };
     transformElements[index] = select;
 
+    select.randomize = () => {
+        const v = Math.floor(Math.random() * transformNames.length);
+        select.loadValue(v);
+    };
+
+    randomizableControls.push(select);
+
     row.append(label, select);
     ui.appendChild(row);
 }
+function addRandomizeButton() {
+    const button = document.createElement("button");
+    button.textContent = "Randomize";
 
+    button.onclick = () => {
+        randomizableControls.forEach(control =>
+            control.randomize()
+        );
+    };
+
+    ui.appendChild(button);
+}
 function addPresetSelector(){
 
     const row = document.createElement("div");
@@ -557,6 +591,7 @@ addSlider("Show Coordinates", "u_coordOverlay", null, 0, 1, 0.1);
 for(let i=0;i<N_TRANSFORMS;i++)
     addTransform(i);
 
+addRandomizeButton();
 
 console.log("sliders built...");
 
