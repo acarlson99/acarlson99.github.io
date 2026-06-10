@@ -121,9 +121,9 @@ resize();
 // Load Shader
 console.log("loading shader code");
 const vs = await fetch("passthrough.vert").then(r => r.text());
-console.log("loaded vertex shader...\n", vs);
+console.log("loaded vertex shader...");
 const fs = await fetch("vision-go-bleh.frag").then(r => r.text());
-console.log("loaded fragment shader...\n", fs);
+console.log("loaded fragment shader...");
 
 function shader(type, src){
     const s = gl.createShader(type);
@@ -324,6 +324,7 @@ const presets = [
         "u_lineBlur":0.26,
         "u_coordOverlay":0
     },
+    {"name":"column","u_patternSpeed":4.9,"u_patternPeriod":[0,60],"u_patternPhase":0,"u_colorSplit":0.5,"u_directionSwapPhase":-0.2,"u_directionSwapPeriod":[-0.25,0],"u_transforms":[0,9,3,0,0],"u_mirror":[1,0],"u_flip":[0,0],"u_center":[-0.55,1.1],"u_rotation":0,"u_lineWidth":-0.195,"u_lineBlur":0.26,"u_coordOverlay":0},
     {
         "name": "hyperspace",
         "u_patternSpeed":1,
@@ -341,8 +342,7 @@ const presets = [
         "u_lineBlur":1,
         "u_coordOverlay":0
     },
-    {"name":"column","u_patternSpeed":4.9,"u_patternPeriod":[0,60],"u_patternPhase":0,"u_colorSplit":0.5,"u_directionSwapPhase":-0.2,"u_directionSwapPeriod":[-0.25,0],"u_transforms":[0,9,3,0,0],"u_mirror":[1,0],"u_flip":[0,0],"u_center":[-0.55,1.1],"u_rotation":0,"u_lineWidth":-0.195,"u_lineBlur":0.26,"u_coordOverlay":0}
-    // TODO: make a preset that kinda summons faces
+    {"name":"been here before","u_patternSpeed":1.03,"u_patternPeriod":[29.5,13.25],"u_patternPhase":0,"u_colorSplit":-2.375,"u_directionSwapPhase":-0.62,"u_directionSwapPeriod":[8.5,0.5],"u_transforms":[7,2,2,2,9],"u_mirror":[1,1],"u_flip":[0,1],"u_center":[0.75,1.1],"u_rotation":0.654,"u_lineWidth":0.485,"u_lineBlur":0.542,"u_coordOverlay":0.4}
 ];
 
 function getParams() {
@@ -849,7 +849,56 @@ function addParamButton() {
 
 addParamButton();
 
+const PARAM_ORDER = [
+    ["u_patternSpeed"],
+    ["u_patternPeriod", 0],
+    ["u_patternPeriod", 1],
 
+    ["u_directionSwapPeriod", 0],
+    ["u_directionSwapPeriod", 1],
+    ["u_directionSwapPhase"],
+
+    ["u_mirror", 0],
+    ["u_mirror", 1],
+
+    ["u_flip", 0],
+    ["u_flip", 1],
+
+    ["u_center", 0],
+    ["u_center", 1],
+
+    ["u_rotation"],
+    ["u_colorSplit"],
+
+    ["u_lineWidth"],
+    ["u_lineBlur"],
+    ["u_coordOverlay"],
+
+    ...Array.from({length: N_TRANSFORMS}, (_, i) => ["u_transforms", i]),
+];
+function getCompactParams() {
+    return PARAM_ORDER.map(([name, index]) =>
+        index === undefined
+            ? params[name]
+            : params[name][index]
+    );
+}
+function loadCompactParams(values) {
+    values = values.split(',');
+    console.log("loading compact params", values);
+    let p = {};
+    PARAM_ORDER.forEach(([name, index], i) => {
+        const v = parseFloat(values[i]);
+        if (index === undefined)
+            p[name] = v;
+        else {
+            if (!p[name]) p[name] = [0,0];
+            p[name][index] = v;
+        }
+    });
+
+    loadParamObject(p);
+}
 // URL param loading
 // Encodes a standard string into URL-Safe Base64
 function base64UrlEncode(str) {
@@ -874,7 +923,8 @@ function checkUrlForParams() {
         try {
             console.log("Found encoded parameters in URL. Parsing...");
             const jsonString = base64UrlDecode(encodedData);
-            loadParams(jsonString);
+            loadCompactParams(jsonString);
+            // loadParams(jsonString);
         } catch (e) {
             console.error("Failed to parse URL configuration strings:", e);
         }
@@ -894,7 +944,9 @@ function addShareButton() {
 
     button.onclick = () => {
         // 1. Get current params string
-        const jsonStr = getParams();
+        // const jsonStr = getParams();
+        const jsonStr = getCompactParams();
+        console.log(jsonStr);
         
         // 2. Encode to URL-safe Base64
         const encoded = base64UrlEncode(jsonStr);
