@@ -276,9 +276,18 @@ void main()
 	// fragColor = TDOutputSwizzle(color);
     fragColor = vec4(color);
 #else
-    float phaseDirection = sign(sin(sum(TAU*(polarMap(p.xy)*u_directionSwapPeriod + u_directionSwapPhase))));
-	float phase = u_patternPhase + u_Time*u_patternSpeed*phaseDirection;
-	vec3 color = smoothstep(m-blur,m+blur,sin((vec3(0.,1.,2.)/3.*u_colorSplit+phase+sum(q.xy*(u_patternPeriod)))*3.14*2.));
+	// float phase = u_patternPhase + u_Time*u_patternSpeed*phaseDirection;
+	vec2 phase = u_patternPhase + u_Time*u_patternSpeed*vec2(1.,-1.);
+    // NOTE: instead of switching direction within the `sin` we can render
+    //       waves in both directions and smoothstep between them to get nicer
+    //       looking anti-aliasing.
+	// vec3 color = smoothstep(m-blur,m+blur,sin((vec3(0.,1.,2.)/3.*u_colorSplit+phase+sum(q.xy*(u_patternPeriod)))*3.14*2.));
+	vec3 c0 = smoothstep(m-blur,m+blur,sin((vec3(0.,1.,2.)/3.*u_colorSplit+phase[0]+sum(q.xy*(u_patternPeriod)))*3.14*2.));
+	vec3 c1 = smoothstep(m-blur,m+blur,sin((vec3(0.,1.,2.)/3.*u_colorSplit+phase[1]+sum(q.xy*(u_patternPeriod)))*3.14*2.));
+
+    float dph = sin(sum(TAU*(polarMap(p.xy)*u_directionSwapPeriod + u_directionSwapPhase)));
+    float dirBlur = fwidth(dph); // shrimple as
+    vec3 color = mix(c0,c1, smoothstep(-dirBlur,dirBlur, dph));
 
     color.rg = mix(color.rg, fract(q.xy), u_coordOverlay);
 
