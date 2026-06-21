@@ -167,9 +167,97 @@ And even make some [[id:97fcb215-a181-4ccb-ac1f-3cadb942a9da][illusions]].
   }
 #+END_SRC
 
+* Coordinate transformations
+
+** Log Polar
+
+Here we can observe the effect of the log polar transform on the standard `[-.5 .. .5]` coordinate system.
+
+Notice the roughly 6.2 rotations, and spiraling effect produced from the diagonal lines in UV space.
+
+Polar conversion functions are the same-- simply remove the `log` and `exp` function calls
+
+#+NAME: log-polar-coord
+#+BEGIN_SRC glsl :file ./static/shadergen/log-polar-coord.png :width 1200 :height (/ 1200 2) :exports both
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
+      bool lhs = false;
+      if (uv.x < 0.) lhs = true;
+      uv.x = fract(uv.x)-.5;
+
+      float l = log(length(uv));
+      float a = atan(uv.y,uv.x);
+
+      vec2 p = vec2(a,l);
+      if (lhs)
+          p = .5+(
+              // inverse log-polar transform
+              vec2(cos(p.x),sin(p.x))*(exp(p.y))
+              );
+
+      vec3 c = p.xyx;
+      c = mix(p.xyx, p.yyx, step(0.,sin(6.*(p.x + p.y))));
+      fragColor = vec4(fract(c), 1.);
+  }
+#+END_SRC
+
+#+RESULTS: log-polar-coord
+[[file:./static/shadergen/log-polar-coord.png]]
+
+** Hyperbolic Mobuis
+
+see https://en.wikipedia.org/wiki/M%C3%B6bius_transformation
+
+#+NAME: hyperbolic-mobius
+#+BEGIN_SRC glsl :file ./static/shadergen/hyperbolic-mobius.png :width 1200 :height (/ 1200 2) :exports both
+  vec2 cm(float a, float b, float c, float d) {
+      return vec2(
+          a*c - b*d,
+          a*d + b*c
+          );
+  }
+
+  vec2 mobius(vec2 z,
+              float a,float b,
+              float c,float d) {
+  //      vec2 num = vec2(a*z.x + b,
+  //                      a*z.y);
+      vec2 num = cm(z[0],z[1],a,b) + vec2(b,0.);
+	
+      // vec2 den = vec2(c*z.x + d,
+      //                 c*z.y);
+      vec2 den = cm(z[0],z[1],c,d) + vec2(d,0.);
+	
+      float inv = 1.0/dot(den,den);
+	
+      return vec2(
+          (num.x*den.x + num.y*den.y)*inv,
+          (num.y*den.x - num.x*den.y)*inv
+          );
+  }
+
+  void main() {
+      vec2 uv = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
+      bool lhs = false;
+	
+      // hand-selected nice looking parameters
+      vec2 p = mobius(uv, 0.5,1.,1.,0.);
+
+      if (lhs) p = uv;
+
+      vec3 c = p.xyx;
+      c = mix(p.xyx, p.yyx, step(0.,sin(6.28*(p.x + p.y))*sin(6.28*(p.x - p.y))));
+      fragColor = vec4(fract(c), 1.);
+  }
+#+END_SRC
+
+#+RESULTS: hyperbolic-mobius
+[[file:./static/shadergen/hyperbolic-mobius.png]]
+
+
 * low-resolution patterns (like for light arrays)
 
-** Motion
+** Motion (three is all you need)
 
 #+NAME: checkerboard-1
 #+BEGIN_SRC glsl :file /dev/null :exports code :noweb no-export :noweb-prefix no
@@ -194,6 +282,7 @@ Here we define a 6x6 grid, with every second cell turned on.  This creates a che
 [[file:./static/shadergen/checkerboard-2.png]]
 
 By adding a second dark cell (i.e. every third cell is turned on) we can create a motion effect.
+TODO: animate this perchance
 
 #+NAME: checkerboard-3
 #+BEGIN_SRC glsl :file ./static/shadergen/checkerboard-3.png :width (* 6 4) :height (* 3 4) :exports both :noweb no-export :noweb-prefix no
