@@ -301,6 +301,77 @@ TODO: animate this perchance
 
 ** Color Spaces
 
+*** srgb
+
+Gamma-corrected RGB, with brightness mapped onto a non-linear curve.
+
+Generally this is used at the end of a color processing pipeline to
+fit perceptual brightness.
+
+All values remain within the [0..1] range.
+
+**** GLSL
+
+Based on https://en.wikipedia.org/wiki/SRGB#Transfer_function_(%22gamma%22)
+
+#+NAME: srgb-conversion-fns
+#+BEGIN_SRC glsl :file /dev/null :exports code
+
+  #ifndef RGB_CONVERSION_FNS
+  #define RGB_CONVERSION_FNS
+
+  // ---------- sRGB <-> linear RGB ("RGB") -------------------------------------
+  // from https://en.wikipedia.org/wiki/SRGB#Transfer_function_(%22gamma%22)
+
+  float srgb2linear(float c)  {
+      return (c <= 0.04045) ? (c/12.92) : pow((c+0.055)/1.055, 2.4);
+  }
+  vec3  srgb2linear(vec3  c)  {
+      return vec3(srgb2linear(c.r), srgb2linear(c.g), srgb2linear(c.b));
+  }
+  float linear2srgb(float c)  {
+      // inverse of above
+      return (c <= 0.0031308) ? (12.92*c) : (1.055*pow(c, 1.0/2.4) - 0.055);
+  }
+  vec3  linear2srgb(vec3  c)  {
+      return vec3(linear2srgb(c.r), linear2srgb(c.g), linear2srgb(c.b));
+  }
+
+  #endif // RGB_CONVERSION_FNS
+#+END_SRC
+
+**** Example
+
+#+NAME: srgb-colorspace-demo
+#+BEGIN_SRC glsl :file ./static/shadergen/srgb-colorspace-demo.png :width 256 :height 256 :exports both :noweb no-export :noweb-prefix no
+  // <<srgb-conversion-fns>>
+  // <<hsv-conversion-fns>>
+  // <<oklch-conversion-fns>>
+
+  float sum3(vec3 p){return p.x+p.y+p.z;}
+
+  void main() {
+      vec2 uv = gl_FragCoord.xy / iResolution.xy;
+      vec2 uvz = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
+
+      vec3 top = hsv2linear(vec3(uv.x,1.,1.));
+      vec3 bottom = linear2srgb(top);
+      vec3 col = mix(bottom,top,step(0.,uvz.y));
+
+      // treat SRGB as linear to compare perceptual lightness
+      float lightness = sum3(col*vec3(0.299, 0.587, 0.114));
+
+      if (abs(uvz.y)<0.25) col = vec3(lightness);
+
+      fragColor = vec4(col,1.0);
+  }
+#+END_SRC
+
+#+RESULTS: srgb-colorspace-demo
+[[file:./static/shadergen/srgb-colorspace-demo.png]]
+
+Comparing linear RGB (top) to the gamma-corrected sRGB (bottom) gradient we can observe a more visually consistent lightness.  Notice how the sharp peaks around yellow, cyan, and violet are smoothed out after converting to SRGB, while the dip in perceptual lightness centered around blue becomes a much steeper drop.
+
 *** hsv
 
 Hue-- represented as an angle around a color wheel.  This implementation represents hue with a [0 .. 1] range instead of the normal [0 .. 2PI].
@@ -390,6 +461,7 @@ Given the above definitions we can manupulate colors thusly
 #+NAME: hsv-colorspace-demo
 #+BEGIN_SRC glsl :file ./static/shadergen/hsv-colorspace-demo.png :width 256 :height 256 :exports both :noweb no-export :noweb-prefix no
   // <<hsv-conversion-fns>>
+  // <<srgb-conversion-fns>>
 
   #define PI 3.141592653589
 
@@ -406,7 +478,7 @@ Given the above definitions we can manupulate colors thusly
       vec3 hsv1 = vec3(
           a/2./PI,                      // radial hue
           smoothstep(0.25,.5,y),  // fade in from white below
-          1.-smoothstep(.5,1.1,y) // fade out to black above
+          1.-smoothstep(.5,1.,y) // fade out to black above
           );
       // bottom color
       vec3 hsv2 = vec3(
@@ -425,19 +497,19 @@ Given the above definitions we can manupulate colors thusly
 
   // shift hue a tad
   #define EFFECT1(C) C = mix(						\
-          hsv2linear(linear2hsv(C)+vec3(-.05,0.,0.)),	\
+          hsv2linear(linear2hsv(C)+vec3(-.05,0.1,0.)),	\
           C,										\
           smoothstep(-blur,blur,wav));
   // desaturate slightly
   #define EFFECT2(C) C = mix(						\
-          hsv2linear(linear2hsv(C)*vec3(1.,.7,.8)),		\
+          hsv2linear(linear2hsv(C)*vec3(1.,.7,.4)),		\
           C,										\
           smoothstep(-blur,blur,wav));
 
       EFFECT1(c1);
       EFFECT2(c2);
 
-      col = mix(c2,c1,smoothstep(.2,.25,y));
+      col = linear2srgb( mix(c2,c1,smoothstep(.2,.25,y)) );
 
       fragColor = vec4(col,1.0);
   }
@@ -450,73 +522,6 @@ Given the above definitions we can manupulate colors thusly
 
 TODO: this
 
-*** srgb
-
-Gamma-corrected RGB, with brightness mapped onto a non-linear curve.
-
-All values remain within the [0..1] range.
-
-**** GLSL
-
-Based on https://en.wikipedia.org/wiki/SRGB#Transfer_function_(%22gamma%22)
-
-#+NAME: srgb-conversion-fns
-#+BEGIN_SRC glsl :file /dev/null :exports code
-
-  #ifndef RGB_CONVERSION_FNS
-  #define RGB_CONVERSION_FNS
-
-  // ---------- sRGB <-> linear RGB ("RGB") -------------------------------------
-  // from https://en.wikipedia.org/wiki/SRGB#Transfer_function_(%22gamma%22)
-
-  float srgb2linear(float c)  {
-      return (c <= 0.04045) ? (c/12.92) : pow((c+0.055)/1.055, 2.4);
-  }
-  vec3  srgb2linear(vec3  c)  {
-      return vec3(srgb2linear(c.r), srgb2linear(c.g), srgb2linear(c.b));
-  }
-  float linear2srgb(float c)  {
-      // inverse of above
-      return (c <= 0.0031308) ? (12.92*c) : (1.055*pow(c, 1.0/2.4) - 0.055);
-  }
-  vec3  linear2srgb(vec3  c)  {
-      return vec3(linear2srgb(c.r), linear2srgb(c.g), linear2srgb(c.b));
-  }
-
-  #endif // RGB_CONVERSION_FNS
-#+END_SRC
-
-**** Example
-
-#+NAME: srgb-colorspace-demo
-#+BEGIN_SRC glsl :file ./static/shadergen/srgb-colorspace-demo.png :width 256 :height 256 :exports both :noweb no-export :noweb-prefix no
-  // <<srgb-conversion-fns>>
-  // <<hsv-conversion-fns>>
-  // <<oklch-conversion-fns>>
-
-  float sum3(vec3 p){return p.x+p.y+p.z;}
-
-  void main() {
-      vec2 uv = gl_FragCoord.xy / iResolution.xy;
-      vec2 uvz = (gl_FragCoord.xy - .5*iResolution.xy)/iResolution.y;
-
-      vec3 top = hsv2linear(vec3(uv.x,1.,1.));
-      vec3 bottom = linear2srgb(top);
-      vec3 col = mix(bottom,top,step(0.,uvz.y));
-
-      // treat SRGB as linear to compare perceptual lightness
-      float lightness = sum3(col*vec3(0.299, 0.587, 0.114));
-
-      if (abs(uvz.y)<0.25) col = vec3(lightness);
-
-      fragColor = vec4(col,1.0);
-  }
-#+END_SRC
-
-#+RESULTS: srgb-colorspace-demo
-[[file:./static/shadergen/srgb-colorspace-demo.png]]
-
-Comparing linear RGB (top) to the gamma-corrected sRGB (bottom) gradient we can observe a more visually consistent lightness
 
 *** oklab
 
@@ -632,6 +637,8 @@ using [[https://stackoverflow.com/questions/596216/formula-to-determine-perceive
         if (abs(uv.y)<0.25) {
             float lightness = sum3(c*vec3(0.299, 0.587, 0.114));
             c.rgb = vec3(lightness);
+        } else {
+		  c = linear2srgb(c);
         }
         fragColor = vec4(c, 1.);
     }
@@ -642,11 +649,13 @@ using [[https://stackoverflow.com/questions/596216/formula-to-determine-perceive
 
 *** oklch
 
-Lightness in range [0 .. 1]
+Lightness in range [0 .. 1] (as chroma increases this begins to clip the gamut at L=1)
 
 Chroma represents colorfulness (similar, but not the same as, saturation-- see [[https:https://en.wikipedia.org/wiki/Colorfulness][wikipedia Colorfulness]] article for detauls).  It spans the range of [0 .. 0.37]
 
 Hue is an angle around a color wheel, with a [0 .. 2PI] range.
+
+For a geometric understanding I invite the reader to play around with oklch.com
 
 
 Chroma and Hue can be calculated directly from OKLAB:
@@ -699,13 +708,13 @@ H(l a b) = atan2(b,a)
 
       vec3 c = oklch2linear(vec3(
                                 // Lightness range [0 .. 1]
-                                1.-length(uv),
+                                1.-length(uv)*1.5,
                                 // Chroma range [0 .. 0.37]
                                 mix(0., 0.37, length(uv)),
                                 // Hue range [0 .. 2PI] and wraps back around
                                 atan(uv.y,uv.x)*4.
                                 ));
-      fragColor = vec4(c, 1.);
+      fragColor = vec4(linear2srgb(c), 1.);
   }
 #+END_SRC
 
@@ -719,7 +728,7 @@ H(l a b) = atan2(b,a)
 Idea yoinked from this xorDev post https://twitter.com/XorDev/status/1730330783892574668
 
 #+NAME: color-mix
-#+BEGIN_SRC glsl :file ./static/shadergen/color-mix-shader-out.png :width (/ 1080 2) :height (/ 1080 6) :exports both :noweb no-export :noweb-prefix no
+#+BEGIN_SRC glsl :file ./static/shadergen/color-mix-shader-out.png :width (/ 1080 2) :height (/ 1080 8) :exports both :noweb no-export :noweb-prefix no
   // <<hsv-conversion-fns>>
   // <<srgb-conversion-fns>>
   // <<oklab-conversion-fns>>
@@ -822,7 +831,7 @@ HSV produces by far the worst results in terms of perception-accurate color inte
 We can even visualize the change between cells.  On the left is change in RGB values, and on the right we can see change in lightness.
 
 #+NAME: color-mix-skibidi
-#+BEGIN_SRC glsl :file ./static/shadergen/color-mix-shader-out-skibidi.png :width (/ 1080 2) :height (/ 1080 6) :exports results :noweb no-export :noweb-prefix no
+#+BEGIN_SRC glsl :file ./static/shadergen/color-mix-shader-out-skibidi.png :width (/ 1080 2) :height (/ 1080 8) :exports results :noweb no-export :noweb-prefix no
   #define MODE 1
   // <<color-mix>>
 #+END_SRC
@@ -840,6 +849,12 @@ We can even visualize the change between cells.  On the left is change in RGB va
 
 * Illusions
 
+** Motion Aftereffect
+
+This page does not support animated shaders quite yet-- in the meantime check out my [[./static/widgets/vision-go-blleeehhhhh.html][motion aftereffect induction engine]]
+
+https://en.wikipedia.org/wiki/Motion_aftereffect
+
 ** Peripheral Drift
 
 Rapid blinking usually intensifies the effect
@@ -850,7 +865,6 @@ https://en.wikipedia.org/wiki/Peripheral_drift_illusion
 
 #+NAME: peripheral drift
 #+BEGIN_SRC glsl :file ./static/shadergen/peripheral-drift.png :width 1000 :height 1000 :exports both
-
   #define PI 3.141592653589
 
   mat2 rot(float t) { return mat2(cos(t),-sin(t),sin(t),cos(t)); }
@@ -950,15 +964,13 @@ Cololrs based on wikipedia [[https://en.wikipedia.org/wiki/Peripheral_drift_illu
   }
 #+END_SRC
 
-#+RESULTS: peripheral drift 2
-[[file:./static/shadergen/peripheral-drift-2.png]]
-
 *** Throbert
 
 Lots of album covers use this kind of throbbing effect
 
 #+NAME: peripheral drift 3
-#+BEGIN_SRC glsl :file ./static/shadergen/peripheral-drift-3.png :width 1000 :height 1000 :exports both
+#+BEGIN_SRC glsl :file ./static/shadergen/peripheral-drift-3.png :width 1000 :height 1000 :exports both :noweb no-export :noweb-prefix no
+  // <<srgb-conversion-fns>>
   #define PI (355./113.)
 
   void main()
@@ -969,10 +981,11 @@ Lots of album covers use this kind of throbbing effect
       vec3 col = cos(
           vec3(0.,.75,1.5)
           +(sin(a*8.)*PI+length(uv)*PI*16.*1.)
-          * sin(a*8.+PI/2.)
+          ,* sin(a*8.+PI/2.)
           )*.5+.5;
 
-      fragColor = vec4(col,1.0);
+      // inverse srgb conversion for a more intense illusion
+      fragColor = vec4(srgb2linear(col),1.0);
   }
 #+END_SRC
 
@@ -987,7 +1000,8 @@ Lots of album covers use this kind of throbbing effect
 Or we could get artsy with it using our [[id:a4337c68-8ceb-422f-947f-67f9511df925][sin gradient]] trick
 
 #+NAME: pdrift-sin-1
-#+BEGIN_SRC glsl :file ./static/shadergen/pdrift-sin-1.png :width 1080 :height 566 :exports both
+#+BEGIN_SRC glsl :file ./static/shadergen/pdrift-sin-1.png :width 1080 :height 566 :exports both :noweb no-export :noweb-prefix no
+  // <<srgb-conversion-fns>>
   void main() {
       vec2 uv = (gl_FragCoord.xy - vec2(.5,.55)*iResolution.xy) / iResolution.xy;
       float th = abs(uv.x)*2.;
@@ -998,12 +1012,16 @@ Or we could get artsy with it using our [[id:a4337c68-8ceb-422f-947f-67f9511df92
 
       float wavelength = 1.;
       vec3 c = amp * sin((th*3.14*2. - phase) / wavelength);
-      fragColor = vec4(.5+.5*c, 1.);
+      fragColor = vec4(linear2srgb(.5+.5*c), 1.);
   }
 #+END_SRC
 
+#+RESULTS: pdrift-sin-1
+[[file:./static/shadergen/pdrift-sin-1.png]]
+
 #+NAME: pdrift-sin-2
-#+BEGIN_SRC glsl :file ./static/shadergen/pdrift-sin-2.png :width 1080 :height 566 :exports both
+#+BEGIN_SRC glsl :file ./static/shadergen/pdrift-sin-2.png :width 1080 :height 566 :exports both :noweb no-export :noweb-prefix no
+  // <<srgb-conversion-fns>>
   void main() {
       vec2 r = vec2(.5,.525);
       vec2 uv = (gl_FragCoord.xy - r*iResolution.xy) / iResolution.xy;
@@ -1022,17 +1040,21 @@ Or we could get artsy with it using our [[id:a4337c68-8ceb-422f-947f-67f9511df92
       float amp = cos(
           uv.x*3.14*2.*10.
           /mix(0.334,1.,abs(uv.y)) // perspective
-          )*(.5+.5*pw)// distance fog
+          )*(.5+.67*pw)// distance fog
           ;
 
       float wavelength = 1.;
       vec3 c = amp * sin((th*3.14*2. - phase) / wavelength);
-      fragColor = vec4(.5+.5*c, 1.);
+      fragColor = vec4(linear2srgb(.5+.5*c), 1.);
   }
 #+END_SRC
 
+#+RESULTS: pdrift-sin-2
+[[file:./static/shadergen/pdrift-sin-2.png]]
+
 #+NAME: pdrift-sin-3
-#+BEGIN_SRC glsl :file ./static/shadergen/pdrift-sin-3.png :width 1080 :height 566 :exports both
+#+BEGIN_SRC glsl :file ./static/shadergen/pdrift-sin-3.png :width 1080 :height 566 :exports both :noweb no-export :noweb-prefix no
+  // <<srgb-conversion-fns>>
   void main() {
       vec2 uv = (gl_FragCoord.xy - vec2(.5,.55)*iResolution.xy) / iResolution.xy;
       float th = abs(uv.x)*2.;
@@ -1043,9 +1065,12 @@ Or we could get artsy with it using our [[id:a4337c68-8ceb-422f-947f-67f9511df92
 
       float wavelength = 1.;
       vec3 c = amp * sin((th*3.14*2. - phase) / wavelength);
-      fragColor = vec4(.5+.5*c, 1.);
+      fragColor = vec4(linear2srgb(.5+.5*c), 1.);
   }
 #+END_SRC
+
+#+RESULTS: pdrift-sin-3
+[[file:./static/shadergen/pdrift-sin-3.png]]
 
 **** lch hsv gradient swirls
 
@@ -1053,6 +1078,7 @@ Or we could get artsy with it using our [[id:a4337c68-8ceb-422f-947f-67f9511df92
 #+BEGIN_SRC glsl :file ./static/shadergen/color-mix-shader-out-whaa.png :width 2048 :height 2048 :exports both :noweb no-export :noweb-prefix no
   // <<hsv-conversion-fns>>
   // <<oklch-conversion-fns>>
+  // <<srgb-conversion-fns>>
 
   #define PI 3.141592653589
 
@@ -1088,9 +1114,14 @@ Or we could get artsy with it using our [[id:a4337c68-8ceb-422f-947f-67f9511df92
       }
       vec3 col = vec3(C)/samples;
 
-      fragColor = vec4(col,1.0);
+      // inverse srgb conversion to intensify
+      // light-dark contrast and strengthen illusion
+      fragColor = vec4(srgb2linear(col),1.0);
   }
 #+END_SRC
+
+#+RESULTS: color-mix-cmp-1
+[[file:./static/shadergen/color-mix-shader-out-whaa.png]]
 
 ** Perspective
 
@@ -1113,4 +1144,3 @@ Not even sure with this one, but the tiles kinda make crosses in different direc
       fragColor = vec4(col,1.);
   }
 #+END_SRC
-
