@@ -5,9 +5,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #define SAMPLE_RATE		 44100
-#define DURATION_SECONDS (67)
+#define DURATION_SECONDS (20)
 
 #define BIG_N 32
 
@@ -64,7 +65,7 @@ static void write_wav_header(FILE *f, int sampleRate, int numSamples)
 
 void usage(char **argv)
 {
-	printf("usage: %s [N] [mode]\n0 < N < %d\nmode: one of [stwq] for "
+	printf("usage: %s -n[N] -m[mode]\n0 < N < %d\nmode: one of [stwq] for "
 		   "sin,tri,saw,square\n",
 		   argv[0], BIG_N);
 }
@@ -72,7 +73,7 @@ void usage(char **argv)
 double ring_weight(double d, double radius, double thickness)
 {
 #if 1
-	double x = abs(floor(d - radius));
+	double x = fabs(floor(d - radius));
 	if (x > thickness)
 		return 0.0f;
 
@@ -88,9 +89,11 @@ int main(int argc, char **argv)
 	srand(7);
 
 	int N = BIG_N;
+	char mode = 's'; // sin,tri,saw,square
+
+#if 0
 	if (argc > 1)
 		N = atoi(argv[1]);
-	char mode = 's'; // sin,tri,saw,square
 	if (argc > 2)
 		mode = argv[2][0];
 
@@ -100,6 +103,40 @@ int main(int argc, char **argv)
 		usage(argv);
 		return 1;
 	}
+#else
+	srand(7);
+
+	int opt;
+
+	while ((opt = getopt(argc, argv, "n:m:h")) != -1) {
+		switch (opt) {
+
+		case 'n':
+			N = atoi(optarg);
+			break;
+
+		case 'm':
+			mode = optarg[0];
+			break;
+
+		case 'h':
+			usage(argv);
+			return 0;
+
+		default:
+			usage(argv);
+			return 1;
+		}
+	}
+
+	int badMode = !(mode == 's' || mode == 't' || mode == 'w' || mode == 'q');
+
+	if (badMode || N < 1 || N > BIG_N) {
+		usage(argv);
+		return 1;
+	}
+
+#endif
 
 	const int numSamples = SAMPLE_RATE * DURATION_SECONDS;
 	const double dt = 1.0f / SAMPLE_RATE;
@@ -127,6 +164,7 @@ int main(int argc, char **argv)
 		// osc[i].freq = randf(435.0f, 445.0f);
 		// osc[i].freq = randf(439.0, 441.0);
 		osc[i].freq = 440.0;
+		// osc[i].freq = (i+1) / N * 880.0;
 
 		printf("osc %2d  freq=%7.3f\n", i, osc[i].freq);
 	}
@@ -158,7 +196,7 @@ int main(int argc, char **argv)
 	}
 #else
 	CouplingRing rings[3] = {0};
-	rings[0] = (CouplingRing){.radius = 1, .thickness = 1, .strength = 100};
+	rings[0] = (CouplingRing){.radius = 1, .thickness = 1, .strength = 67};
 	rings[1] = (CouplingRing){.radius = 3, .thickness = 2, .strength = 20};
 	rings[2] = (CouplingRing){.radius = 4, .thickness = 1, .strength = -77};
 
@@ -189,7 +227,6 @@ int main(int argc, char **argv)
 				dx = (dx > w / 2) ? (w - dx) : dx;
 				dy = (dy > h / 2) ? (h - dy) : dy;
 				float d = (float)(dx + dy);
-				// TODO: this distance runs into mad rounding errors-- should be reworked
 
 				float k = 0.0f;
 
@@ -198,16 +235,19 @@ int main(int argc, char **argv)
 						 * ring_weight(d, rings[r].radius, rings[r].thickness);
 				}
 
-				K[i][j] = k; // TODO: convert from 1D to 2D pairings
+				K[i][j] = k;
 			}
 		}
 	}
-	int target = N/3;
-	for (int i=0; i<N; i++) {
-		int x = i%w;
-		if (i>0 && x == 0) printf("\n");
-		if (i==target) printf("%7.2s", "XXXX");
-		else printf("%7.2f ", K[target][i]);
+	int target = N / 3;
+	for (int i = 0; i < N; i++) {
+		int x = i % w;
+		if (i > 0 && x == 0)
+			printf("\n");
+		if (i == target)
+			printf("%7.2s", "XXXX");
+		else
+			printf("%7.2f ", K[target][i]);
 	}
 #endif
 
@@ -224,9 +264,12 @@ int main(int argc, char **argv)
 	//--------------------------------------------------
 
 	for (int sample = 0; sample < numSamples; sample++) {
+
+		// status
 		if (sample % (SAMPLE_RATE * 10) == 0)
 			printf("processing sample %d / %d : %f%%\n", sample, numSamples,
 				   100 * ((float)sample) / ((float)numSamples));
+
 		double phaseDelta[N];
 
 		//----------------------------------------------
@@ -254,7 +297,7 @@ int main(int argc, char **argv)
 			osc[i].phase += phaseDelta[i] * dt;
 
 			if (osc[i].phase > 1.0)
-				osc[i].phase = fmodf(osc[i].phase, 1.0);
+				osc[i].phase = fmod(osc[i].phase, 1.0);
 		}
 
 		//----------------------------------------------
