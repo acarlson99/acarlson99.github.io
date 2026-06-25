@@ -69,10 +69,18 @@ void usage(char **argv)
 		   argv[0], BIG_N);
 }
 
-float ring_weight(float d, float radius, float thickness)
+double ring_weight(double d, double radius, double thickness)
 {
-	float x = (d - radius) / thickness;
+#if 1
+	double x = abs(floor(d - radius));
+	if (x > thickness)
+		return 0.0f;
+
+	return 1.0f - x / thickness;
+#else
+	double x = (d - radius) / thickness;
 	return expf(-x * x);
+#endif
 }
 
 int main(int argc, char **argv)
@@ -150,12 +158,12 @@ int main(int argc, char **argv)
 	}
 #else
 	CouplingRing rings[3] = {0};
-	rings[0] = (CouplingRing){.radius = 1, .thickness = 1, .strength = 1};
-	rings[1] = (CouplingRing){.radius = 4, .thickness = 3, .strength = 0};
-	rings[2] = (CouplingRing){.radius = 8, .thickness = 3, .strength = 0};
+	rings[0] = (CouplingRing){.radius = 1, .thickness = 1, .strength = 100};
+	rings[1] = (CouplingRing){.radius = 3, .thickness = 2, .strength = 20};
+	rings[2] = (CouplingRing){.radius = 4, .thickness = 1, .strength = -77};
 
-    int w = floorl(sqrt((double)N))/2;
-	int h = N/w;
+	int w = floorl(sqrt((double)N));
+	int h = N / w;
 
 	for (int i = 0; i < N; i++) {
 		for (int j = 0; j < N; j++) {
@@ -163,22 +171,23 @@ int main(int argc, char **argv)
 				K[i][j] = 0.0f;
 			} else {
 				// float d = fabs((double)(i - j));
-                // d = fmin(d,N-d);
+				// d = fmin(d,N-d);
 
 				// make this logic wrap vertically and horizontally
-                int x1 = i % w;
-                int y1 = i / w;
+				int x1 = i % w;
+				int y1 = i / w;
 
-                int x2 = j % w;
-                int y2 = j / w;
+				int x2 = j % w;
+				int y2 = j / w;
 
-                // d = sqrt(pow(x2-x1,2.0) + pow(y2-y1,2.0)); // length (no wrapping)
+				// d = sqrt(pow(x2-x1,2.0) + pow(y2-y1,2.0)); // length (no
+				// wrapping)
 
 				// manhattan distance
 				int dx = abs(x2 - x1);
 				int dy = abs(y2 - y1);
-				dx = (dx > w/2) ? (w - dx) : dx;
-				dy = (dy > h/2) ? (h - dy) : dy;
+				dx = (dx > w / 2) ? (w - dx) : dx;
+				dy = (dy > h / 2) ? (h - dy) : dy;
 				float d = (float)(dx + dy);
 				// TODO: this distance runs into mad rounding errors-- should be reworked
 
@@ -192,6 +201,13 @@ int main(int argc, char **argv)
 				K[i][j] = k; // TODO: convert from 1D to 2D pairings
 			}
 		}
+	}
+	int target = N/3;
+	for (int i=0; i<N; i++) {
+		int x = i%w;
+		if (i>0 && x == 0) printf("\n");
+		if (i==target) printf("%7.2s", "XXXX");
+		else printf("%7.2f ", K[target][i]);
 	}
 #endif
 
@@ -208,7 +224,9 @@ int main(int argc, char **argv)
 	//--------------------------------------------------
 
 	for (int sample = 0; sample < numSamples; sample++) {
-		if (sample % (SAMPLE_RATE*10) == 0) printf("processing sample %d / %d : %f%%\n", sample, numSamples, 100*((float)sample)/((float)numSamples));
+		if (sample % (SAMPLE_RATE * 10) == 0)
+			printf("processing sample %d / %d : %f%%\n", sample, numSamples,
+				   100 * ((float)sample) / ((float)numSamples));
 		double phaseDelta[N];
 
 		//----------------------------------------------
