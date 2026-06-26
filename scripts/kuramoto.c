@@ -14,6 +14,9 @@
 
 #define PI 3.14159265358979323846f
 
+#define COL(I) ((I) % w)
+#define ROW(I) ((I) / w)
+
 typedef struct {
 	// [0..1] range, multiplied by 2PI at the very end
 	double phase;
@@ -65,7 +68,7 @@ static void write_wav_header(FILE *f, int sampleRate, int numSamples)
 
 void usage(char **argv)
 {
-	printf("usage: %s -n[N] -m[mode]\n0 < N < %d\nmode: one of [stwq] for "
+	printf("usage: %s -n[N] -m[mode] -o[filename.wav]\n0 < N < %d\nmode: one of [stwq] for "
 		   "sin,tri,saw,square\n",
 		   argv[0], BIG_N);
 }
@@ -90,6 +93,7 @@ int main(int argc, char **argv)
 
 	int N = BIG_N;
 	char mode = 's'; // sin,tri,saw,square
+	char *outfile = "kuramoto.wav";
 
 #if 0
 	if (argc > 1)
@@ -119,6 +123,10 @@ int main(int argc, char **argv)
 			mode = optarg[0];
 			break;
 
+		case 'o':
+			outfile = optarg;
+			break;
+
 		case 'h':
 			usage(argv);
 			return 0;
@@ -141,7 +149,7 @@ int main(int argc, char **argv)
 	const int numSamples = SAMPLE_RATE * DURATION_SECONDS;
 	const double dt = 1.0f / SAMPLE_RATE;
 
-	FILE *f = fopen("kuramoto.wav", "wb");
+	FILE *f = fopen(outfile, "wb");
 
 	if (!f) {
 		printf("failed to open file\n");
@@ -153,6 +161,9 @@ int main(int argc, char **argv)
 	Oscillator osc[N];
 	double K[N][N];
 
+	int w = floorl(sqrt((double)N));
+	int h = N / w;
+
 	//--------------------------------------------------
 	// Oscillators
 	//--------------------------------------------------
@@ -163,8 +174,10 @@ int main(int argc, char **argv)
 
 		// osc[i].freq = randf(435.0f, 445.0f);
 		// osc[i].freq = randf(439.0, 441.0);
-		osc[i].freq = 440.0;
 		// osc[i].freq = (i+1) / N * 880.0;
+		int r = ROW(i);
+		osc[i].freq = 110.0 * pow(2.0, (float)(r));
+		// osc[i].freq = 440.0+randf(-0.5,0.5);
 
 		printf("osc %2d  freq=%7.3f\n", i, osc[i].freq);
 	}
@@ -197,11 +210,8 @@ int main(int argc, char **argv)
 #else
 	CouplingRing rings[3] = {0};
 	rings[0] = (CouplingRing){.radius = 1, .thickness = 1, .strength = 67};
-	rings[1] = (CouplingRing){.radius = 3, .thickness = 2, .strength = 20};
-	rings[2] = (CouplingRing){.radius = 4, .thickness = 1, .strength = -77};
-
-	int w = floorl(sqrt((double)N));
-	int h = N / w;
+	rings[1] = (CouplingRing){.radius = 2, .thickness = 2, .strength = 20};
+	rings[2] = (CouplingRing){.radius = 3, .thickness = 1, .strength = -77};
 
 	for (int i = 0; i < N; i++) {
 		for (int j = 0; j < N; j++) {
@@ -212,11 +222,11 @@ int main(int argc, char **argv)
 				// d = fmin(d,N-d);
 
 				// make this logic wrap vertically and horizontally
-				int x1 = i % w;
-				int y1 = i / w;
+				int x1 = ROW(i);
+				int y1 = COL(i);
 
-				int x2 = j % w;
-				int y2 = j / w;
+				int x2 = ROW(j);
+				int y2 = COL(j);
 
 				// d = sqrt(pow(x2-x1,2.0) + pow(y2-y1,2.0)); // length (no
 				// wrapping)
@@ -280,7 +290,7 @@ int main(int argc, char **argv)
 			double dtheta = osc[i].freq;
 			double coupling = 0.0f;
 			for (int j = 0; j < N; j++) {
-				coupling += K[i][j] * sinf(osc[j].phase - osc[i].phase);
+				coupling += K[i][j] * sinf((osc[j].phase - osc[i].phase)*PI*2.0);
 			}
 
 			dtheta += coupling / (double)N;
@@ -344,7 +354,7 @@ int main(int argc, char **argv)
 
 	fclose(f);
 
-	printf("\nwrote kuramoto.wav\n");
+	printf("\nwrote %s\n", outfile);
 
 	return 0;
 }
