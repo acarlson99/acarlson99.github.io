@@ -68,8 +68,7 @@ static void write_wav_header(FILE *f, int sampleRate, int numSamples)
 
 void usage(char **argv)
 {
-	printf("usage: %s -n[N] -m[mode] -o[filename.wav]\n0 < N < %d\nmode: one of [stwq] for "
-		   "sin,tri,saw,square\n",
+	printf("usage: %s -n[N] -w[wave-type] -o[filename.wav]\n0 < N < %d\nwave: one of Sin,Tri,saW,sQuare\n",
 		   argv[0], BIG_N);
 }
 
@@ -92,18 +91,18 @@ int main(int argc, char **argv)
 	srand(7);
 
 	int N = BIG_N;
-	char mode = 's'; // sin,tri,saw,square
+	char waveType = 's'; // sin,tri,saw,square
 	char *outfile = "kuramoto.wav";
 
 #if 0
 	if (argc > 1)
 		N = atoi(argv[1]);
 	if (argc > 2)
-		mode = argv[2][0];
+		waveType = argv[2][0];
 
-	int badMode = !(mode == 's' || mode == 't' || mode == 'w' || mode == 'q');
+	int badWaveType = !(waveType == 's' || waveType == 't' || waveType == 'w' || waveType == 'q');
 
-	if (badMode || N < 1 || N > BIG_N) {
+	if (badWaveType || N < 1 || N > BIG_N) {
 		usage(argv);
 		return 1;
 	}
@@ -112,15 +111,15 @@ int main(int argc, char **argv)
 
 	int opt;
 
-	while ((opt = getopt(argc, argv, "n:m:h")) != -1) {
+	while ((opt = getopt(argc, argv, "n:w:h")) != -1) {
 		switch (opt) {
 
 		case 'n':
 			N = atoi(optarg);
 			break;
 
-		case 'm':
-			mode = optarg[0];
+		case 'w':
+			waveType = optarg[0];
 			break;
 
 		case 'o':
@@ -137,9 +136,9 @@ int main(int argc, char **argv)
 		}
 	}
 
-	int badMode = !(mode == 's' || mode == 't' || mode == 'w' || mode == 'q');
+	int badWaveType = !(waveType == 's' || waveType == 't' || waveType == 'w' || waveType == 'q');
 
-	if (badMode || N < 1 || N > BIG_N) {
+	if (badWaveType || N < 1 || N > BIG_N) {
 		usage(argv);
 		return 1;
 	}
@@ -321,7 +320,7 @@ int main(int argc, char **argv)
 			float pn = fmod(osc[i].phase, 1.0);
 
 			float v = 0.0;
-			switch (mode) {
+			switch (waveType) {
 			// sin,tri,saw,square
 			case 's': // sin
 				v = sinf(phase);
