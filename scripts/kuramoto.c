@@ -6,14 +6,17 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 
 #define SAMPLE_RATE		 44100
 #define DURATION_SECONDS (20)
 
-#define BIG_N 32
+#define BITDEPTH 16
+
+#define BIG_N 64
+#define N_RINGS (3)
 
 #define PI 3.14159265358979323846f
-
 #define COL(I) ((I) % w)
 #define ROW(I) ((I) / w)
 
@@ -37,7 +40,7 @@ static double randf(double a, double b)
 static void write_wav_header(FILE *f, int sampleRate, int numSamples)
 {
 	int16_t numChannels = 1;
-	int16_t bitsPerSample = 16;
+	int16_t bitsPerSample = BITDEPTH;
 
 	int byteRate = sampleRate * numChannels * bitsPerSample / 8;
 	int blockAlign = numChannels * bitsPerSample / 8;
@@ -66,6 +69,11 @@ static void write_wav_header(FILE *f, int sampleRate, int numSamples)
 	fwrite(&dataSize, 4, 1, f);
 }
 
+char downcase(char c) {
+	if (c >= 'A' && c <= 'Z') return c + 'a'-'A';
+	return c;
+}
+
 void usage(char **argv)
 {
 	printf("usage: %s -n[N] -w[wave-type] -o[filename.wav]\n0 < N < %d\nwave: one of Sin,Tri,saW,sQuare\n",
@@ -86,6 +94,119 @@ double ring_weight(double d, double radius, double thickness)
 #endif
 }
 
+// steps oscillators one step based on `dt`
+// outputs a value [-1..1] representing the sound wave at that timestep
+double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt, char waveType) {
+	double phaseDelta[N];
+
+	//----------------------------------------------
+	// Kuramoto update
+	//----------------------------------------------
+
+	for (int i = 0; i < N; i++) {
+		double dtheta = osc[i].freq;
+		double coupling = 0.0f;
+		for (int j = 0; j < N; j++) {
+			coupling += K[i][j] * sinf((osc[j].phase - osc[i].phase)*PI*2.0);
+		}
+
+		dtheta += coupling / (double)N;
+
+		phaseDelta[i] = dtheta;
+	}
+
+	//----------------------------------------------
+	// Integrate
+	//----------------------------------------------
+
+	for (int i = 0; i < N; i++) {
+
+		osc[i].phase += phaseDelta[i] * dt;
+
+		if (osc[i].phase > 1.0)
+			osc[i].phase = fmod(osc[i].phase, 1.0);
+	}
+
+	//----------------------------------------------
+	// Audio output
+	//----------------------------------------------
+
+	double out = 0.0f;
+
+	for (int i = 0; i < N; i++) {
+		float phase = osc[i].phase * PI * 2.0;
+		float pn = fmod(osc[i].phase, 1.0);
+
+		float v = 0.0;
+		switch (waveType) {
+			// sin,tri,saw,square
+		case 's': // sin
+			v = sinf(phase);
+			break;
+		case 't': // tri
+			v = 1.0 - 4.0 * fabs(pn - 0.5);
+			break;
+		case 'w': // saw
+			v = pn * 2.0 - 1.0;
+			break;
+		case 'q': // square
+			v = (pn < 0.5) ? 1.0 : -1.0;
+			break;
+		}
+		out += v;
+	}
+
+	out /= (double)N;
+
+	return out;
+}
+
+void populateCouplingMatrix(CouplingRing rings[], double K[BIG_N][BIG_N], int N, int w, int h) {
+	for (int i = 0; i < N; i++) {
+		for (int j = 0; j < N; j++) {
+			if (i == j) {
+				K[i][j] = 0.0f;
+			} else {
+				// float d = fabs((double)(i - j));
+				// d = fmin(d,N-d);
+
+				int x1 = ROW(i);
+				int y1 = COL(i);
+
+				int x2 = ROW(j);
+				int y2 = COL(j);
+
+				// d = sqrt(pow(x2-x1,2.0) + pow(y2-y1,2.0)); // length (no
+				// wrapping)
+
+				// manhattan distance
+				int dx = abs(x2 - x1);
+				int dy = abs(y2 - y1);
+				dx = (dx > w / 2) ? (w - dx) : dx;
+				dy = (dy > h / 2) ? (h - dy) : dy;
+				float d = (float)(dx + dy);
+
+				float k = 0.0f;
+
+				for (int r = 0; r < N_RINGS; r++) {
+					k += rings[r].strength
+						* ring_weight(d, rings[r].radius, rings[r].thickness);
+				}
+
+				K[i][j] = k;
+			}
+		}
+	}
+}
+
+char wavearg(char *s) {
+	if (strcmp(s, "sin")==0) return 's';
+	if (strcmp(s, "tri")==0) return 't';
+	if (strcmp(s, "saw")==0) return 'w';
+	if (strcmp(s, "square")==0) return 'q';
+	return downcase(s[0]);
+}
+
 int main(int argc, char **argv)
 {
 	srand(7);
@@ -94,24 +215,10 @@ int main(int argc, char **argv)
 	char waveType = 's'; // sin,tri,saw,square
 	char *outfile = "kuramoto.wav";
 
-#if 0
-	if (argc > 1)
-		N = atoi(argv[1]);
-	if (argc > 2)
-		waveType = argv[2][0];
-
-	int badWaveType = !(waveType == 's' || waveType == 't' || waveType == 'w' || waveType == 'q');
-
-	if (badWaveType || N < 1 || N > BIG_N) {
-		usage(argv);
-		return 1;
-	}
-#else
-	srand(7);
-
 	int opt;
+	int duration = DURATION_SECONDS;
 
-	while ((opt = getopt(argc, argv, "n:w:h")) != -1) {
+	while ((opt = getopt(argc, argv, "n:w:d:h")) != -1) {
 		switch (opt) {
 
 		case 'n':
@@ -119,7 +226,11 @@ int main(int argc, char **argv)
 			break;
 
 		case 'w':
-			waveType = optarg[0];
+			waveType = downcase(optarg[0]);
+			break;
+
+		case 'd':
+			duration = atoi(optarg);
 			break;
 
 		case 'o':
@@ -143,9 +254,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-#endif
-
-	const int numSamples = SAMPLE_RATE * DURATION_SECONDS;
+	const int numSamples = SAMPLE_RATE * duration;
 	const double dt = 1.0f / SAMPLE_RATE;
 
 	FILE *f = fopen(outfile, "wb");
@@ -157,8 +266,8 @@ int main(int argc, char **argv)
 
 	write_wav_header(f, SAMPLE_RATE, numSamples);
 
-	Oscillator osc[N];
-	double K[N][N];
+	Oscillator osc[BIG_N];
+	double K[BIG_N][BIG_N];
 
 	int w = floorl(sqrt((double)N));
 	int h = N / w;
@@ -174,8 +283,8 @@ int main(int argc, char **argv)
 		// osc[i].freq = randf(435.0f, 445.0f);
 		// osc[i].freq = randf(439.0, 441.0);
 		// osc[i].freq = (i+1) / N * 880.0;
-		int r = ROW(i);
-		osc[i].freq = 110.0 * pow(2.0, (float)(r));
+
+		osc[i].freq = 110.0*(1.0 + 0*(COL(i)/((float)w))) * pow(2.0, (float)(ROW(i)));
 		// osc[i].freq = 440.0+randf(-0.5,0.5);
 
 		printf("osc %2d  freq=%7.3f\n", i, osc[i].freq);
@@ -184,70 +293,16 @@ int main(int argc, char **argv)
 	//--------------------------------------------------
 	// Distance-based coupling
 	//--------------------------------------------------
-
-#if 0
-	const double globalK = 200.0f * 10;
-	const double falloff = 8.0f;
-
-	for (int i = 0; i < N; i++) {
-		for (int j = 0; j < N; j++) {
-			if (i == j) {
-				K[i][j] = 0.0f;
-			} else {
-
-				double d = fabs((double)(i - j));
-
-				K[i][j] = globalK * expf(-d / falloff)
-						  * (sin(i - j) < 0.0 ? -1.0 : 1.0)
-						  * sin((i + j) / 4.0);
-
-				// Optional tiny asymmetry
-				K[i][j] *= randf(0.9f, 1.1f);
-			}
-		}
-	}
-#else
-	CouplingRing rings[3] = {0};
+	CouplingRing rings[N_RINGS] = {0};
 	rings[0] = (CouplingRing){.radius = 1, .thickness = 1, .strength = 67};
 	rings[1] = (CouplingRing){.radius = 2, .thickness = 2, .strength = 20};
 	rings[2] = (CouplingRing){.radius = 3, .thickness = 1, .strength = -77};
 
-	for (int i = 0; i < N; i++) {
-		for (int j = 0; j < N; j++) {
-			if (i == j) {
-				K[i][j] = 0.0f;
-			} else {
-				// float d = fabs((double)(i - j));
-				// d = fmin(d,N-d);
+//	rings[0] = (CouplingRing){.radius=0, .thickness=2, .strength=-90};
 
-				// make this logic wrap vertically and horizontally
-				int x1 = ROW(i);
-				int y1 = COL(i);
+	populateCouplingMatrix(rings,  K, N,  w,  h);
 
-				int x2 = ROW(j);
-				int y2 = COL(j);
-
-				// d = sqrt(pow(x2-x1,2.0) + pow(y2-y1,2.0)); // length (no
-				// wrapping)
-
-				// manhattan distance
-				int dx = abs(x2 - x1);
-				int dy = abs(y2 - y1);
-				dx = (dx > w / 2) ? (w - dx) : dx;
-				dy = (dy > h / 2) ? (h - dy) : dy;
-				float d = (float)(dx + dy);
-
-				float k = 0.0f;
-
-				for (int r = 0; r < 3; r++) {
-					k += rings[r].strength
-						 * ring_weight(d, rings[r].radius, rings[r].thickness);
-				}
-
-				K[i][j] = k;
-			}
-		}
-	}
+	// print coupling of single oscillator
 	int target = N / 3;
 	for (int i = 0; i < N; i++) {
 		int x = i % w;
@@ -258,15 +313,17 @@ int main(int argc, char **argv)
 		else
 			printf("%7.2f ", K[target][i]);
 	}
-#endif
+	printf("\n");
 
+#if 0
 	printf("\nCoupling matrix:\n");
 	for (int i = 0; i < N; i++) {
 		for (int j = 0; j < N; j++) {
-			printf("%7.2f ", K[i][j]);
+			printf("%7.2f ", K[j][i]);
 		}
 		printf("\n");
 	}
+#endif
 
 	//--------------------------------------------------
 	// Main synthesis loop
@@ -279,76 +336,18 @@ int main(int argc, char **argv)
 			printf("processing sample %d / %d : %f%%\n", sample, numSamples,
 				   100 * ((float)sample) / ((float)numSamples));
 
-		double phaseDelta[N];
+		float out = step(osc, K, N, dt, waveType) * sin((float)sample * PI*2.0 / SAMPLE_RATE);
 
-		//----------------------------------------------
-		// Kuramoto update
-		//----------------------------------------------
-
-		for (int i = 0; i < N; i++) {
-			double dtheta = osc[i].freq;
-			double coupling = 0.0f;
-			for (int j = 0; j < N; j++) {
-				coupling += K[i][j] * sinf((osc[j].phase - osc[i].phase)*PI*2.0);
-			}
-
-			dtheta += coupling / (double)N;
-
-			phaseDelta[i] = dtheta;
-		}
-
-		//----------------------------------------------
-		// Integrate
-		//----------------------------------------------
-
-		for (int i = 0; i < N; i++) {
-
-			osc[i].phase += phaseDelta[i] * dt;
-
-			if (osc[i].phase > 1.0)
-				osc[i].phase = fmod(osc[i].phase, 1.0);
-		}
-
-		//----------------------------------------------
-		// Audio output
-		//----------------------------------------------
-
-		double out = 0.0f;
-
-		for (int i = 0; i < N; i++) {
-			float phase = osc[i].phase * PI * 2.0;
-			float pn = fmod(osc[i].phase, 1.0);
-
-			float v = 0.0;
-			switch (waveType) {
-			// sin,tri,saw,square
-			case 's': // sin
-				v = sinf(phase);
-				break;
-			case 't': // tri
-				v = 1.0 - 4.0 * fabs(pn - 0.5);
-				break;
-			case 'w': // saw
-				v = pn * 2.0 - 1.0;
-				break;
-			case 'q': // square
-				v = (pn < 0.5) ? 1.0 : -1.0;
-				break;
-			}
-			out += v;
-		}
-
-		out /= (double)N;
-
-		//----------------------------------------------
 		// Saturation
-		//----------------------------------------------
-
 		out = tanhf(out * 3.0f);
 
+#if BITDEPTH==32
+		int32_t s = (int32_t)(INT32_MAX * out);
+		fwrite(&s, sizeof(int32_t), 1, f);
+#else
 		int16_t s = (int16_t)(INT16_MAX * out);
-
 		fwrite(&s, sizeof(int16_t), 1, f);
+#endif
 	}
 
 	fclose(f);
