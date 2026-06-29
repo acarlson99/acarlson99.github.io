@@ -144,6 +144,8 @@ double step(Synthesizer *synth, float dt)
 
 		osc[i].phase += phaseDelta[i] * dt;
 
+		if (osc[i].phase < 0.0)
+			osc[i].phase += 1.0;
 		if (osc[i].phase > 1.0)
 			osc[i].phase = fmod(osc[i].phase, 1.0);
 	}
@@ -217,9 +219,9 @@ void populateCouplingMatrix(Synthesizer *synth)
 
 				float k = 0.0;
 
+				double dist = distance(i, j, synth->w, synth->h);
 				for (int r = 0; r < N_RINGS; r++) {
-					k += ring_weight(distance(i, j, synth->w, synth->h),
-									 synth->rings[r]);
+					k += ring_weight(dist, synth->rings[r]);
 				}
 
 				synth->K[i][j] = k;
