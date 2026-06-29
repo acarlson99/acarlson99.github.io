@@ -25,6 +25,7 @@ typedef struct {
 	// [0..1] range, multiplied by 2PI at the very end
 	double phase;
 	double freq;
+	double amp;
 } Oscillator;
 
 typedef struct {
@@ -137,13 +138,14 @@ double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt,
 	// Audio output
 	//----------------------------------------------
 
-	double out = 0.0f;
+	double out = 0.0;
 
 	for (int i = 0; i < N; i++) {
-		float phase = osc[i].phase * PI * 2.0;
-		float pn = fmod(osc[i].phase, 1.0);
+		double phase = osc[i].phase * PI * 2.0;
+		double pn = fmod(osc[i].phase, 1.0);
+		double amp = osc[i].amp; // * sin(phase);
 
-		float v = 0.0;
+		double v = 0.0;
 		switch (waveType) {
 			// sin,tri,saw,square
 		case 's': // sin
@@ -159,7 +161,7 @@ double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt,
 			v = (pn < 0.5) ? 1.0 : -1.0;
 			break;
 		}
-		out += v;
+		out += v * amp;
 	}
 
 	out /= (double)N;
@@ -302,6 +304,7 @@ int main(int argc, char **argv)
 
 	for (int i = 0; i < N; i++) {
 
+		osc[i].amp = 1.0;
 		osc[i].phase = randf(0.0, 1.0);
 
 		// osc[i].freq = randf(435.0f, 445.0f);
