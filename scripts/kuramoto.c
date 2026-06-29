@@ -5,18 +5,18 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
+#include <unistd.h>
 
 #define SAMPLE_RATE		 44100
 #define DURATION_SECONDS (20)
 
 #define BITDEPTH 16
 
-#define BIG_N 64
+#define BIG_N	64
 #define N_RINGS (3)
 
-#define PI 3.14159265358979323846f
+#define PI	   3.14159265358979323846f
 #define COL(I) ((I) % w)
 #define ROW(I) ((I) / w)
 
@@ -69,14 +69,17 @@ static void write_wav_header(FILE *f, int sampleRate, int numSamples)
 	fwrite(&dataSize, 4, 1, f);
 }
 
-char downcase(char c) {
-	if (c >= 'A' && c <= 'Z') return c + 'a'-'A';
+char downcase(char c)
+{
+	if (c >= 'A' && c <= 'Z')
+		return c + 'a' - 'A';
 	return c;
 }
 
 void usage(char **argv)
 {
-	printf("usage: %s -n[N] -w[wave-type] -o[filename.wav]\n0 < N < %d\nwave: one of Sin,Tri,saW,sQuare\n",
+	printf("usage: %s -n[N] -w[wave-type] -o[filename.wav]\n0 < N < %d\nwave: "
+		   "one of Sin,Tri,saW,sQuare\n",
 		   argv[0], BIG_N);
 }
 
@@ -96,7 +99,9 @@ double ring_weight(double d, double radius, double thickness)
 
 // steps oscillators one step based on `dt`
 // outputs a value [-1..1] representing the sound wave at that timestep
-double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt, char waveType) {
+double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt,
+			char waveType)
+{
 	double phaseDelta[N];
 
 	//----------------------------------------------
@@ -107,7 +112,8 @@ double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt, char
 		double dtheta = osc[i].freq;
 		double coupling = 0.0f;
 		for (int j = 0; j < N; j++) {
-			coupling += K[i][j] * sinf((osc[j].phase - osc[i].phase)*PI*2.0);
+			coupling +=
+				K[i][j] * sinf((osc[j].phase - osc[i].phase) * PI * 2.0);
 		}
 
 		dtheta += coupling / (double)N;
@@ -161,36 +167,44 @@ double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt, char
 	return out;
 }
 
-void populateCouplingMatrix(CouplingRing rings[], double K[BIG_N][BIG_N], int N, int w, int h) {
+double distance(int i, int j, int w, int h)
+{
+	// float d = fabs((double)(i - j));
+	// d = fmin(d,N-d);
+
+	int x1 = COL(i);
+	int y1 = ROW(i);
+
+	int x2 = COL(j);
+	int y2 = ROW(j);
+
+	// d = sqrt(pow(x2-x1,2.0) + pow(y2-y1,2.0)); // length (no
+	// wrapping)
+
+	// manhattan distance
+	int dx = abs(x2 - x1);
+	int dy = abs(y2 - y1);
+	dx = (dx > w / 2) ? (w - dx) : dx;
+	dy = (dy > h / 2) ? (h - dy) : dy;
+	float d = (float)(dx + dy);
+	return d;
+}
+
+void populateCouplingMatrix(CouplingRing rings[], double K[BIG_N][BIG_N], int N,
+							int w, int h)
+{
 	for (int i = 0; i < N; i++) {
 		for (int j = 0; j < N; j++) {
 			if (i == j) {
 				K[i][j] = 0.0f;
 			} else {
-				// float d = fabs((double)(i - j));
-				// d = fmin(d,N-d);
-
-				int x1 = COL(i);
-				int y1 = ROW(i);
-
-				int x2 = COL(j);
-				int y2 = ROW(j);
-
-				// d = sqrt(pow(x2-x1,2.0) + pow(y2-y1,2.0)); // length (no
-				// wrapping)
-
-				// manhattan distance
-				int dx = abs(x2 - x1);
-				int dy = abs(y2 - y1);
-				dx = (dx > w / 2) ? (w - dx) : dx;
-				dy = (dy > h / 2) ? (h - dy) : dy;
-				float d = (float)(dx + dy);
 
 				float k = 0.0f;
 
 				for (int r = 0; r < N_RINGS; r++) {
 					k += rings[r].strength
-						* ring_weight(d, rings[r].radius, rings[r].thickness);
+						 * ring_weight(distance(i, j, w, h), rings[r].radius,
+									   rings[r].thickness);
 				}
 
 				K[i][j] = k;
@@ -199,11 +213,16 @@ void populateCouplingMatrix(CouplingRing rings[], double K[BIG_N][BIG_N], int N,
 	}
 }
 
-char wavearg(char *s) {
-	if (strcmp(s, "sin")==0) return 's';
-	if (strcmp(s, "tri")==0) return 't';
-	if (strcmp(s, "saw")==0) return 'w';
-	if (strcmp(s, "square")==0) return 'q';
+char wavearg(char *s)
+{
+	if (strcmp(s, "sin") == 0)
+		return 's';
+	if (strcmp(s, "tri") == 0)
+		return 't';
+	if (strcmp(s, "saw") == 0)
+		return 'w';
+	if (strcmp(s, "square") == 0)
+		return 'q';
 	return downcase(s[0]);
 }
 
@@ -247,7 +266,8 @@ int main(int argc, char **argv)
 		}
 	}
 
-	int badWaveType = !(waveType == 's' || waveType == 't' || waveType == 'w' || waveType == 'q');
+	int badWaveType = !(waveType == 's' || waveType == 't' || waveType == 'w'
+						|| waveType == 'q');
 
 	if (badWaveType || N < 1 || N > BIG_N) {
 		usage(argv);
@@ -289,7 +309,8 @@ int main(int argc, char **argv)
 		// osc[i].freq = randf(439.0, 441.0);
 		// osc[i].freq = (i+1) / N * 880.0;
 
-		osc[i].freq = 110.0*(1.0 + 0*(COL(i)/((float)w))) * pow(2.0, (float)(ROW(i)));
+		osc[i].freq = 110.0 * (1.0 + 0 * (COL(i) / ((float)w)))
+					  * pow(2.0, (float)(ROW(i)));
 		// osc[i].freq = 440.0+randf(-0.5,0.5);
 
 		printf("osc %2d  freq=%7.3f\n", i, osc[i].freq);
@@ -303,9 +324,9 @@ int main(int argc, char **argv)
 	rings[1] = (CouplingRing){.radius = 2, .thickness = 2, .strength = 20};
 	rings[2] = (CouplingRing){.radius = 3, .thickness = 1, .strength = -77};
 
-//	rings[0] = (CouplingRing){.radius=0, .thickness=2, .strength=-90};
+	//	rings[0] = (CouplingRing){.radius=0, .thickness=2, .strength=-90};
 
-	populateCouplingMatrix(rings,  K, N,  w,  h);
+	populateCouplingMatrix(rings, K, N, w, h);
 
 	// print coupling of single oscillator
 	int target = N / 3;
@@ -341,12 +362,14 @@ int main(int argc, char **argv)
 			printf("processing sample %d / %d : %f%%\n", sample, numSamples,
 				   100 * ((float)sample) / ((float)numSamples));
 
-		float out = step(osc, K, N, dt, waveType);// * sin((float)sample * PI*2.0 / SAMPLE_RATE);
+		float out =
+			step(osc, K, N, dt,
+				 waveType); // * sin((float)sample * PI*2.0 / SAMPLE_RATE);
 
 		// Saturation
 		out = tanhf(out * 3.0f);
 
-#if BITDEPTH==32
+#if BITDEPTH == 32
 		int32_t s = (int32_t)(INT32_MAX * out);
 		fwrite(&s, sizeof(int32_t), 1, f);
 #else
