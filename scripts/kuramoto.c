@@ -170,11 +170,11 @@ void populateCouplingMatrix(CouplingRing rings[], double K[BIG_N][BIG_N], int N,
 				// float d = fabs((double)(i - j));
 				// d = fmin(d,N-d);
 
-				int x1 = ROW(i);
-				int y1 = COL(i);
+				int x1 = COL(i);
+				int y1 = ROW(i);
 
-				int x2 = ROW(j);
-				int y2 = COL(j);
+				int x2 = COL(j);
+				int y2 = ROW(j);
 
 				// d = sqrt(pow(x2-x1,2.0) + pow(y2-y1,2.0)); // length (no
 				// wrapping)
@@ -218,7 +218,7 @@ int main(int argc, char **argv)
 	int opt;
 	int duration = DURATION_SECONDS;
 
-	while ((opt = getopt(argc, argv, "n:w:d:h")) != -1) {
+	while ((opt = getopt(argc, argv, "n:w:d:o:h")) != -1) {
 		switch (opt) {
 
 		case 'n':
@@ -226,7 +226,7 @@ int main(int argc, char **argv)
 			break;
 
 		case 'w':
-			waveType = downcase(optarg[0]);
+			waveType = wavearg(optarg);
 			break;
 
 		case 'd':
@@ -269,8 +269,13 @@ int main(int argc, char **argv)
 	Oscillator osc[BIG_N];
 	double K[BIG_N][BIG_N];
 
+#if 1
 	int w = floorl(sqrt((double)N));
 	int h = N / w;
+#else
+	int w = ceil(sqrt(N));
+	int h = ceil((double)N / w);
+#endif
 
 	//--------------------------------------------------
 	// Oscillators
@@ -336,7 +341,7 @@ int main(int argc, char **argv)
 			printf("processing sample %d / %d : %f%%\n", sample, numSamples,
 				   100 * ((float)sample) / ((float)numSamples));
 
-		float out = step(osc, K, N, dt, waveType) * sin((float)sample * PI*2.0 / SAMPLE_RATE);
+		float out = step(osc, K, N, dt, waveType);// * sin((float)sample * PI*2.0 / SAMPLE_RATE);
 
 		// Saturation
 		out = tanhf(out * 3.0f);
