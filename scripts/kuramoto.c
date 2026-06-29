@@ -12,7 +12,7 @@
 #define SAMPLE_RATE		 44100
 #define DURATION_SECONDS (20)
 
-#define BITDEPTH 16
+#define BITDEPTH 32
 
 #define BIG_N	64
 #define N_RINGS (3)
@@ -33,6 +33,18 @@ typedef struct {
 	float thickness;
 	float strength;
 } CouplingRing;
+
+typedef struct {
+	char waveType; // one of [stqw]
+	Oscillator *osc;
+	int N;
+
+	int w;
+	int h;
+
+	double (*K)[BIG_N];
+	CouplingRing *rings;
+} Synthesizer;
 
 static double randf(double a, double b)
 {
@@ -88,9 +100,9 @@ void usage(char **argv)
 double ring_weight(double d, CouplingRing ring)
 {
 #if 1
-	double x = fabs(floor(d - ring.radius));
+	double x = fabs(d - ring.radius);
 	if (x > ring.thickness)
-		return 0.0f;
+		return 0.0;
 
 	return ring.strength * (1.0f - x / ring.thickness);
 #else
@@ -101,9 +113,11 @@ double ring_weight(double d, CouplingRing ring)
 
 // steps oscillators one step based on `dt`
 // outputs a value [-1..1] representing the sound wave at that timestep
-double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt,
-			char waveType)
+double step(Synthesizer *synth, float dt)
 {
+	int N = synth->N;
+	Oscillator *osc = synth->osc;
+	double(*K)[BIG_N] = synth->K;
 	double phaseDelta[N];
 
 	//----------------------------------------------
@@ -112,7 +126,7 @@ double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt,
 
 	for (int i = 0; i < N; i++) {
 		double dtheta = osc[i].freq;
-		double coupling = 0.0f;
+		double coupling = 0.0;
 		for (int j = 0; j < N; j++) {
 			coupling += K[i][j] * sin((osc[j].phase - osc[i].phase) * PI * 2.0);
 		}
@@ -146,7 +160,7 @@ double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt,
 		double amp = osc[i].amp; // * sin(phase);
 
 		double v = 0.0;
-		switch (waveType) {
+		switch (synth->waveType) {
 			// sin,tri,saw,square
 		case 's': // sin
 			v = sin(phase);
@@ -192,22 +206,23 @@ double distance(int i, int j, int w, int h)
 	return d;
 }
 
-void populateCouplingMatrix(CouplingRing rings[], double K[BIG_N][BIG_N], int N,
-							int w, int h)
+void populateCouplingMatrix(Synthesizer *synth)
 {
+	int N = synth->N;
 	for (int i = 0; i < N; i++) {
 		for (int j = 0; j < N; j++) {
 			if (i == j) {
-				K[i][j] = 0.0f;
+				synth->K[i][j] = 0.0;
 			} else {
 
-				float k = 0.0f;
+				float k = 0.0;
 
 				for (int r = 0; r < N_RINGS; r++) {
-					k += ring_weight(distance(i, j, w, h), rings[r]);
+					k += ring_weight(distance(i, j, synth->w, synth->h),
+									 synth->rings[r]);
 				}
 
-				K[i][j] = k;
+				synth->K[i][j] = k;
 			}
 		}
 	}
@@ -231,6 +246,7 @@ int main(int argc, char **argv)
 	time_t startTime = time(NULL);
 	srand(7);
 
+	// argparse
 	int N = BIG_N;
 	char waveType = 's'; // sin,tri,saw,square
 	char *outfile = "kuramoto.wav";
@@ -266,15 +282,14 @@ int main(int argc, char **argv)
 			return 1;
 		}
 	}
-
 	int badWaveType = !(waveType == 's' || waveType == 't' || waveType == 'w'
 						|| waveType == 'q');
-
 	if (badWaveType || N < 1 || N > BIG_N) {
 		usage(argv);
 		return 1;
 	}
 
+	// setup
 	const int numSamples = SAMPLE_RATE * duration;
 	const double dt = 1.0f / SAMPLE_RATE;
 
@@ -328,7 +343,15 @@ int main(int argc, char **argv)
 
 	//	rings[0] = (CouplingRing){.radius=0, .thickness=2, .strength=-90};
 
-	populateCouplingMatrix(rings, K, N, w, h);
+	Synthesizer synth = (Synthesizer){.rings = rings,
+									  .waveType = waveType,
+									  .osc = osc,
+									  .N = N,
+									  .w = w,
+									  .h = h,
+									  .K = K};
+
+	populateCouplingMatrix(&synth);
 
 	// print coupling of single oscillator
 	int target = N / 3;
@@ -358,15 +381,13 @@ int main(int argc, char **argv)
 	//--------------------------------------------------
 
 	for (int sample = 0; sample < numSamples; sample++) {
-
-		// status
+		// status msg
 		if (sample % (SAMPLE_RATE * 10) == 0)
 			printf("processing sample %d / %d : %f%%\n", sample, numSamples,
 				   100 * ((float)sample) / ((float)numSamples));
 
-		float out =
-			step(osc, K, N, dt,
-				 waveType); // * sin((float)sample * PI*2.0 / SAMPLE_RATE);
+		float out = step(&synth, dt);
+		// * sin((float)sample * PI*2.0 / SAMPLE_RATE);
 
 		// Saturation
 		out = tanh(out * 3.0f);
