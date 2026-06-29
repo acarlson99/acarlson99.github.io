@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #define SAMPLE_RATE		 44100
@@ -225,6 +226,7 @@ char wavearg(char *s)
 
 int main(int argc, char **argv)
 {
+	time_t startTime = time(NULL);
 	srand(7);
 
 	int N = BIG_N;
@@ -364,7 +366,7 @@ int main(int argc, char **argv)
 				 waveType); // * sin((float)sample * PI*2.0 / SAMPLE_RATE);
 
 		// Saturation
-		out = tanhf(out * 3.0f);
+		out = tanh(out * 3.0f);
 
 #if BITDEPTH == 32
 		int32_t s = (int32_t)(INT32_MAX * out);
@@ -378,6 +380,9 @@ int main(int argc, char **argv)
 	fclose(f);
 
 	printf("\nwrote %s\n", outfile);
+
+	time_t endTime = time(NULL);
+	printf("Time elapsed: %lds\n", endTime - startTime);
 
 	return 0;
 }
