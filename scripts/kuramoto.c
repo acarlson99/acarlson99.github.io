@@ -83,14 +83,14 @@ void usage(char **argv)
 		   argv[0], BIG_N);
 }
 
-double ring_weight(double d, double radius, double thickness)
+double ring_weight(double d, CouplingRing ring)
 {
 #if 1
-	double x = fabs(floor(d - radius));
-	if (x > thickness)
+	double x = fabs(floor(d - ring.radius));
+	if (x > ring.thickness)
 		return 0.0f;
 
-	return 1.0f - x / thickness;
+	return ring.strength * (1.0f - x / ring.thickness);
 #else
 	double x = (d - radius) / thickness;
 	return expf(-x * x);
@@ -112,8 +112,7 @@ double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt,
 		double dtheta = osc[i].freq;
 		double coupling = 0.0f;
 		for (int j = 0; j < N; j++) {
-			coupling +=
-				K[i][j] * sinf((osc[j].phase - osc[i].phase) * PI * 2.0);
+			coupling += K[i][j] * sin((osc[j].phase - osc[i].phase) * PI * 2.0);
 		}
 
 		dtheta += coupling / (double)N;
@@ -147,7 +146,7 @@ double step(Oscillator osc[BIG_N], double K[BIG_N][BIG_N], int N, float dt,
 		switch (waveType) {
 			// sin,tri,saw,square
 		case 's': // sin
-			v = sinf(phase);
+			v = sin(phase);
 			break;
 		case 't': // tri
 			v = 1.0 - 4.0 * fabs(pn - 0.5);
@@ -202,9 +201,7 @@ void populateCouplingMatrix(CouplingRing rings[], double K[BIG_N][BIG_N], int N,
 				float k = 0.0f;
 
 				for (int r = 0; r < N_RINGS; r++) {
-					k += rings[r].strength
-						 * ring_weight(distance(i, j, w, h), rings[r].radius,
-									   rings[r].thickness);
+					k += ring_weight(distance(i, j, w, h), rings[r]);
 				}
 
 				K[i][j] = k;
