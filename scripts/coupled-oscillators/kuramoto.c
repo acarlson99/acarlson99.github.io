@@ -187,6 +187,82 @@ double step(Synthesizer *synth, float dt)
 	return out;
 }
 
+
+#include <portaudio.h>
+
+typedef struct {
+    Synthesizer *synth;
+    double dt;
+} AudioState;
+
+static int audioCallback(
+    const void *inputBuffer,
+    void *outputBuffer,
+    unsigned long framesPerBuffer,
+    const PaStreamCallbackTimeInfo *timeInfo,
+    PaStreamCallbackFlags statusFlags,
+    void *userData)
+{
+    (void)inputBuffer;
+    (void)timeInfo;
+    (void)statusFlags;
+
+    AudioState *state = userData;
+
+    float *out = outputBuffer;
+
+    for(unsigned long i=0;i<framesPerBuffer;i++)
+    {
+        double s = step(state->synth, state->dt);
+
+        s = tanh(s * 3.0);
+
+        *out++ = (float)s;
+    }
+
+    return paContinue;
+}
+typedef struct
+{
+    PaStream *stream;
+
+    AudioState state;
+
+} AudioDevice;
+int audio_open(AudioDevice *audio,
+               Synthesizer *synth)
+{
+    audio->state.synth = synth;
+    audio->state.dt = 1.0 / SAMPLE_RATE;
+
+    PaError err;
+
+    err = Pa_Initialize();
+    if(err != paNoError)
+        return err;
+
+    err = Pa_OpenDefaultStream(
+        &audio->stream,
+        0,          // input channels
+        1,          // mono output
+        paFloat32,
+        SAMPLE_RATE,
+        256,
+        audioCallback,
+        &audio->state);
+
+    if(err != paNoError)
+        return err;
+
+    return Pa_StartStream(audio->stream);
+}
+void audio_close(AudioDevice *audio)
+{
+    Pa_StopStream(audio->stream);
+    Pa_CloseStream(audio->stream);
+    Pa_Terminate();
+}
+
 double distance(int i, int j, int w, int h)
 {
 	// float d = fabs((double)(i - j));

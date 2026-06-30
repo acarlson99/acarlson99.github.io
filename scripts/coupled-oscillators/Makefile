@@ -1,5 +1,7 @@
 CFLAGS =-Wall -Wextra
-LDLIBS =-lm -lncurses
+LDLIBS =-lm -lncurses -lportaudio
+
+# $ sudo apt install portaudio19-dev
 
 all: kuramoto
 kuramoto: kuramoto.o
