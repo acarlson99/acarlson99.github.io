@@ -1,5 +1,5 @@
 CFLAGS =-Wall -Wextra
-LDLIBS =-lm
+LDLIBS =-lm -lncurses
 
 all: kuramoto
 kuramoto: kuramoto.o

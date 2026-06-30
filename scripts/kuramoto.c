@@ -9,10 +9,12 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <ncurses.h>
+
 #define SAMPLE_RATE		 44100
 #define DURATION_SECONDS (20)
 
-#define BITDEPTH 32
+#define BITDEPTH 16
 
 #define BIG_N	64
 #define N_RINGS (3)
@@ -230,6 +232,14 @@ void populateCouplingMatrix(Synthesizer *synth)
 	}
 }
 
+void resetSynth(Synthesizer *synth)
+{
+	Oscillator *osc = synth->osc;
+	for (int i = 0; i < synth->N; i++) {
+		osc[i].phase = randf(0.0, 1.0);
+	}
+}
+
 char wavearg(char *s)
 {
 	if (strcmp(s, "sin") == 0)
@@ -243,9 +253,283 @@ char wavearg(char *s)
 	return downcase(s[0]);
 }
 
+enum { UI_RENDER, UI_QUIT };
+
+int renderloop(Synthesizer *synth)
+{
+	int selectedRing = 0;
+	int selectedField = 0;
+
+	initscr();
+	cbreak();
+	noecho();
+	keypad(stdscr, TRUE);
+	curs_set(0);
+
+	while (1) {
+		erase();
+
+		//----------------------------------------------------------
+		// Title
+		//----------------------------------------------------------
+
+		mvprintw(0, 0, "Kuramoto Coupling Editor");
+
+		mvprintw(1, 0, "Arrows: Move   +/-: Edit   Enter: Render   q: Quit");
+
+		//----------------------------------------------------------
+		// Ring table
+		//----------------------------------------------------------
+
+		int cols[3] = {8, 19, 33};
+
+		// mvprintw(3, 2, "Radius   Thickness   Strength");
+		mvprintw(3, cols[0], "   Radius");
+		mvprintw(3, cols[1], "Thickness");
+		mvprintw(3, cols[2], " Strength");
+
+		for (int i = 0; i < N_RINGS; i++) {
+			CouplingRing *r = &synth->rings[i];
+
+			mvprintw(5 + i, 0, "%d", i);
+
+			float values[3] = {r->radius, r->thickness, r->strength};
+
+			for (int j = 0; j < 3; j++) {
+				if (i == selectedRing && j == selectedField)
+					attron(A_REVERSE);
+
+				mvprintw(5 + i, cols[j], "%8.2f", values[j]);
+
+				if (i == selectedRing && j == selectedField)
+					attroff(A_REVERSE);
+			}
+		}
+
+		//----------------------------------------------------------
+		// Coupling profile
+		//----------------------------------------------------------
+
+		int graphY = 11;
+
+		mvprintw(graphY, 0, "Coupling Kernel");
+
+#if 1
+		int target = synth->N / 3;
+		char s[10];
+		int w = synth->w;
+		// int h = synth->h;
+		for (int i = 0; i < synth->N; i++) {
+			int x = COL(i);
+			int y = ROW(i);
+			// if (i > 0 && x == 0)
+			// 	printf("\n");
+			if (i == target)
+				sprintf(s, "%s", "  XX");
+			else
+				sprintf(s, "%7.2f ", synth->K[target][i]);
+			mvprintw(graphY + y, x * 5, s);
+		}
+		printf("\n");
+
+#else
+		const int graphWidth = 40;
+
+		for (int x = 0; x < graphWidth; x++) {
+			float d = x * (float)(synth->w + synth->h) / (graphWidth - 1);
+
+			float y = 0;
+
+			for (int r = 0; r < N_RINGS; r++)
+				y += ring_weight(d, synth->rings[r]);
+
+			int h = (int)(fabs(y) / 10.0f);
+
+			if (h > 8)
+				h = 8;
+
+			char c = '-';
+
+			if (y > 0)
+				c = " .:-=+*#@"[h];
+			else if (y < 0)
+				c = " .,:;xX#@"[h];
+
+			mvaddch(graphY + 2, x, c);
+		}
+#endif
+
+		//----------------------------------------------------------
+		// Phase field
+		//----------------------------------------------------------
+
+#if 0
+		graphY += 5;
+
+		mvprintw(graphY, 0, "Phase Field");
+
+		static const char ramp[] = " .:-=+*#%@";
+
+		for (int y = 0; y < synth->h; y++) {
+			for (int x = 0; x < synth->w; x++) {
+				int idx = y * synth->w + x;
+
+				if (idx >= synth->N)
+					continue;
+
+				double p = synth->osc[idx].phase;
+
+				int c = (int)(p * 9.999);
+
+				if (c < 0)
+					c = 0;
+				if (c > 9)
+					c = 9;
+
+				mvaddch(graphY + 2 + y, x, ramp[c]);
+			}
+		}
+#endif
+
+		refresh();
+
+		//----------------------------------------------------------
+		// Input
+		//----------------------------------------------------------
+
+		int ch = getch();
+		int changed = 0;
+
+		switch (ch) {
+		case 'q':
+			endwin();
+			return UI_QUIT;
+
+		case KEY_UP:
+			if (selectedRing > 0)
+				selectedRing--;
+			break;
+
+		case KEY_DOWN:
+			if (selectedRing < N_RINGS - 1)
+				selectedRing++;
+			break;
+
+		case KEY_LEFT:
+			if (selectedField > 0)
+				selectedField--;
+			break;
+
+		case KEY_RIGHT:
+			if (selectedField < 2)
+				selectedField++;
+			break;
+
+		case '+':
+		case '=': {
+			CouplingRing *r = &synth->rings[selectedRing];
+
+			switch (selectedField) {
+			case 0:
+				r->radius += 1.0f;
+				break;
+
+			case 1:
+				r->thickness += 1.0f;
+				break;
+
+			case 2:
+				r->strength += 5.0f;
+				break;
+			}
+			changed = true;
+			break;
+		}
+
+		case '-': {
+			CouplingRing *r = &synth->rings[selectedRing];
+
+			switch (selectedField) {
+			case 0:
+				if (r->radius > 0)
+					r->radius -= 1.0f;
+				break;
+
+			case 1:
+				if (r->thickness > 1)
+					r->thickness -= 1.0f;
+				break;
+
+			case 2:
+				r->strength -= 5.0f;
+				break;
+			}
+			changed = true;
+			break;
+		}
+
+		case 'r':
+			resetSynth(synth);
+			break;
+
+		case '\n':
+		case KEY_ENTER:
+		case '\r':
+			populateCouplingMatrix(synth);
+
+			endwin();
+			return UI_RENDER;
+		}
+		if (changed)
+			populateCouplingMatrix(synth);
+	}
+}
+
+void renderwav(Synthesizer *synth, const char *outfile, int duration)
+{
+	const int numSamples = SAMPLE_RATE * duration;
+	const double dt = 1.0 / SAMPLE_RATE;
+
+	FILE *f = fopen(outfile, "wb");
+
+	if (!f) {
+		perror(outfile);
+		return;
+	}
+
+	write_wav_header(f, SAMPLE_RATE, numSamples);
+
+	time_t startTime = time(NULL);
+
+	for (int sample = 0; sample < numSamples; sample++) {
+
+		if (sample % (SAMPLE_RATE * 10) == 0)
+			printf("processing sample %d / %d : %.1f%%\n", sample, numSamples,
+				   100.0 * sample / numSamples);
+
+		double out = step(synth, dt);
+
+		out = tanh(out * 3.0);
+
+#if BITDEPTH == 32
+		int32_t s = (int32_t)(INT32_MAX * out);
+		fwrite(&s, sizeof(s), 1, f);
+#else
+		int16_t s = (int16_t)(INT16_MAX * out);
+		fwrite(&s, sizeof(s), 1, f);
+#endif
+	}
+
+	fclose(f);
+
+	printf("\nWrote %s\n", outfile);
+
+	time_t endTime = time(NULL);
+	printf("Time elapsed: %lds\n", endTime - startTime);
+}
+
 int main(int argc, char **argv)
 {
-	time_t startTime = time(NULL);
 	srand(7);
 
 	// argparse
@@ -291,19 +575,6 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	// setup
-	const int numSamples = SAMPLE_RATE * duration;
-	const double dt = 1.0f / SAMPLE_RATE;
-
-	FILE *f = fopen(outfile, "wb");
-
-	if (!f) {
-		printf("failed to open file\n");
-		return 1;
-	}
-
-	write_wav_header(f, SAMPLE_RATE, numSamples);
-
 	Oscillator osc[BIG_N];
 	double K[BIG_N][BIG_N];
 
@@ -328,7 +599,7 @@ int main(int argc, char **argv)
 		// osc[i].freq = randf(439.0, 441.0);
 		// osc[i].freq = (i+1) / N * 880.0;
 
-		osc[i].freq = 110.0 * (1.0 + 0 * (COL(i) / ((float)w)))
+		osc[i].freq = 110.0 * (1.0 + 0.0 * (COL(i) / ((float)w)))
 					  * pow(2.0, (float)(ROW(i)));
 		// osc[i].freq = 440.0+randf(-0.5,0.5);
 
@@ -378,37 +649,22 @@ int main(int argc, char **argv)
 	}
 #endif
 
-	//--------------------------------------------------
-	// Main synthesis loop
-	//--------------------------------------------------
+	while (1) {
+		int action = renderloop(&synth);
 
-	for (int sample = 0; sample < numSamples; sample++) {
-		// status msg
-		if (sample % (SAMPLE_RATE * 10) == 0)
-			printf("processing sample %d / %d : %f%%\n", sample, numSamples,
-				   100 * ((float)sample) / ((float)numSamples));
+		switch (action) {
+		case UI_RENDER:
 
-		float out = step(&synth, dt);
-		// * sin((float)sample * PI*2.0 / SAMPLE_RATE);
+			renderwav(&synth, outfile, duration);
 
-		// Saturation
-		out = tanh(out * 3.0f);
+			break;
 
-#if BITDEPTH == 32
-		int32_t s = (int32_t)(INT32_MAX * out);
-		fwrite(&s, sizeof(int32_t), 1, f);
-#else
-		int16_t s = (int16_t)(INT16_MAX * out);
-		fwrite(&s, sizeof(int16_t), 1, f);
-#endif
+		case UI_QUIT:
+			return 0;
+		}
 	}
 
-	fclose(f);
-
-	printf("\nwrote %s\n", outfile);
-
-	time_t endTime = time(NULL);
-	printf("Time elapsed: %lds\n", endTime - startTime);
+	renderwav(&synth, outfile, duration);
 
 	return 0;
 }
