@@ -11,42 +11,17 @@
 
 #include <ncurses.h>
 
-#define SAMPLE_RATE		 44100
 #define DURATION_SECONDS (20)
 
 #define BITDEPTH 16
 
-#define BIG_N	64
 #define N_RINGS (3)
 
 #define PI	   3.14159265358979323846f
 #define COL(I) ((I) % w)
 #define ROW(I) ((I) / w)
 
-typedef struct {
-	// [0..1] range, multiplied by 2PI at the very end
-	double phase;
-	double freq;
-	double amp;
-} Oscillator;
-
-typedef struct {
-	float radius; // as measured by manhattan distance
-	float thickness;
-	float strength;
-} CouplingRing;
-
-typedef struct {
-	char waveType; // one of [stqw]
-	Oscillator *osc;
-	int N;
-
-	int w;
-	int h;
-
-	double (*K)[BIG_N];
-	CouplingRing *rings;
-} Synthesizer;
+#include "kuramoto.h"
 
 static double randf(double a, double b)
 {
@@ -187,80 +162,69 @@ double step(Synthesizer *synth, float dt)
 	return out;
 }
 
-
 #include <portaudio.h>
 
 typedef struct {
-    Synthesizer *synth;
-    double dt;
+	Synthesizer *synth;
+	double dt;
 } AudioState;
 
-static int audioCallback(
-    const void *inputBuffer,
-    void *outputBuffer,
-    unsigned long framesPerBuffer,
-    const PaStreamCallbackTimeInfo *timeInfo,
-    PaStreamCallbackFlags statusFlags,
-    void *userData)
+static int audioCallback(const void *inputBuffer, void *outputBuffer,
+						 unsigned long framesPerBuffer,
+						 const PaStreamCallbackTimeInfo *timeInfo,
+						 PaStreamCallbackFlags statusFlags, void *userData)
 {
-    (void)inputBuffer;
-    (void)timeInfo;
-    (void)statusFlags;
+	(void)inputBuffer;
+	(void)timeInfo;
+	(void)statusFlags;
 
-    AudioState *state = userData;
+	AudioState *state = userData;
 
-    float *out = outputBuffer;
+	float *out = outputBuffer;
 
-    for(unsigned long i=0;i<framesPerBuffer;i++)
-    {
-        double s = step(state->synth, state->dt);
+	for (unsigned long i = 0; i < framesPerBuffer; i++) {
+		double s = step(state->synth, state->dt);
 
-        s = tanh(s * 3.0);
+		s = tanh(s * 3.0);
 
-        *out++ = (float)s;
-    }
+		*out++ = (float)s;
+	}
 
-    return paContinue;
+	return paContinue;
 }
-typedef struct
-{
-    PaStream *stream;
+typedef struct {
+	PaStream *stream;
 
-    AudioState state;
+	AudioState state;
 
 } AudioDevice;
-int audio_open(AudioDevice *audio,
-               Synthesizer *synth)
+int audio_open(AudioDevice *audio, Synthesizer *synth)
 {
-    audio->state.synth = synth;
-    audio->state.dt = 1.0 / SAMPLE_RATE;
+	audio->state.synth = synth;
+	audio->state.dt = 1.0 / SAMPLE_RATE;
 
-    PaError err;
+	PaError err;
 
-    err = Pa_Initialize();
-    if(err != paNoError)
-        return err;
+	err = Pa_Initialize();
+	if (err != paNoError)
+		return err;
 
-    err = Pa_OpenDefaultStream(
-        &audio->stream,
-        0,          // input channels
-        1,          // mono output
-        paFloat32,
-        SAMPLE_RATE,
-        256,
-        audioCallback,
-        &audio->state);
+	err = Pa_OpenDefaultStream(&audio->stream,
+							   0, // input channels
+							   1, // mono output
+							   paFloat32, SAMPLE_RATE, 256, audioCallback,
+							   &audio->state);
 
-    if(err != paNoError)
-        return err;
+	if (err != paNoError)
+		return err;
 
-    return Pa_StartStream(audio->stream);
+	return Pa_StartStream(audio->stream);
 }
 void audio_close(AudioDevice *audio)
 {
-    Pa_StopStream(audio->stream);
-    Pa_CloseStream(audio->stream);
-    Pa_Terminate();
+	Pa_StopStream(audio->stream);
+	Pa_CloseStream(audio->stream);
+	Pa_Terminate();
 }
 
 double distance(int i, int j, int w, int h)
@@ -329,115 +293,103 @@ char wavearg(char *s)
 	return downcase(s[0]);
 }
 
-enum { UI_RENDER, UI_QUIT };
-
-int renderloop(Synthesizer *synth)
+void draw_ui(Synthesizer *synth, int selectedRing, int selectedField)
 {
-	int selectedRing = 0;
-	int selectedField = 0;
+	erase();
 
-	initscr();
-	cbreak();
-	noecho();
-	keypad(stdscr, TRUE);
-	curs_set(0);
+	//----------------------------------------------------------
+	// Title
+	//----------------------------------------------------------
 
-	while (1) {
-		erase();
+	mvprintw(0, 0, "Kuramoto Coupling Editor");
 
-		//----------------------------------------------------------
-		// Title
-		//----------------------------------------------------------
+	mvprintw(1, 0, "Arrows: Move   +/-: Edit   Enter: Render   q: Quit");
 
-		mvprintw(0, 0, "Kuramoto Coupling Editor");
+	//----------------------------------------------------------
+	// Ring table
+	//----------------------------------------------------------
 
-		mvprintw(1, 0, "Arrows: Move   +/-: Edit   Enter: Render   q: Quit");
+	int cols[3] = {8, 19, 33};
 
-		//----------------------------------------------------------
-		// Ring table
-		//----------------------------------------------------------
+	// mvprintw(3, 2, "Radius   Thickness   Strength");
+	mvprintw(3, cols[0], "   Radius");
+	mvprintw(3, cols[1], "Thickness");
+	mvprintw(3, cols[2], " Strength");
 
-		int cols[3] = {8, 19, 33};
+	for (int i = 0; i < N_RINGS; i++) {
+		CouplingRing *r = &synth->rings[i];
 
-		// mvprintw(3, 2, "Radius   Thickness   Strength");
-		mvprintw(3, cols[0], "   Radius");
-		mvprintw(3, cols[1], "Thickness");
-		mvprintw(3, cols[2], " Strength");
+		mvprintw(5 + i, 0, "%d", i);
 
-		for (int i = 0; i < N_RINGS; i++) {
-			CouplingRing *r = &synth->rings[i];
+		float values[3] = {r->radius, r->thickness, r->strength};
 
-			mvprintw(5 + i, 0, "%d", i);
+		for (int j = 0; j < 3; j++) {
+			if (i == selectedRing && j == selectedField)
+				attron(A_REVERSE);
 
-			float values[3] = {r->radius, r->thickness, r->strength};
+			mvprintw(5 + i, cols[j], "%8.2f", values[j]);
 
-			for (int j = 0; j < 3; j++) {
-				if (i == selectedRing && j == selectedField)
-					attron(A_REVERSE);
-
-				mvprintw(5 + i, cols[j], "%8.2f", values[j]);
-
-				if (i == selectedRing && j == selectedField)
-					attroff(A_REVERSE);
-			}
+			if (i == selectedRing && j == selectedField)
+				attroff(A_REVERSE);
 		}
+	}
 
-		//----------------------------------------------------------
-		// Coupling profile
-		//----------------------------------------------------------
+	//----------------------------------------------------------
+	// Coupling profile
+	//----------------------------------------------------------
 
-		int graphY = 11;
+	int graphY = 11;
 
-		mvprintw(graphY, 0, "Coupling Kernel");
+	mvprintw(graphY, 0, "Coupling Kernel");
 
 #if 1
-		int target = synth->N / 3;
-		char s[10];
-		int w = synth->w;
-		// int h = synth->h;
-		for (int i = 0; i < synth->N; i++) {
-			int x = COL(i);
-			int y = ROW(i);
-			// if (i > 0 && x == 0)
-			// 	printf("\n");
-			if (i == target)
-				sprintf(s, "%s", "  XX");
-			else
-				sprintf(s, "%7.2f ", synth->K[target][i]);
-			mvprintw(graphY + y, x * 5, s);
-		}
-		printf("\n");
+	int target = synth->N / 3;
+	char s[10];
+	int w = synth->w;
+	// int h = synth->h;
+	for (int i = 0; i < synth->N; i++) {
+		int x = COL(i);
+		int y = ROW(i);
+		// if (i > 0 && x == 0)
+		// 	printf("\n");
+		if (i == target)
+			sprintf(s, "%s", "  XX");
+		else
+			sprintf(s, "%7.2f ", synth->K[target][i]);
+		mvprintw(graphY + y, x * 5, s);
+	}
+	printf("\n");
 
 #else
-		const int graphWidth = 40;
+	const int graphWidth = 40;
 
-		for (int x = 0; x < graphWidth; x++) {
-			float d = x * (float)(synth->w + synth->h) / (graphWidth - 1);
+	for (int x = 0; x < graphWidth; x++) {
+		float d = x * (float)(synth->w + synth->h) / (graphWidth - 1);
 
-			float y = 0;
+		float y = 0;
 
-			for (int r = 0; r < N_RINGS; r++)
-				y += ring_weight(d, synth->rings[r]);
+		for (int r = 0; r < N_RINGS; r++)
+			y += ring_weight(d, synth->rings[r]);
 
-			int h = (int)(fabs(y) / 10.0f);
+		int h = (int)(fabs(y) / 10.0f);
 
-			if (h > 8)
-				h = 8;
+		if (h > 8)
+			h = 8;
 
-			char c = '-';
+		char c = '-';
 
-			if (y > 0)
-				c = " .:-=+*#@"[h];
-			else if (y < 0)
-				c = " .,:;xX#@"[h];
+		if (y > 0)
+			c = " .:-=+*#@"[h];
+		else if (y < 0)
+			c = " .,:;xX#@"[h];
 
-			mvaddch(graphY + 2, x, c);
-		}
+		mvaddch(graphY + 2, x, c);
+	}
 #endif
 
-		//----------------------------------------------------------
-		// Phase field
-		//----------------------------------------------------------
+	//----------------------------------------------------------
+	// Phase field
+	//----------------------------------------------------------
 
 #if 0
 		graphY += 5;
@@ -467,7 +419,57 @@ int renderloop(Synthesizer *synth)
 		}
 #endif
 
-		refresh();
+	refresh();
+}
+
+void applyChanges(Synthesizer *synth)
+{
+    populateCouplingMatrix(synth);
+}
+
+void updateParameter(
+    Synthesizer *synth,
+    int ring,
+    int field,
+    float delta)
+{
+    CouplingRing *r = &synth->rings[ring];
+
+    switch(field)
+    {
+    case 0:
+        r->radius += delta;
+        if(r->radius<0)
+            r->radius=0;
+        break;
+
+    case 1:
+        r->thickness += delta;
+        if(r->thickness<1)
+            r->thickness=1;
+        break;
+
+    case 2:
+        r->strength += delta*5;
+        break;
+    }
+}
+
+enum { UI_RENDER, UI_QUIT };
+
+int renderloop(Synthesizer *synth)
+{
+	int selectedRing = 0;
+	int selectedField = 0;
+
+	initscr();
+	cbreak();
+	noecho();
+	keypad(stdscr, TRUE);
+	curs_set(0);
+
+	while (1) {
+		draw_ui(synth, selectedRing, selectedField);
 
 		//----------------------------------------------------------
 		// Input
@@ -502,47 +504,15 @@ int renderloop(Synthesizer *synth)
 			break;
 
 		case '+':
-		case '=': {
-			CouplingRing *r = &synth->rings[selectedRing];
-
-			switch (selectedField) {
-			case 0:
-				r->radius += 1.0f;
-				break;
-
-			case 1:
-				r->thickness += 1.0f;
-				break;
-
-			case 2:
-				r->strength += 5.0f;
-				break;
-			}
+		case '=':
+			updateParameter(synth, selectedRing, selectedField, 1.0);
 			changed = true;
 			break;
-		}
 
-		case '-': {
-			CouplingRing *r = &synth->rings[selectedRing];
-
-			switch (selectedField) {
-			case 0:
-				if (r->radius > 0)
-					r->radius -= 1.0f;
-				break;
-
-			case 1:
-				if (r->thickness > 1)
-					r->thickness -= 1.0f;
-				break;
-
-			case 2:
-				r->strength -= 5.0f;
-				break;
-			}
+		case '-':
+			updateParameter(synth, selectedRing, selectedField, -1.0);
 			changed = true;
 			break;
-		}
 
 		case 'r':
 			resetSynth(synth);
@@ -557,7 +527,7 @@ int renderloop(Synthesizer *synth)
 			return UI_RENDER;
 		}
 		if (changed)
-			populateCouplingMatrix(synth);
+			applyChanges(synth);
 	}
 }
 
