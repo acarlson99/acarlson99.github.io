@@ -1,10 +1,11 @@
 CFLAGS =-Wall -Wextra
-LDLIBS =-lm -lncurses -lportaudio
-
-# $ sudo apt install portaudio19-dev
+LDLIBS =-lm -lncurses -ldl -lpthread
 
 all: kuramoto
-kuramoto: kuramoto.o
+kuramoto: kuramoto.o audio.o
+
+debug: CFLAGS += -g
+debug: kuramoto
 
 clean:
 	$(RM) kuramoto kuramoto.o audio.o

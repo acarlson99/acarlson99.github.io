@@ -1,6 +1,6 @@
 #pragma once
 
-#define SAMPLE_RATE		 44100
+#define SAMPLE_RATE		 (44100/4)
 
 #define BIG_N	64
 

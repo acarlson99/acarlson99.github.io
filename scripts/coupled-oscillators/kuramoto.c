@@ -21,7 +21,7 @@
 #define COL(I) ((I) % w)
 #define ROW(I) ((I) / w)
 
-// #include "audio.h"
+#include "audio.h"
 #include "kuramoto.h"
 
 char *g_outfile;
@@ -441,9 +441,9 @@ enum { UI_RENDER, UI_QUIT };
 
 void renderloop(Synthesizer *synth)
 {
-	// AudioDevice audio;
+	AudioDevice *audio = audio_new();
 
-	// audio_init(&audio, synth_next_sample, &synth);
+	audio_init(audio, synth_next_sample, synth);
 
 	initscr();
 	cbreak();
@@ -511,7 +511,7 @@ void renderloop(Synthesizer *synth)
 
 		case ' ':
 
-			// audio.playing = !audio.playing;
+			// audio->playing = !audio->playing;
 
 			break;
 
@@ -534,8 +534,9 @@ int main(int argc, char **argv)
 
 	int opt;
 	int duration = DURATION_SECONDS;
+	bool gui;
 
-	while ((opt = getopt(argc, argv, "n:w:d:o:h")) != -1) {
+	while ((opt = getopt(argc, argv, "n:w:d:o:g:h")) != -1) {
 		switch (opt) {
 
 		case 'n':
@@ -552,6 +553,10 @@ int main(int argc, char **argv)
 
 		case 'o':
 			outfile = optarg;
+			break;
+
+		case 'g':
+			gui = true;
 			break;
 
 		case 'h':
@@ -588,7 +593,7 @@ int main(int argc, char **argv)
 
 	for (int i = 0; i < N; i++) {
 
-		osc[i].amp = 1.0;
+		osc[i].amp = 0.25; // 1.0;
 		osc[i].phase = randf(0.0, 1.0);
 
 		// osc[i].freq = randf(435.0f, 445.0f);
@@ -645,7 +650,7 @@ int main(int argc, char **argv)
 	}
 #endif
 
-	while (1) {
+	while (gui) {
 		renderloop(&synth);
 	}
 

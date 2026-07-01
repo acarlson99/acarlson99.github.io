@@ -1,10 +1,22 @@
 #define MA_ENABLE_PULSEAUDIO
-#include "miniaudio.h"
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio/miniaudio.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 #include "audio.h"
 #include "kuramoto.h"
+
+struct AudioDevice {
+	ma_device device;
+
+	AudioCallback callback;
+
+	void *userdata;
+
+	int playing;
+};
 
 static void
 ma_callback(
@@ -28,6 +40,15 @@ ma_callback(
 
         *out++ = s;
     }
+}
+
+AudioDevice *audio_new(void) {
+    AudioDevice *dev = malloc(sizeof(AudioDevice));
+    return dev;
+}
+
+void audio_free(AudioDevice *dev) {
+    free(dev);
 }
 
 int
