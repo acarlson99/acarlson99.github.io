@@ -24,6 +24,8 @@
 // #include "audio.h"
 #include "kuramoto.h"
 
+char *g_outfile;
+
 static double randf(double a, double b)
 {
 	return a + (b - a) * ((double)rand() / (double)RAND_MAX);
@@ -223,6 +225,49 @@ void resetOscillators(Synthesizer *synth)
 	for (int i = 0; i < synth->N; i++) {
 		osc[i].phase = randf(0.0, 1.0);
 	}
+}
+
+void renderwav(Synthesizer *synth, const char *outfile, int duration)
+{
+	const int numSamples = SAMPLE_RATE * duration;
+	const double dt = 1.0 / SAMPLE_RATE;
+
+	FILE *f = fopen(outfile, "wb");
+
+	if (!f) {
+		perror(outfile);
+		return;
+	}
+
+	write_wav_header(f, SAMPLE_RATE, numSamples);
+
+	time_t startTime = time(NULL);
+
+	for (int sample = 0; sample < numSamples; sample++) {
+
+		if (sample % (SAMPLE_RATE * 10) == 0)
+			printf("processing sample %d / %d : %.1f%%\n", sample, numSamples,
+				   100.0 * sample / numSamples);
+
+		double out = step(synth, dt);
+
+		out = tanh(out * 3.0);
+
+#if BITDEPTH == 32
+		int32_t s = (int32_t)(INT32_MAX * out);
+		fwrite(&s, sizeof(s), 1, f);
+#else
+		int16_t s = (int16_t)(INT16_MAX * out);
+		fwrite(&s, sizeof(s), 1, f);
+#endif
+	}
+
+	fclose(f);
+
+	printf("\nWrote %s\n", outfile);
+
+	time_t endTime = time(NULL);
+	printf("Time elapsed: %lds\n", endTime - startTime);
 }
 
 char wavearg(char *s)
@@ -461,7 +506,7 @@ void renderloop(Synthesizer *synth)
 		case '\n':
 		case KEY_ENTER:
 			applyChanges(synth);
-			renderwav(synth, "out.wav", DURATION_SECONDS);
+			renderwav(synth, g_outfile, DURATION_SECONDS);
 			break;
 
 		case ' ':
@@ -476,49 +521,6 @@ void renderloop(Synthesizer *synth)
 			break;
 		}
 	}
-}
-
-void renderwav(Synthesizer *synth, const char *outfile, int duration)
-{
-	const int numSamples = SAMPLE_RATE * duration;
-	const double dt = 1.0 / SAMPLE_RATE;
-
-	FILE *f = fopen(outfile, "wb");
-
-	if (!f) {
-		perror(outfile);
-		return;
-	}
-
-	write_wav_header(f, SAMPLE_RATE, numSamples);
-
-	time_t startTime = time(NULL);
-
-	for (int sample = 0; sample < numSamples; sample++) {
-
-		if (sample % (SAMPLE_RATE * 10) == 0)
-			printf("processing sample %d / %d : %.1f%%\n", sample, numSamples,
-				   100.0 * sample / numSamples);
-
-		double out = step(synth, dt);
-
-		out = tanh(out * 3.0);
-
-#if BITDEPTH == 32
-		int32_t s = (int32_t)(INT32_MAX * out);
-		fwrite(&s, sizeof(s), 1, f);
-#else
-		int16_t s = (int16_t)(INT16_MAX * out);
-		fwrite(&s, sizeof(s), 1, f);
-#endif
-	}
-
-	fclose(f);
-
-	printf("\nWrote %s\n", outfile);
-
-	time_t endTime = time(NULL);
-	printf("Time elapsed: %lds\n", endTime - startTime);
 }
 
 int main(int argc, char **argv)
@@ -567,6 +569,7 @@ int main(int argc, char **argv)
 		usage(argv);
 		return 1;
 	}
+	g_outfile = outfile;
 
 	Oscillator osc[BIG_N];
 	double K[BIG_N][BIG_N];
