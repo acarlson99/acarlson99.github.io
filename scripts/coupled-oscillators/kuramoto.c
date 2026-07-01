@@ -21,6 +21,7 @@
 #define COL(I) ((I) % w)
 #define ROW(I) ((I) / w)
 
+// #include "audio.h"
 #include "kuramoto.h"
 
 static double randf(double a, double b)
@@ -162,69 +163,13 @@ double step(Synthesizer *synth, float dt)
 	return out;
 }
 
-#include <portaudio.h>
-
-typedef struct {
-	Synthesizer *synth;
-	double dt;
-} AudioState;
-
-static int audioCallback(const void *inputBuffer, void *outputBuffer,
-						 unsigned long framesPerBuffer,
-						 const PaStreamCallbackTimeInfo *timeInfo,
-						 PaStreamCallbackFlags statusFlags, void *userData)
+double synth_next_sample(void *userdata)
 {
-	(void)inputBuffer;
-	(void)timeInfo;
-	(void)statusFlags;
+	Synthesizer *s = userdata;
 
-	AudioState *state = userData;
+	double x = step(s, 1.0 / SAMPLE_RATE);
 
-	float *out = outputBuffer;
-
-	for (unsigned long i = 0; i < framesPerBuffer; i++) {
-		double s = step(state->synth, state->dt);
-
-		s = tanh(s * 3.0);
-
-		*out++ = (float)s;
-	}
-
-	return paContinue;
-}
-typedef struct {
-	PaStream *stream;
-
-	AudioState state;
-
-} AudioDevice;
-int audio_open(AudioDevice *audio, Synthesizer *synth)
-{
-	audio->state.synth = synth;
-	audio->state.dt = 1.0 / SAMPLE_RATE;
-
-	PaError err;
-
-	err = Pa_Initialize();
-	if (err != paNoError)
-		return err;
-
-	err = Pa_OpenDefaultStream(&audio->stream,
-							   0, // input channels
-							   1, // mono output
-							   paFloat32, SAMPLE_RATE, 256, audioCallback,
-							   &audio->state);
-
-	if (err != paNoError)
-		return err;
-
-	return Pa_StartStream(audio->stream);
-}
-void audio_close(AudioDevice *audio)
-{
-	Pa_StopStream(audio->stream);
-	Pa_CloseStream(audio->stream);
-	Pa_Terminate();
+	return tanh(x * 3.0);
 }
 
 double distance(int i, int j, int w, int h)
@@ -272,7 +217,7 @@ void populateCouplingMatrix(Synthesizer *synth)
 	}
 }
 
-void resetSynth(Synthesizer *synth)
+void resetOscillators(Synthesizer *synth)
 {
 	Oscillator *osc = synth->osc;
 	for (int i = 0; i < synth->N; i++) {
@@ -358,7 +303,7 @@ void draw_ui(Synthesizer *synth, int selectedRing, int selectedField)
 			sprintf(s, "%7.2f ", synth->K[target][i]);
 		mvprintw(graphY + y, x * 5, s);
 	}
-	printf("\n");
+	// printf("\n");
 
 #else
 	const int graphWidth = 40;
@@ -422,112 +367,114 @@ void draw_ui(Synthesizer *synth, int selectedRing, int selectedField)
 	refresh();
 }
 
-void applyChanges(Synthesizer *synth)
+void applyChanges(Synthesizer *synth) { populateCouplingMatrix(synth); }
+
+void updateParameter(Synthesizer *synth, int ring, int field, float delta)
 {
-    populateCouplingMatrix(synth);
-}
+	CouplingRing *r = &synth->rings[ring];
 
-void updateParameter(
-    Synthesizer *synth,
-    int ring,
-    int field,
-    float delta)
-{
-    CouplingRing *r = &synth->rings[ring];
+	switch (field) {
+	case 0:
+		r->radius += delta;
+		if (r->radius < 0)
+			r->radius = 0;
+		break;
 
-    switch(field)
-    {
-    case 0:
-        r->radius += delta;
-        if(r->radius<0)
-            r->radius=0;
-        break;
+	case 1:
+		r->thickness += delta;
+		if (r->thickness < 1)
+			r->thickness = 1;
+		break;
 
-    case 1:
-        r->thickness += delta;
-        if(r->thickness<1)
-            r->thickness=1;
-        break;
-
-    case 2:
-        r->strength += delta*5;
-        break;
-    }
+	case 2:
+		r->strength += delta * 5;
+		break;
+	}
 }
 
 enum { UI_RENDER, UI_QUIT };
 
-int renderloop(Synthesizer *synth)
+void renderloop(Synthesizer *synth)
 {
-	int selectedRing = 0;
-	int selectedField = 0;
+	// AudioDevice audio;
+
+	// audio_init(&audio, synth_next_sample, &synth);
 
 	initscr();
 	cbreak();
 	noecho();
+
 	keypad(stdscr, TRUE);
 	curs_set(0);
 
-	while (1) {
-		draw_ui(synth, selectedRing, selectedField);
+	timeout(16); // ~60 fps UI
 
-		//----------------------------------------------------------
-		// Input
-		//----------------------------------------------------------
+	int ring = 0;
+	int field = 0;
+
+	while (1) {
+		draw_ui(synth, ring, field);
 
 		int ch = getch();
-		int changed = 0;
 
 		switch (ch) {
+		case ERR:
+			break;
+
 		case 'q':
 			endwin();
-			return UI_QUIT;
+			// audio_shutdown(&audio);
+			exit(0); // TODO: change this
+			return;
 
 		case KEY_UP:
-			if (selectedRing > 0)
-				selectedRing--;
+			if (ring > 0)
+				ring--;
 			break;
 
 		case KEY_DOWN:
-			if (selectedRing < N_RINGS - 1)
-				selectedRing++;
+			if (ring < N_RINGS - 1)
+				ring++;
 			break;
 
 		case KEY_LEFT:
-			if (selectedField > 0)
-				selectedField--;
+			if (field > 0)
+				field--;
 			break;
 
 		case KEY_RIGHT:
-			if (selectedField < 2)
-				selectedField++;
+			if (field < 2)
+				field++;
 			break;
 
 		case '+':
 		case '=':
-			updateParameter(synth, selectedRing, selectedField, 1.0);
-			changed = true;
+			applyChanges(synth);
+			updateParameter(synth, ring, field, +1);
 			break;
 
 		case '-':
-			updateParameter(synth, selectedRing, selectedField, -1.0);
-			changed = true;
-			break;
-
-		case 'r':
-			resetSynth(synth);
+			applyChanges(synth);
+			updateParameter(synth, ring, field, -1);
 			break;
 
 		case '\n':
 		case KEY_ENTER:
-		case '\r':
-			populateCouplingMatrix(synth);
-
-			endwin();
-			return UI_RENDER;
-		}
-		if (changed)
 			applyChanges(synth);
+			renderwav(synth, "out.wav", DURATION_SECONDS);
+			break;
+
+		case ' ':
+
+			// audio.playing = !audio.playing;
+
+			break;
+
+		case 'r':
+
+			resetOscillators(synth);
+			break;
+		}
 	}
 }
 
@@ -696,18 +643,7 @@ int main(int argc, char **argv)
 #endif
 
 	while (1) {
-		int action = renderloop(&synth);
-
-		switch (action) {
-		case UI_RENDER:
-
-			renderwav(&synth, outfile, duration);
-
-			break;
-
-		case UI_QUIT:
-			return 0;
-		}
+		renderloop(&synth);
 	}
 
 	renderwav(&synth, outfile, duration);

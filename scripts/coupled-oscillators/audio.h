@@ -1,18 +1,25 @@
 #pragma once
 
-#include <portaudio.h>
+typedef double (*AudioCallback)(void *);
 
-#include "kuramoto.h"
+typedef struct AudioDevice AudioDevice;
 
-typedef struct {
-    PaStream *stream;
+struct AudioDevice {
+	ma_device device;
 
-    Synthesizer *synth;
+	AudioCallback callback;
 
-    double dt;
+	void *userdata;
 
-    volatile int playing;
-} AudioEngine;
+	int playing;
+};
 
-int audio_start(AudioEngine *a, Synthesizer *synth);
-void audio_stop(AudioEngine *a);
+int audio_init(AudioDevice *audio, AudioCallback callback, void *userdata);
+
+void audio_shutdown(AudioDevice *audio);
+
+void audio_pause(AudioDevice *audio);
+
+void audio_resume(AudioDevice *audio);
+
+int audio_is_playing(AudioDevice *audio);

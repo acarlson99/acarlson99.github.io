@@ -1,72 +1,91 @@
-#include "audio.h"
+#define MA_ENABLE_PULSEAUDIO
+#include "miniaudio.h"
 
 #include <string.h>
-#include <math.h>
 
-static int audio_callback(
-    const void *input,
+#include "audio.h"
+#include "kuramoto.h"
+
+static void
+ma_callback(
+    ma_device *device,
     void *output,
-    unsigned long frames,
-    const PaStreamCallbackTimeInfo *timeInfo,
-    PaStreamCallbackFlags statusFlags,
-    void *userData)
+    const void *input,
+    ma_uint32 frameCount)
 {
     (void)input;
-    (void)timeInfo;
-    (void)statusFlags;
 
-    AudioEngine *a = userData;
+    AudioDevice *audio = device->pUserData;
 
     float *out = output;
 
-    if (!a->playing)
+    for (ma_uint32 i = 0; i < frameCount; ++i)
     {
-        memset(out,0,sizeof(float)*frames);
-        return paContinue;
+        float s = 0.0f;
+
+        if (audio->playing)
+            s = audio->callback(audio->userdata);
+
+        *out++ = s;
     }
-
-    for(unsigned i=0;i<frames;i++)
-    {
-        double s = step(a->synth,a->dt);
-
-        s = tanh(s*3.0);
-
-        out[i] = (float)s;
-    }
-
-    return paContinue;
 }
 
-int audio_start(AudioEngine *a,Synthesizer *synth)
+int
+audio_init(
+    AudioDevice *audio,
+    AudioCallback callback,
+    void *userdata)
 {
-    memset(a,0,sizeof(*a));
+    memset(audio,0,sizeof(*audio));
 
-    a->synth = synth;
-    a->dt = 1.0/SAMPLE_RATE;
-    a->playing = 1;
+    audio->callback = callback;
+    audio->userdata = userdata;
+    audio->playing = 1;
 
-    Pa_Initialize();
+    ma_device_config config =
+        ma_device_config_init(ma_device_type_playback);
 
-    Pa_OpenDefaultStream(
-        &a->stream,
-        0,
-        1,
-        paFloat32,
-        SAMPLE_RATE,
-        256,
-        audio_callback,
-        a);
+    config.playback.format = ma_format_f32;
 
-    return Pa_StartStream(a->stream);
+    config.playback.channels = 1;
+
+    config.sampleRate = SAMPLE_RATE;
+
+    config.dataCallback = ma_callback;
+
+    config.pUserData = audio;
+
+    ma_result r =
+        ma_device_init(NULL,&config,&audio->device);
+
+    if(r != MA_SUCCESS)
+        return 0;
+
+    r = ma_device_start(&audio->device);
+
+    return r == MA_SUCCESS;
 }
 
-void audio_stop(AudioEngine *a)
+void
+audio_shutdown(AudioDevice *audio)
 {
-    if(!a->stream)
-        return;
-
-    Pa_StopStream(a->stream);
-    Pa_CloseStream(a->stream);
-    Pa_Terminate();
+    ma_device_uninit(&audio->device);
 }
 
+void
+audio_pause(AudioDevice *audio)
+{
+    audio->playing = 0;
+}
+
+void
+audio_resume(AudioDevice *audio)
+{
+    audio->playing = 1;
+}
+
+int
+audio_is_playing(AudioDevice *audio)
+{
+    return audio->playing;
+}
