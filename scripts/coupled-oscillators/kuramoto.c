@@ -300,6 +300,37 @@ char wavearg(char *s)
 	return downcase(s[0]);
 }
 
+static char glyph(float prev, float cur, float next)
+{
+	float slope = next - prev;
+	float curve = next - 2.0f * cur + prev;
+
+	// Nearly flat
+	if (fabsf(slope) < 0.03f) {
+		if (curve > 0.03f)
+			return 'v'; // valley
+		if (curve < -0.03f)
+			return '^'; // peak
+		return '-';
+	}
+
+	// Rising
+	if (slope > 0.0f) {
+		if (curve > 0.03f)
+			return '(';
+		if (curve < -0.03f)
+			return ')';
+		return '\\';
+	}
+
+	// Falling
+	if (curve > 0.03f)
+		return ')';
+	if (curve < -0.03f)
+		return '(';
+	return '/';
+}
+
 typedef enum { MAIN, FREQ_EDITOR } UIMode;
 
 typedef struct {
@@ -438,7 +469,9 @@ void draw_ui(Synthesizer *synth, UIState *state)
 	for (int x = 0; x < waveWidth; x++)
 		mvaddch(waveY + waveHeight / 2 + 1, x, '-');
 
+#if 1
 	// draw waveform
+	int py = 0;
 	for (int i = 0; i < waveWidth; i++) {
 
 		// oldest sample first
@@ -455,8 +488,30 @@ void draw_ui(Synthesizer *synth, UIState *state)
 
 		int y = (int)((1.0f - (s + 1.0f) * 0.5f) * (waveHeight - 1));
 
-		mvaddch(waveY + 1 + y, i, '*');
+		char c = '*';
+		// this is not quite right
+		if (y < py) c = '/';
+		if (y > py) c = '\\';
+		mvaddch(waveY + 1 + y, i, c);
+		py = y;
 	}
+#else
+	for (int i = 1; i < waveWidth - 1; i++) {
+		float p = synth_last_samples[i - 1];
+		float c = synth_last_samples[i];
+		float n = synth_last_samples[i + 1];
+
+		// Clamp
+		if (c > 1.f)
+			c = 1.f;
+		if (c < -1.f)
+			c = -1.f;
+
+		int y = (int)((1.f - (c + 1.f) * 0.5f) * (waveHeight - 1));
+
+		mvaddch(waveY + 1 + y, i, glyph(p, c, n));
+	}
+#endif
 
 	char buf[52] = {0};
 	buf[50] = '}';
