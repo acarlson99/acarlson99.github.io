@@ -1,4 +1,3 @@
-#define MA_ENABLE_PULSEAUDIO
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio/miniaudio.h"
 

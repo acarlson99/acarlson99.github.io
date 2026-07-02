@@ -25,8 +25,11 @@ typedef struct {
 	int w;
 	int h;
 
-	double (*K)[BIG_N];
+	double (*K)[BIG_N]; // size BIG_NxBIG_N
 	CouplingRing *rings;
+
+	int master_volume; // [0 .. 100]
+	bool mute;
 } Synthesizer;
 
 double step(Synthesizer *synth, float dt);

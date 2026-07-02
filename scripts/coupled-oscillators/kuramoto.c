@@ -17,9 +17,10 @@
 
 #define N_RINGS (3)
 
-#define PI	   3.14159265358979323846f
-#define COL(I) ((I) % w)
-#define ROW(I) ((I) / w)
+#define PI		  3.14159265358979323846f
+#define COL(I)	  ((I) % w)
+#define ROW(I)	  ((I) / w)
+#define IDX(X, Y) ((Y)*w + (X))
 
 #include "audio.h"
 #include "kuramoto.h"
@@ -165,13 +166,29 @@ double step(Synthesizer *synth, float dt)
 	return out;
 }
 
+unsigned _synth_next_i = 0;
+float synth_last_samples[80];
+
+double synth_postprocess_sound(Synthesizer *s, double x)
+{
+	if (s->mute)
+		return 0.0;
+	return tanh(x * 3.0) * ((double)s->master_volume) / 100.0;
+}
+
 double synth_next_sample(void *userdata)
 {
 	Synthesizer *s = userdata;
 
 	double x = step(s, 1.0 / SAMPLE_RATE);
 
-	return tanh(x * 3.0);
+	// new section
+	if (_synth_next_i
+		> sizeof(synth_last_samples) / sizeof(*synth_last_samples))
+		_synth_next_i = 0;
+	synth_last_samples[_synth_next_i++] = x;
+
+	return synth_postprocess_sound(s, x);
 }
 
 double distance(int i, int j, int w, int h)
@@ -251,7 +268,7 @@ void renderwav(Synthesizer *synth, const char *outfile, int duration)
 
 		double out = step(synth, dt);
 
-		out = tanh(out * 3.0);
+		out = synth_postprocess_sound(synth, out);
 
 #if BITDEPTH == 32
 		int32_t s = (int32_t)(INT32_MAX * out);
@@ -283,8 +300,18 @@ char wavearg(char *s)
 	return downcase(s[0]);
 }
 
-void draw_ui(Synthesizer *synth, int selectedRing, int selectedField)
+typedef enum { MAIN, FREQ_EDITOR } UIMode;
+
+typedef struct {
+	int selY;
+	int selX;
+	UIMode mode;
+} UIState;
+
+void draw_ui(Synthesizer *synth, UIState *state)
 {
+	int selectedRing = state->selY;
+	int selectedField = state->selX;
 	erase();
 
 	//----------------------------------------------------------
@@ -293,7 +320,9 @@ void draw_ui(Synthesizer *synth, int selectedRing, int selectedField)
 
 	mvprintw(0, 0, "Kuramoto Coupling Editor");
 
-	mvprintw(1, 0, "Arrows: Move   +/-: Edit   Enter: Render   q: Quit");
+	mvprintw(1, 0,
+			 "Arrows: Move   +/-: Edit   Enter: Render   Space: Play/Pause "
+			 "Audio   r: Reset Oscillator State   q: Quit");
 
 	//----------------------------------------------------------
 	// Ring table
@@ -301,7 +330,6 @@ void draw_ui(Synthesizer *synth, int selectedRing, int selectedField)
 
 	int cols[3] = {8, 19, 33};
 
-	// mvprintw(3, 2, "Radius   Thickness   Strength");
 	mvprintw(3, cols[0], "   Radius");
 	mvprintw(3, cols[1], "Thickness");
 	mvprintw(3, cols[2], " Strength");
@@ -314,101 +342,131 @@ void draw_ui(Synthesizer *synth, int selectedRing, int selectedField)
 		float values[3] = {r->radius, r->thickness, r->strength};
 
 		for (int j = 0; j < 3; j++) {
-			if (i == selectedRing && j == selectedField)
+			if (state->mode == MAIN && i == selectedRing && j == selectedField)
 				attron(A_REVERSE);
 
-			mvprintw(5 + i, cols[j], "%8.2f", values[j]);
+			mvprintw(5 + i, cols[j], "%7.2f", values[j]);
 
-			if (i == selectedRing && j == selectedField)
+			if (state->mode == MAIN && i == selectedRing && j == selectedField)
 				attroff(A_REVERSE);
 		}
 	}
 
-	//----------------------------------------------------------
-	// Coupling profile
-	//----------------------------------------------------------
-
 	int graphY = 11;
+	if (state->mode == FREQ_EDITOR) {
+		mvprintw(graphY - 1, 0, "Frequency Editor");
 
-	mvprintw(graphY, 0, "Coupling Kernel");
+		char s[10];
+		int w = synth->w;
+		// int h = synth->h;
+		for (int i = 0; i < synth->N; i++) {
+			int x = COL(i);
+			int y = ROW(i);
+			if (x == state->selX && y == state->selY)
+				attron(A_REVERSE);
+			sprintf(s, "%7.2f", synth->osc[i].freq);
+			mvprintw(graphY + y, x * 5, s);
+			if (x == state->selX && y == state->selY)
+				attroff(A_REVERSE);
+		}
+	} else {
+		//----------------------------------------------------------
+		// Coupling profile
+		//----------------------------------------------------------
 
-#if 1
-	int target = synth->N / 3;
-	char s[10];
-	int w = synth->w;
-	// int h = synth->h;
-	for (int i = 0; i < synth->N; i++) {
-		int x = COL(i);
-		int y = ROW(i);
-		// if (i > 0 && x == 0)
-		// 	printf("\n");
-		if (i == target)
-			sprintf(s, "%s", "  XX");
-		else
-			sprintf(s, "%7.2f ", synth->K[target][i]);
-		mvprintw(graphY + y, x * 5, s);
+		mvprintw(graphY - 1, 0, "Coupling Kernel");
+
+		int target = synth->N / 3;
+		char s[10];
+		int w = synth->w;
+		// int h = synth->h;
+		for (int i = 0; i < synth->N; i++) {
+			int x = COL(i);
+			int y = ROW(i);
+			if (i == target)
+				sprintf(s, "%s", "  XX");
+			else
+				sprintf(s, "%7.2f ", synth->K[target][i]);
+			mvprintw(graphY + y, x * 5, s);
+		}
 	}
-	// printf("\n");
-
-#else
-	const int graphWidth = 40;
-
-	for (int x = 0; x < graphWidth; x++) {
-		float d = x * (float)(synth->w + synth->h) / (graphWidth - 1);
-
-		float y = 0;
-
-		for (int r = 0; r < N_RINGS; r++)
-			y += ring_weight(d, synth->rings[r]);
-
-		int h = (int)(fabs(y) / 10.0f);
-
-		if (h > 8)
-			h = 8;
-
-		char c = '-';
-
-		if (y > 0)
-			c = " .:-=+*#@"[h];
-		else if (y < 0)
-			c = " .,:;xX#@"[h];
-
-		mvaddch(graphY + 2, x, c);
-	}
-#endif
 
 	//----------------------------------------------------------
 	// Phase field
 	//----------------------------------------------------------
 
-#if 1
-		graphY += synth->h+1;
+	graphY += synth->h + 1;
 
-		mvprintw(graphY, 0, "Phase Field");
+	mvprintw(graphY, 0, "Phase Field");
 
-		static const char ramp[] = " .:-=+*DHIMAE#%@";
-		int nch = sizeof(ramp)/sizeof(*ramp);
+	static const char ramp[] = " .:-=+*DHIMAE#%@";
+	int nch = sizeof(ramp) / sizeof(*ramp) - 1;
 
-		for (int y = 0; y < synth->h; y++) {
-			for (int x = 0; x < synth->w; x++) {
-				int idx = y * synth->w + x;
+	for (int y = 0; y < synth->h; y++) {
+		for (int x = 0; x < synth->w; x++) {
+			int idx = y * synth->w + x;
 
-				if (idx >= synth->N)
-					continue;
+			if (idx >= synth->N)
+				continue;
 
-				double p = synth->osc[idx].phase;
+			double p = synth->osc[idx].phase;
 
-				int c = (int)(p * nch);
+			int c = (int)(p * nch);
 
-				if (c < 0)
-					c = 0;
-				if (c > nch)
-					c = nch;
+			if (c < 0)
+				c = 0;
+			if (c > nch)
+				c = nch;
 
-				mvaddch(graphY + 2 + y, x, ramp[c]);
-			}
+			mvaddch(graphY + 2 + y, x, ramp[c]);
 		}
-#endif
+	}
+
+	//----------------------------------------------------------
+	// Waveform
+	//----------------------------------------------------------
+
+	int waveY = graphY + synth->h + 4;
+
+	mvprintw(waveY, 0, "Output");
+
+	const int waveHeight = 16;
+	const int waveWidth =
+		sizeof(synth_last_samples) / sizeof(*synth_last_samples);
+
+	// draw center line
+	for (int x = 0; x < waveWidth; x++)
+		mvaddch(waveY + waveHeight / 2 + 1, x, '-');
+
+	// draw waveform
+	for (int i = 0; i < waveWidth; i++) {
+
+		// oldest sample first
+		// int idx = (_synth_next_i + i) % waveWidth;
+		int idx = i;
+
+		float s = synth_last_samples[idx];
+
+		// clamp
+		if (s > 1.0f)
+			s = 1.0f;
+		if (s < -1.0f)
+			s = -1.0f;
+
+		int y = (int)((1.0f - (s + 1.0f) * 0.5f) * (waveHeight - 1));
+
+		mvaddch(waveY + 1 + y, i, '*');
+	}
+
+	char buf[52] = {0};
+	buf[50] = '}';
+	int mvol = synth->master_volume / 2;
+	memset(buf, 'Z', mvol);
+	memset(buf + mvol, ' ', 50 - mvol);
+	buf[0] = '{';
+	if ((synth->master_volume % 2) == 1)
+		buf[synth->master_volume / 2] = 'N';
+	mvaddstr(waveY - 1, 0, buf);
 
 	refresh();
 }
@@ -438,11 +496,14 @@ void updateParameter(Synthesizer *synth, int ring, int field, float delta)
 	}
 }
 
-enum { UI_RENDER, UI_QUIT };
+int clamp(int x, int a, int b) { return fmin(fmax(x, a), b); }
 
 void renderloop(Synthesizer *synth)
 {
 	AudioDevice *audio = audio_new();
+
+	int w = synth->w;
+	// int h = synth->h;
 
 	audio_init(audio, synth_next_sample, synth);
 
@@ -455,11 +516,10 @@ void renderloop(Synthesizer *synth)
 
 	timeout(16); // ~60 fps UI
 
-	int ring = 0;
-	int field = 0;
+	UIState state = {0};
 
 	while (1) {
-		draw_ui(synth, ring, field);
+		draw_ui(synth, &state);
 
 		int ch = getch();
 
@@ -470,55 +530,88 @@ void renderloop(Synthesizer *synth)
 		case 'q':
 			endwin();
 			// audio_shutdown(&audio);
-			exit(0); // TODO: change this
+			// exit(0); // TODO: change this
 			return;
 
 		case KEY_UP:
-			if (ring > 0)
-				ring--;
+			state.selY--;
 			break;
-
 		case KEY_DOWN:
-			if (ring < N_RINGS - 1)
-				ring++;
+			state.selY++;
 			break;
-
 		case KEY_LEFT:
-			if (field > 0)
-				field--;
+			state.selX--;
 			break;
-
 		case KEY_RIGHT:
-			if (field < 2)
-				field++;
+			state.selX++;
 			break;
 
 		case '+':
 		case '=':
-		updateParameter(synth, ring, field, +1);
+			if (state.mode == MAIN) {
+				updateParameter(synth, state.selY, state.selX, +1);
+			} else {
+				synth->osc[IDX(state.selX, state.selY)].freq += 1;
+			}
 			applyChanges(synth);
 			break;
 
 		case '-':
-		updateParameter(synth, ring, field, -1);
-		applyChanges(synth);
+			if (state.mode == MAIN) {
+				updateParameter(synth, state.selY, state.selX, -1);
+			} else {
+				synth->osc[IDX(state.selX, state.selY)].freq -= 1;
+			}
+			applyChanges(synth);
 			break;
 
 		case '\n':
 		case KEY_ENTER:
-		applyChanges(synth);
-		renderwav(synth, g_outfile, DURATION_SECONDS);
+			applyChanges(synth);
+			renderwav(synth, g_outfile, DURATION_SECONDS);
 			break;
 
 		case ' ':
-			if (audio_is_playing(audio)) audio_pause(audio);
-			else audio_resume(audio);
+			if (audio_is_playing(audio))
+				audio_pause(audio);
+			else
+				audio_resume(audio);
+			break;
+
+		case '\t':
+			if (state.mode == MAIN)
+				state.mode = FREQ_EDITOR;
+			else
+				state.mode = MAIN;
 			break;
 
 		case 'r':
 			resetOscillators(synth);
 			break;
+
+		case 'm':
+			synth->mute ^= true;
+			break;
+
+		case '[':
+			synth->master_volume--;
+			break;
+		case ']':
+			synth->master_volume++;
+			break;
 		}
+
+		// clamp xy select values
+		int maxx = synth->w - 1;
+		int maxy = synth->h - 1;
+		if (state.mode == MAIN) {
+			maxx = 2;
+			maxy = N_RINGS - 1;
+		}
+		state.selX = clamp(state.selX, 0, maxx);
+		state.selY = clamp(state.selY, 0, maxy);
+
+		synth->master_volume = clamp(synth->master_volume, 0, 100);
 	}
 }
 
@@ -533,9 +626,10 @@ int main(int argc, char **argv)
 
 	int opt;
 	int duration = DURATION_SECONDS;
-	bool gui;
+	bool gui = false;
+	int maxWidth = INT32_MAX;
 
-	while ((opt = getopt(argc, argv, "n:w:d:o:g:h")) != -1) {
+	while ((opt = getopt(argc, argv, "n:w:d:o:g:z:h")) != -1) {
 		switch (opt) {
 
 		case 'n':
@@ -562,6 +656,10 @@ int main(int argc, char **argv)
 			usage(argv);
 			return 0;
 
+		case 'z':
+			maxWidth = atoi(optarg);
+			break;
+
 		default:
 			usage(argv);
 			return 1;
@@ -580,6 +678,7 @@ int main(int argc, char **argv)
 
 #if 1
 	int w = floorl(sqrt((double)N));
+	w = fmin(w, maxWidth);
 	int h = N / w;
 #else
 	int w = ceil(sqrt(N));
@@ -599,7 +698,7 @@ int main(int argc, char **argv)
 		// osc[i].freq = randf(439.0, 441.0);
 		// osc[i].freq = (i+1) / N * 880.0;
 
-		osc[i].freq = 110.0/2/2 * (1.0 + 0.0 * (COL(i) / ((float)w)))
+		osc[i].freq = 110.0 / 2 / 2 * (1.0 + 0.0 * (COL(i) / ((float)w)))
 					  * pow(2.0, (float)(ROW(i)));
 		// osc[i].freq = 440.0+randf(-0.5,0.5);
 
@@ -622,8 +721,11 @@ int main(int argc, char **argv)
 									  .N = N,
 									  .w = w,
 									  .h = h,
-									  .K = K};
+									  .K = K,
+									  .master_volume = 25,
+									  .mute = false};
 
+	// printf("w: %d h %d", w, h);
 	populateCouplingMatrix(&synth);
 
 	// print coupling of single oscillator
@@ -649,8 +751,9 @@ int main(int argc, char **argv)
 	}
 #endif
 
-	while (gui) {
+	if (gui) {
 		renderloop(&synth);
+		return 0;
 	}
 
 	renderwav(&synth, outfile, duration);
