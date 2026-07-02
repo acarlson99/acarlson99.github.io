@@ -381,12 +381,13 @@ void draw_ui(Synthesizer *synth, int selectedRing, int selectedField)
 	// Phase field
 	//----------------------------------------------------------
 
-#if 0
-		graphY += 5;
+#if 1
+		graphY += synth->h+1;
 
 		mvprintw(graphY, 0, "Phase Field");
 
-		static const char ramp[] = " .:-=+*#%@";
+		static const char ramp[] = " .:-=+*DHIMAE#%@";
+		int nch = sizeof(ramp)/sizeof(*ramp);
 
 		for (int y = 0; y < synth->h; y++) {
 			for (int x = 0; x < synth->w; x++) {
@@ -397,12 +398,12 @@ void draw_ui(Synthesizer *synth, int selectedRing, int selectedField)
 
 				double p = synth->osc[idx].phase;
 
-				int c = (int)(p * 9.999);
+				int c = (int)(p * nch);
 
 				if (c < 0)
 					c = 0;
-				if (c > 9)
-					c = 9;
+				if (c > nch)
+					c = nch;
 
 				mvaddch(graphY + 2 + y, x, ramp[c]);
 			}
@@ -494,29 +495,27 @@ void renderloop(Synthesizer *synth)
 
 		case '+':
 		case '=':
+		updateParameter(synth, ring, field, +1);
 			applyChanges(synth);
-			updateParameter(synth, ring, field, +1);
 			break;
 
 		case '-':
-			applyChanges(synth);
-			updateParameter(synth, ring, field, -1);
+		updateParameter(synth, ring, field, -1);
+		applyChanges(synth);
 			break;
 
 		case '\n':
 		case KEY_ENTER:
-			applyChanges(synth);
-			renderwav(synth, g_outfile, DURATION_SECONDS);
+		applyChanges(synth);
+		renderwav(synth, g_outfile, DURATION_SECONDS);
 			break;
 
 		case ' ':
-
-			// audio->playing = !audio->playing;
-
+			if (audio_is_playing(audio)) audio_pause(audio);
+			else audio_resume(audio);
 			break;
 
 		case 'r':
-
 			resetOscillators(synth);
 			break;
 		}
@@ -600,7 +599,7 @@ int main(int argc, char **argv)
 		// osc[i].freq = randf(439.0, 441.0);
 		// osc[i].freq = (i+1) / N * 880.0;
 
-		osc[i].freq = 110.0 * (1.0 + 0.0 * (COL(i) / ((float)w)))
+		osc[i].freq = 110.0/2/2 * (1.0 + 0.0 * (COL(i) / ((float)w)))
 					  * pow(2.0, (float)(ROW(i)));
 		// osc[i].freq = 440.0+randf(-0.5,0.5);
 
