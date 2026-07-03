@@ -167,7 +167,8 @@ double step(Synthesizer *synth, float dt)
 }
 
 unsigned _synth_next_i = 0;
-float synth_last_samples[80];
+#define HISTORY 4096
+float synth_last_samples[HISTORY];
 
 double synth_postprocess_sound(Synthesizer *s, double x)
 {
@@ -300,6 +301,19 @@ char wavearg(char *s)
 	return downcase(s[0]);
 }
 
+static char segment_glyph(float dx, float dy)
+{
+	float a = fabsf(dy);
+
+	if (a < 0.3f)
+		return '_'; // nearly horizontal
+
+	if (a > 1.5f)
+		return '|'; // nearly vertical
+
+	return dy > 0 ? '\\' : '/';
+}
+
 static char glyph(float prev, float cur, float next)
 {
 	float slope = next - prev;
@@ -316,18 +330,18 @@ static char glyph(float prev, float cur, float next)
 
 	// Rising
 	if (slope > 0.0f) {
-		if (curve > 0.03f)
-			return '(';
-		if (curve < -0.03f)
-			return ')';
+		// if (curve > 0.03f)
+		// 	return '(';
+		// if (curve < -0.03f)
+		// 	return ')';
 		return '\\';
 	}
 
 	// Falling
-	if (curve > 0.03f)
-		return ')';
-	if (curve < -0.03f)
-		return '(';
+	// if (curve > 0.03f)
+	// 	return ')';
+	// if (curve < -0.03f)
+	// 	return '(';
 	return '/';
 }
 
@@ -337,6 +351,7 @@ typedef struct {
 	int selY;
 	int selX;
 	UIMode mode;
+	double osc_zoom;
 } UIState;
 
 void draw_ui(Synthesizer *synth, UIState *state)
@@ -465,11 +480,10 @@ void draw_ui(Synthesizer *synth, UIState *state)
 	const int waveWidth =
 		sizeof(synth_last_samples) / sizeof(*synth_last_samples);
 
+#if 0
 	// draw center line
 	for (int x = 0; x < waveWidth; x++)
 		mvaddch(waveY + waveHeight / 2 + 1, x, '-');
-
-#if 1
 	// draw waveform
 	int py = 0;
 	for (int i = 0; i < waveWidth; i++) {
@@ -495,7 +509,7 @@ void draw_ui(Synthesizer *synth, UIState *state)
 		mvaddch(waveY + 1 + y, i, c);
 		py = y;
 	}
-#else
+#elif 0
 	for (int i = 1; i < waveWidth - 1; i++) {
 		float p = synth_last_samples[i - 1];
 		float c = synth_last_samples[i];
@@ -510,6 +524,71 @@ void draw_ui(Synthesizer *synth, UIState *state)
 		int y = (int)((1.f - (c + 1.f) * 0.5f) * (waveHeight - 1));
 
 		mvaddch(waveY + 1 + y, i, glyph(p, c, n));
+	}
+#else
+	// Draw an 80-column waveform from the circular history buffer.
+	{
+		int waveWidth = 120;
+		// Draw center line first.
+		int mid = waveHeight / 2;
+
+		for (int x = 0; x < waveWidth; x++)
+			mvaddch(waveY + 1 + mid, x, '-');
+
+		float samplesPerColumn = (float)HISTORY / waveWidth / state->osc_zoom;
+
+		for (int x = 0; x < waveWidth; x++) {
+			// Compute the sample range represented by this column.
+			int begin = (int)(x * samplesPerColumn);
+			int end = (int)((x + 1) * samplesPerColumn);
+
+			if (end <= begin)
+				end = begin + 1;
+
+			float lo = 1e30f;
+			float hi = -1e30f;
+
+			for (int i = begin; i < end; i++) {
+				// Oldest sample on left, newest on right.
+				int idx = (_synth_next_i + i) % HISTORY;
+
+				float s = synth_last_samples[idx];
+
+				if (s > 1.f)
+					s = 1.f;
+				if (s < -1.f)
+					s = -1.f;
+
+				if (s < lo)
+					lo = s;
+				if (s > hi)
+					hi = s;
+			}
+
+			int y0 = (int)((1.f - (hi + 1.f) * 0.5f) * (waveHeight - 1));
+			int y1 = (int)((1.f - (lo + 1.f) * 0.5f) * (waveHeight - 1));
+
+			if (y0 > y1) {
+				int t = y0;
+				y0 = y1;
+				y1 = t;
+			}
+
+			for (int y = y0; y <= y1; y++) {
+				char c;
+
+				if (y0 == y1)
+					c = '*';
+				else if (y == y0)
+					c = '^';
+				else if (y == y1)
+					c = 'v';
+				else
+					c = '|';
+
+				mvaddch(waveY + 1 + y, x, c);
+			}
+		}
 	}
 #endif
 
@@ -572,6 +651,7 @@ void renderloop(Synthesizer *synth)
 	timeout(16); // ~60 fps UI
 
 	UIState state = {0};
+	state.osc_zoom = 8;
 
 	while (1) {
 		draw_ui(synth, &state);
@@ -653,6 +733,13 @@ void renderloop(Synthesizer *synth)
 			break;
 		case ']':
 			synth->master_volume++;
+			break;
+
+		case 'o':
+			state.osc_zoom += 1;
+			break;
+		case 'O':
+			state.osc_zoom /= 2;
 			break;
 		}
 
