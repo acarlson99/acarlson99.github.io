@@ -30,6 +30,8 @@ typedef struct {
 
 	int master_volume; // [0 .. 100]
 	bool mute;
+
+	char *outfile;
 } Synthesizer;
 
 double step(Synthesizer *synth, float dt);

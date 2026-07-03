@@ -245,10 +245,12 @@ void resetOscillators(Synthesizer *synth)
 	}
 }
 
-void renderwav(Synthesizer *synth, const char *outfile, int duration)
+void renderwav(Synthesizer *synth, int duration)
 {
 	const int numSamples = SAMPLE_RATE * duration;
 	const double dt = 1.0 / SAMPLE_RATE;
+
+	const char* outfile = synth->outfile;
 
 	FILE *f = fopen(outfile, "wb");
 
@@ -704,7 +706,7 @@ void renderloop(Synthesizer *synth)
 		case KEY_ENTER:
 			// TODO: fix segmentation fault here??
 			applyChanges(synth);
-			renderwav(synth, g_outfile, DURATION_SECONDS);
+			renderwav(synth, DURATION_SECONDS);
 			break;
 
 		case ' ':
@@ -814,7 +816,6 @@ int main(int argc, char **argv)
 		usage(argv);
 		return 1;
 	}
-	g_outfile = outfile;
 
 	Oscillator osc[BIG_N];
 	double K[BIG_N][BIG_N];
@@ -866,7 +867,9 @@ int main(int argc, char **argv)
 									  .h = h,
 									  .K = K,
 									  .master_volume = 25,
-									  .mute = false};
+									  .mute = true,
+									  .outfile = outfile
+									};
 
 	// printf("w: %d h %d", w, h);
 	populateCouplingMatrix(&synth);
@@ -899,7 +902,7 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
-	renderwav(&synth, outfile, duration);
+	renderwav(&synth, duration);
 
 	return 0;
 }
