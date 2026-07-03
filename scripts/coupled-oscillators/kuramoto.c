@@ -702,6 +702,7 @@ void renderloop(Synthesizer *synth)
 
 		case '\n':
 		case KEY_ENTER:
+			// TODO: fix segmentation fault here??
 			applyChanges(synth);
 			renderwav(synth, g_outfile, DURATION_SECONDS);
 			break;
