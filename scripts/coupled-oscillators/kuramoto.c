@@ -250,7 +250,7 @@ void renderwav(Synthesizer *synth, int duration)
 	const int numSamples = SAMPLE_RATE * duration;
 	const double dt = 1.0 / SAMPLE_RATE;
 
-	const char* outfile = synth->outfile;
+	const char *outfile = synth->outfile;
 
 	FILE *f = fopen(outfile, "wb");
 
@@ -530,9 +530,16 @@ void draw_ui(Synthesizer *synth, UIState *state)
 #else
 	// Draw an 80-column waveform from the circular history buffer.
 	{
+		float oscAmp = 4.0;
 		int waveWidth = 120;
 		// Draw center line first.
-		int mid = waveHeight / 2;
+		int mid = (waveHeight - 1) / 2;
+
+		int visibleSamples = (int)(HISTORY / state->osc_zoom);
+		if (visibleSamples < waveWidth)
+			visibleSamples = waveWidth;
+
+		int oldest = (_synth_next_i - visibleSamples + HISTORY) % HISTORY;
 
 		for (int x = 0; x < waveWidth; x++)
 			mvaddch(waveY + 1 + mid, x, '-');
@@ -552,7 +559,7 @@ void draw_ui(Synthesizer *synth, UIState *state)
 
 			for (int i = begin; i < end; i++) {
 				// Oldest sample on left, newest on right.
-				int idx = (_synth_next_i + i) % HISTORY;
+				int idx = (oldest + i) % HISTORY;
 
 				float s = synth_last_samples[idx];
 
@@ -567,8 +574,10 @@ void draw_ui(Synthesizer *synth, UIState *state)
 					hi = s;
 			}
 
-			int y0 = (int)((1.f - (hi + 1.f) * 0.5f) * (waveHeight - 1));
-			int y1 = (int)((1.f - (lo + 1.f) * 0.5f) * (waveHeight - 1));
+			int y0 =
+				(int)((1.f - (hi * oscAmp + 1.f) * 0.5f) * (waveHeight - 1));
+			int y1 =
+				(int)((1.f - (lo * oscAmp + 1.f) * 0.5f) * (waveHeight - 1));
 
 			if (y0 > y1) {
 				int t = y0;
@@ -595,13 +604,15 @@ void draw_ui(Synthesizer *synth, UIState *state)
 #endif
 
 	char buf[52] = {0};
-	buf[50] = '}';
+	buf[50] = '>';
 	int mvol = synth->master_volume / 2;
-	memset(buf, 'Z', mvol);
+	memset(buf, '=', mvol);
 	memset(buf + mvol, ' ', 50 - mvol);
-	buf[0] = '{';
+	buf[0] = '8';
 	if ((synth->master_volume % 2) == 1)
-		buf[synth->master_volume / 2] = 'N';
+		buf[synth->master_volume / 2] = 'D';
+	else
+		buf[synth->master_volume / 2] = 'o';
 	mvaddstr(waveY - 1, 0, buf);
 
 	refresh();
@@ -868,8 +879,7 @@ int main(int argc, char **argv)
 									  .K = K,
 									  .master_volume = 25,
 									  .mute = true,
-									  .outfile = outfile
-									};
+									  .outfile = outfile};
 
 	// printf("w: %d h %d", w, h);
 	populateCouplingMatrix(&synth);
