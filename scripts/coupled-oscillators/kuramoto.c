@@ -25,8 +25,6 @@
 #include "audio.h"
 #include "kuramoto.h"
 
-char *g_outfile;
-
 static double randf(double a, double b)
 {
 	return a + (b - a) * ((double)rand() / (double)RAND_MAX);
