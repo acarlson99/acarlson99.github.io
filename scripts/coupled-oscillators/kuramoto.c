@@ -92,6 +92,199 @@ double ring_weight(double d, CouplingRing ring)
 #endif
 }
 
+#if 0
+double synth_audio_output(Synthesizer *synth) {
+	double out = 0.0;
+
+	for (int i = 0; i < synth->N; i++) {
+		double phase = synth->osc[i].phase * PI * 2.0;
+		double pn = fmod(synth->osc[i].phase, 1.0);
+		double amp = synth->osc[i].amp; // * sin(phase);
+
+		double v = 0.0;
+		switch (synth->waveType) {
+			// sin,tri,saw,square
+		case 's': // sin
+			v = sin(phase);
+			break;
+		case 't': // tri
+			v = 1.0 - 4.0 * fabs(pn - 0.5);
+			break;
+		case 'w': // saw
+			v = pn * 2.0 - 1.0;
+			break;
+		case 'q': // square
+			v = (pn < 0.5) ? 1.0 : -1.0;
+			break;
+		}
+		out += v * amp;
+	}
+
+	out /= (double)synth->N;
+}
+#else
+static inline double wrapPhase(double x)
+{
+	while (x > 0.5)
+		x -= 1.0;
+	while (x < -0.5)
+		x += 1.0;
+	return x;
+}
+
+double osc_value(const Synthesizer *synth, float x)
+{
+	double phase = x * 2.0 * PI;
+	double pn = fmod(x, 1.0);
+
+	switch (synth->waveType) {
+	case 's':
+		return sin(phase);
+	case 't':
+		return 1.0 - 4.0 * fabs(pn - 0.5);
+	case 'w':
+		return 2.0 * pn - 1.0;
+	case 'q':
+		return (pn < 0.5) ? 1.0 : -1.0;
+	default:
+		return sin(phase);
+	}
+}
+
+double synth_audio_output(Synthesizer *synth)
+{
+	int N = synth->N;
+	int w = synth->w;
+
+	switch (synth->mixMode) {
+		//----------------------------------------------------------
+		// Traditional additive synthesis
+		//----------------------------------------------------------
+
+	case MIX_SUM: {
+		double out = 0.0;
+
+		for (int i = 0; i < N; i++) {
+			double amp = synth->osc[i].amp;
+
+			out += amp * osc_value(synth, synth->osc[i].phase);
+		}
+
+		return out / N;
+	}
+
+		//----------------------------------------------------------
+		// Kuramoto Order Parameter
+		//----------------------------------------------------------
+
+	case MIX_ORDER_PARAMETER: {
+		double re = 0.0;
+		double im = 0.0;
+
+		for (int i = 0; i < N; i++) {
+			double p = synth->osc[i].phase * 2.0 * PI;
+			re += cos(p);
+			im += sin(p);
+		}
+
+		re /= N;
+		im /= N;
+
+		double R = hypot(re, im);
+		double psi = atan2(im, re);
+
+		return R * osc_value(synth, psi / PI / 2.0 + 0.5);
+	}
+
+		//----------------------------------------------------------
+		// Total Coupling Energy
+		//----------------------------------------------------------
+
+	case MIX_COUPLING_ENERGY: {
+		double out = 0.0;
+
+		for (int i = 0; i < N; i++) {
+			for (int j = 0; j < N; j++) {
+				double d = (synth->osc[j].phase - synth->osc[i].phase);
+
+				out += synth->K[i][j] * osc_value(synth, d);
+			}
+		}
+
+		return out / (N * N);
+	}
+
+		//----------------------------------------------------------
+		// Spatial disagreement (graph Laplacian)
+		//----------------------------------------------------------
+
+	case MIX_LAPLACIAN: {
+		double out = 0.0;
+
+		for (int y = 1; y < synth->h - 1; y++) {
+			for (int x = 1; x < synth->w - 1; x++) {
+				int c = IDX(x, y);
+
+				double energy = 0.0;
+
+				energy += fabs(wrapPhase(synth->osc[IDX(x - 1, y)].phase
+										 - synth->osc[c].phase));
+
+				energy += fabs(wrapPhase(synth->osc[IDX(x + 1, y)].phase
+										 - synth->osc[c].phase));
+
+				energy += fabs(wrapPhase(synth->osc[IDX(x, y - 1)].phase
+										 - synth->osc[c].phase));
+
+				energy += fabs(wrapPhase(synth->osc[IDX(x, y + 1)].phase
+										 - synth->osc[c].phase));
+
+				//--------------------------------------------------
+				// Weight the oscillator's waveform by how
+				// "unsynchronized" it is with its neighbors.
+				//--------------------------------------------------
+
+				double phase = synth->osc[c].phase;
+
+				out += energy * osc_value(synth, phase);
+			}
+		}
+
+		return out / N;
+	}
+
+		//----------------------------------------------------------
+		// Derivative of the global order parameter
+		//----------------------------------------------------------
+
+	case MIX_ORDER_DERIVATIVE: {
+		double re = 0.0;
+		double im = 0.0;
+
+		for (int i = 0; i < N; i++) {
+			double p = synth->osc[i].phase * 2.0 * PI;
+			re += cos(p);
+			im += sin(p);
+		}
+
+		re /= N;
+		im /= N;
+
+		double R = hypot(re, im);
+
+		double dR = R - synth->previousOrderParameter;
+
+		synth->previousOrderParameter = R;
+
+		// Gain boost because dR is usually tiny.
+		return dR * 2.0;
+	}
+	}
+
+	return 0.0;
+}
+#endif
+
 // steps oscillators one step based on `dt`
 // outputs a value [-1..1] representing the sound wave at that timestep
 double step(Synthesizer *synth, float dt)
@@ -134,34 +327,7 @@ double step(Synthesizer *synth, float dt)
 	//----------------------------------------------
 	// Audio output
 	//----------------------------------------------
-
-	double out = 0.0;
-
-	for (int i = 0; i < N; i++) {
-		double phase = osc[i].phase * PI * 2.0;
-		double pn = fmod(osc[i].phase, 1.0);
-		double amp = osc[i].amp; // * sin(phase);
-
-		double v = 0.0;
-		switch (synth->waveType) {
-			// sin,tri,saw,square
-		case 's': // sin
-			v = sin(phase);
-			break;
-		case 't': // tri
-			v = 1.0 - 4.0 * fabs(pn - 0.5);
-			break;
-		case 'w': // saw
-			v = pn * 2.0 - 1.0;
-			break;
-		case 'q': // square
-			v = (pn < 0.5) ? 1.0 : -1.0;
-			break;
-		}
-		out += v * amp;
-	}
-
-	out /= (double)N;
+	double out = synth_audio_output(synth);
 
 	return out;
 }
@@ -604,16 +770,17 @@ void draw_ui(Synthesizer *synth, UIState *state)
 #endif
 
 	char buf[52] = {0};
-	buf[50] = '>';
+	// buf[50] = '>';
 	int mvol = synth->master_volume / 2;
 	memset(buf, '=', mvol);
-	memset(buf + mvol, ' ', 50 - mvol);
+	// memset(buf + mvol, ' ', 50 - mvol);
 	buf[0] = '8';
 	if ((synth->master_volume % 2) == 1)
 		buf[synth->master_volume / 2] = 'D';
 	else
 		buf[synth->master_volume / 2] = 'o';
 	mvaddstr(waveY - 1, 0, buf);
+	mvaddch(waveY - 1, 50, '>');
 
 	refresh();
 }
@@ -715,7 +882,6 @@ void renderloop(Synthesizer *synth)
 
 		case '\n':
 		case KEY_ENTER:
-			// TODO: fix segmentation fault here??
 			applyChanges(synth);
 			renderwav(synth, DURATION_SECONDS);
 			break;
@@ -755,6 +921,13 @@ void renderloop(Synthesizer *synth)
 		case 'O':
 			state.osc_zoom /= 2;
 			break;
+
+		case 'x':
+			synth->mixMode++;
+			break;
+		case 'X':
+			synth->mixMode--;
+			break;
 		}
 
 		// clamp xy select values
@@ -768,6 +941,7 @@ void renderloop(Synthesizer *synth)
 		state.selY = clamp(state.selY, 0, maxy);
 
 		synth->master_volume = clamp(synth->master_volume, 0, 100);
+		synth->mixMode = clamp(synth->mixMode, MIX_SUM, MIX_ORDER_DERIVATIVE);
 	}
 }
 
@@ -879,7 +1053,8 @@ int main(int argc, char **argv)
 									  .K = K,
 									  .master_volume = 25,
 									  .mute = true,
-									  .outfile = outfile};
+									  .outfile = outfile,
+									  .mixMode = MIX_SUM};
 
 	// printf("w: %d h %d", w, h);
 	populateCouplingMatrix(&synth);

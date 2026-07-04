@@ -1,8 +1,8 @@
 #pragma once
 
-#define SAMPLE_RATE		 (44100/4)
+#define SAMPLE_RATE (44100 / 4)
 
-#define BIG_N	64
+#define BIG_N 64
 
 typedef struct {
 	// [0..1] range, multiplied by 2PI at the very end
@@ -16,6 +16,14 @@ typedef struct {
 	float thickness;
 	float strength;
 } CouplingRing;
+
+typedef enum {
+	MIX_SUM,
+	MIX_ORDER_PARAMETER,
+	MIX_COUPLING_ENERGY, // no good
+	MIX_LAPLACIAN,		 // no good
+	MIX_ORDER_DERIVATIVE,
+} MixMode;
 
 typedef struct {
 	char waveType; // one of [stqw]
@@ -32,6 +40,9 @@ typedef struct {
 	bool mute;
 
 	char *outfile;
+
+	double previousOrderParameter;
+	MixMode mixMode;
 } Synthesizer;
 
 double step(Synthesizer *synth, float dt);
