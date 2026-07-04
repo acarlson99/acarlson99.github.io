@@ -776,7 +776,7 @@ void draw_ui(Synthesizer *synth, UIState *state)
 	if ((synth->master_volume % 2) == 1)
 		buf[synth->master_volume / 2] = 'D';
 	else
-		buf[synth->master_volume / 2] = 'o';
+		buf[synth->master_volume / 2] = ',';
 	mvaddstr(waveY - 1, 0, buf);
 	mvaddch(waveY - 1, 50, '>');
 
