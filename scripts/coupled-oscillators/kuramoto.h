@@ -4,6 +4,8 @@
 
 #define BIG_N 64
 
+#include <stdbool.h>
+
 typedef struct {
 	// [0..1] range, multiplied by 2PI at the very end
 	double phase;
