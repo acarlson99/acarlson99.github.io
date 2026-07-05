@@ -4,6 +4,14 @@
 
 #define BIG_N 64
 
+#define N_RINGS	 (3)
+#define HISTORY	 4096
+#define BITDEPTH 16
+
+#define COL(I)	  ((I) % w)
+#define ROW(I)	  ((I) / w)
+#define IDX(X, Y) ((Y) * w + (X))
+
 #include <stdbool.h>
 
 typedef struct {
@@ -45,6 +53,18 @@ typedef struct {
 
 	double previousOrderParameter;
 	MixMode mixMode;
+
+	float last_samples[HISTORY];
+	unsigned int _samp_next_i;
 } Synthesizer;
 
 double step(Synthesizer *synth, float dt);
+double synth_postprocess_sound(Synthesizer *s, double x);
+
+void applyChanges(Synthesizer *synth);
+
+void oscPhaseSet(Synthesizer *synth, double freq);
+void oscPhaseRandomize(Synthesizer *synth);
+
+// userdata should be a Synthesizer*
+double synth_next_sample(void *userdata);
