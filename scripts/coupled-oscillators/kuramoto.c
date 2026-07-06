@@ -182,7 +182,7 @@ double step(Synthesizer *synth, float dt)
 	int N = synth->N;
 	Oscillator *osc = synth->osc;
 	double(*K)[BIG_N] = synth->K;
-	double phaseDelta[N];
+	double phaseDelta[BIG_N];
 
 	//----------------------------------------------
 	// Kuramoto update
@@ -236,7 +236,7 @@ double synth_next_sample(void *userdata)
 	double x = step(s, 1.0 / SAMPLE_RATE);
 
 	// new section
-	if (s->_samp_next_i > sizeof(s->last_samples) / sizeof(*s->last_samples))
+	if (s->_samp_next_i >= sizeof(s->last_samples) / sizeof(*s->last_samples))
 		s->_samp_next_i = 0;
 	s->last_samples[s->_samp_next_i++] = x;
 
