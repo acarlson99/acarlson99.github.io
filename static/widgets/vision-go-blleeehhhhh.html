@@ -308,7 +308,6 @@ const uniforms = {
 console.log("Uniforms loaded...");
 
 const presets = [
-    {"name":"single circle","u_patternSpeed":3,"u_patternPeriod":[21,0],"u_patternPhase":0,"u_colorSplit":0.075,"u_directionSwapPhase":-0.1,"u_directionSwapPeriod":[1,0],"u_transforms":[1,0,0,0,0],"u_mirror":[0,0],"u_flip":[0,0],"u_center":[0.5,0.5],"u_rotation":0,"u_lineWidth":0,"u_lineBlur":0.5,"u_coordOverlay":0},
     {
         "name": "gentle torous",
         "u_patternSpeed": 0.2,
@@ -330,56 +329,40 @@ const presets = [
         "u_lineBlur": 0.5,
         "u_coordOverlay": 0
     },
+    {"name":"single circle","u_patternSpeed":3,"u_patternPeriod":[21,0],"u_patternPhase":0,"u_colorSplit":0.075,"u_directionSwapPhase":-0.1,"u_directionSwapPeriod":[1,0],"u_transforms":[1,0,0,0,0],"u_mirror":[0,0],"u_flip":[0,0],"u_center":[0.5,0.5],"u_rotation":0,"u_lineWidth":0,"u_lineBlur":0.5,"u_coordOverlay":0},
     {
-        "name":"unusual bird",
-        "u_patternSpeed":0.5,
-        "u_patternPeriod":[0,4.75],
-        "u_patternPhase":0,
-        "u_colorSplit":0.2,
-        "u_directionSwapPhase":-0.45,
-        "u_directionSwapPeriod":[-1,0.25],
-        "u_transforms":[1,4,0,8,0],
-        "u_mirror":[1,0],
-        "u_flip":[0,0],
-        "u_center":[0.75,0.5],
-        "u_rotation":-0.605,
-        "u_lineWidth":-0.095,
-        "u_lineBlur":1,
-        "u_coordOverlay":0
+        "name": "inverse hole",
+        "u_patternSpeed": 2.5,
+        "u_patternPeriod": [8, 0],
+        "u_patternPhase": 0,
+        "u_colorSplit": -0.1,
+        "u_directionSwapPhase": -0.2,
+        "u_directionSwapPeriod": [0, 0],
+        "u_transforms": [5, 1, 0, 0, 0],
+        "u_mirror": [0, 0],
+        "u_flip": [0, 0],
+        "u_center": [0.5, 0.5],
+        "u_rotation": 0,
+        "u_lineWidth": 0.05,
+        "u_lineBlur": 0.4,
+        "u_coordOverlay": 0
     },
     {
-        "name": "RGB Squid",
-        "u_patternSpeed":0.8,
-        "u_patternPeriod":[4,0],
+        "name": "hyperspace",
+        "u_patternSpeed":-1,
+        "u_patternPeriod":[0,2],
         "u_patternPhase":0,
-        "u_colorSplit":0.75,
+        "u_colorSplit":0.229,
         "u_directionSwapPhase":-0.2,
         "u_directionSwapPeriod":[0,0],
-        "u_transforms":[0,1,5,0,0],
+        "u_transforms":[10,1,5,0,0],
         "u_mirror":[0,0],
         "u_flip":[0,0],
-        "u_center": [0.5,0.5],
-        "u_rotation":-0.248,
-        "u_lineWidth":-0.095,
+        "u_center":[0.5,0.5],
+        "u_rotation":0.25,
+        "u_lineWidth":0.433,
         "u_lineBlur":1,
-        "u_coordOverlay": 0
-    },
-    {
-        "name": "bipolar sqrt diamond",
-        "u_patternSpeed": -1.95,
-        "u_patternPeriod": [27.75,0],
-        "u_patternPhase": 0,
-        "u_colorSplit": 0.2,
-        "u_directionSwapPhase": -0.2,
-        "u_directionSwapPeriod": [0,0],
-        "u_transforms": [0,0,10,1,9],
-        "u_mirror": [0,0],
-        "u_flip": [0,0],
-        "u_center": [0.5,0.5],
-        "u_rotation": 0,
-        "u_lineWidth": 0.048,
-        "u_lineBlur": 1,
-        "u_coordOverlay": 0
+        "u_coordOverlay":0
     },
     {
         "name": "sqrt lines fall away",
@@ -399,7 +382,24 @@ const presets = [
         "u_coordOverlay": 0
     },
     {
-        "name": "wobble-inducing sqrt diamonds",
+        "name": "diamond box",
+        "u_patternSpeed": -1.95,
+        "u_patternPeriod": [27.75,0],
+        "u_patternPhase": 0,
+        "u_colorSplit": 0.2,
+        "u_directionSwapPhase": -0.2,
+        "u_directionSwapPeriod": [0,0],
+        "u_transforms": [0,0,10,1,9],
+        "u_mirror": [0,0],
+        "u_flip": [0,0],
+        "u_center": [0.5,0.5],
+        "u_rotation": 0,
+        "u_lineWidth": 0.048,
+        "u_lineBlur": 1,
+        "u_coordOverlay": 0
+    },
+    {
+        "name": "third eye",
         "u_patternSpeed":2.33,
         "u_patternPeriod":[2.5,0],
         "u_patternPhase":0,
@@ -415,6 +415,7 @@ const presets = [
         "u_lineBlur":1,
         "u_coordOverlay": 0
     },
+    {"name":"spiral out (keep going)","u_patternSpeed":-2,"u_patternPeriod":[1,2],"u_patternPhase":0,"u_colorSplit":1,"u_directionSwapPhase":-0.1,"u_directionSwapPeriod":[0,0],"u_transforms":[3,0,0,0,0],"u_mirror":[0,0],"u_flip":[0,0],"u_center":[0.5,0.5],"u_rotation":0,"u_lineWidth":-0.724,"u_lineBlur":0.088,"u_coordOverlay":0},
     {
         "name":"bipolar mirror",
         "u_patternSpeed":-4,
@@ -434,23 +435,41 @@ const presets = [
     },
     {"name":"column","u_patternSpeed":4.9,"u_patternPeriod":[0,60],"u_patternPhase":0,"u_colorSplit":0.5,"u_directionSwapPhase":-0.2,"u_directionSwapPeriod":[-0.25,0],"u_transforms":[0,9,3,0,0],"u_mirror":[1,0],"u_flip":[0,0],"u_center":[-0.55,1.1],"u_rotation":0,"u_lineWidth":-0.195,"u_lineBlur":0.26,"u_coordOverlay":0},
     {
-        "name": "hyperspace",
-        "u_patternSpeed":1,
-        "u_patternPeriod":[0,2],
+        "name": "RGB Squid",
+        "u_patternSpeed":0.8,
+        "u_patternPeriod":[4,0],
         "u_patternPhase":0,
-        "u_colorSplit":-0.229,
+        "u_colorSplit":0.75,
         "u_directionSwapPhase":-0.2,
         "u_directionSwapPeriod":[0,0],
-        "u_transforms":[10,1,5,0,0],
+        "u_transforms":[0,1,5,0,0],
         "u_mirror":[0,0],
         "u_flip":[0,0],
-        "u_center":[0.5,0.5],
-        "u_rotation":0.25,
-        "u_lineWidth":0.433,
+        "u_center": [0.5,0.5],
+        "u_rotation":-0.248,
+        "u_lineWidth":-0.095,
         "u_lineBlur":1,
-        "u_coordOverlay":0
+        "u_coordOverlay": 0
     },
-    {"name":"been there before","u_patternSpeed":1.03,"u_patternPeriod":[29.5,13.25],"u_patternPhase":0,"u_colorSplit":-2.375,"u_directionSwapPhase":-0.62,"u_directionSwapPeriod":[8.5,0.5],"u_transforms":[7,2,2,2,9],"u_mirror":[1,1],"u_flip":[0,1],"u_center":[0.75,1.1],"u_rotation":0.654,"u_lineWidth":0.485,"u_lineBlur":0.542,"u_coordOverlay":0.4},
+    {
+        "name": "unusual bird",
+        "u_patternSpeed": -0.8,
+        "u_patternPeriod": [12, 4],
+        "u_patternPhase": 0,
+        "u_colorSplit": -0.6,
+        "u_directionSwapPhase": -0.4,
+        "u_directionSwapPeriod": [2, 2],
+        "u_transforms": [7, 6, 10, 0, 0],
+        "u_mirror": [1, 0],
+        "u_flip": [0, 1],
+        "u_center": [0.6, 0.4],
+        "u_rotation": 0.333,
+        "u_lineWidth": -0.1,
+        "u_lineBlur": 0.3,
+        "u_coordOverlay": 0.15
+    },
+    {"name":"face squeeeeesh","u_patternSpeed":4.76,"u_patternPeriod":[7,7],"u_patternPhase":0,"u_colorSplit":1.1,"u_directionSwapPhase":-0.5,"u_directionSwapPeriod":[0,0],"u_transforms":[6,9,0,0,0],"u_mirror":[0,1],"u_flip":[1,0],"u_center":[0.5,0.75],"u_rotation":0.126,"u_lineWidth":0.3,"u_lineBlur":0.7,"u_coordOverlay":0},
+    {"name":"been there before","u_patternSpeed":1.03,"u_patternPeriod":[29.5,13.25],"u_patternPhase":0,"u_colorSplit":-2.375,"u_directionSwapPhase":-0.62,"u_directionSwapPeriod":[8.5,0.5],"u_transforms":[7,10,2,2,9],"u_mirror":[1,1],"u_flip":[0,1],"u_center":[0.75,1.1],"u_rotation":0.654,"u_lineWidth":0.485,"u_lineBlur":0.542,"u_coordOverlay":0.4},
     {"name":"all the tuuubes combine","u_patternSpeed":2,"u_patternPeriod":[25.25,30.25],"u_patternPhase":0,"u_colorSplit":-2.443,"u_directionSwapPhase":-0.07,"u_directionSwapPeriod":[0,0],"u_transforms":[8,8,10,3,10],"u_mirror":[1,0.75],"u_flip":[0,1],"u_center":[0.65,0.5],"u_rotation":-0.415,"u_lineWidth":0.987,"u_lineBlur":0.688,"u_coordOverlay":0.6}
 ];
 
@@ -500,7 +519,8 @@ const transformNames = [
     "bipolar",
     "sqrt"
 ];
-const presetIdx = Math.floor(Math.random()*presets.length);
+const presetIdx = (await cookieStore.get("wink"))===null ? 0 : Math.floor(Math.random()*presets.length);
+cookieStore.set("wink","winknudgenudgesaynomore");
 const params = JSON.parse(JSON.stringify(presets[presetIdx]));
 let sliders = {};
 const randomizableControls = [];
