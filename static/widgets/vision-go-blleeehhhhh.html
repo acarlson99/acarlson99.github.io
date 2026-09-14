@@ -519,8 +519,9 @@ const transformNames = [
     "bipolar",
     "sqrt"
 ];
-const presetIdx = (await cookieStore.get("wink"))===null ? 0 : Math.floor(Math.random()*presets.length);
-cookieStore.set("wink","winknudgenudgesaynomore");
+const presetIdx = Math.floor(Math.random()*presets.length);
+// const presetIdx = (await cookieStore.get("wink"))===null ? 0 : Math.floor(Math.random()*presets.length);
+// cookieStore.set("wink","winknudgenudgesaynomore");
 const params = JSON.parse(JSON.stringify(presets[presetIdx]));
 let sliders = {};
 const randomizableControls = [];
