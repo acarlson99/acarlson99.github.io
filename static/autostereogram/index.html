@@ -13,9 +13,9 @@
     Based on this algorithm specification <a
         href="http://www.techmind.org/stereo/stech.html">http://www.techmind.org/stereo/stech.html</a><br><br>
     <label for="canvasWidth">Width:</label>
-    <input type="number" id="canvasWidth" value="1024">
+    <input type="string" id="canvasWidth" value="1024">
     <label for="canvasHeight">Height:</label>
-    <input type="number" id="canvasHeight" value="768">
+    <input type="string" id="canvasHeight" value="768">
     <button id="generateStereogram">Generate Stereogram</button>
     <br><br>
 
@@ -24,7 +24,9 @@
 
     <h3>Select Depth Map</h3>
     <button id="defaultDepthMap">Bunny</button>
+    <label for="uploadDepthMap" class="file-btn">Choose file</label>
     <input type="file" id="uploadDepthMap" accept="image/*">
+    <span id="depthMapLabel"></span>
     <img id="depthMapPreview" src="./depth_bunny.png" style="max-width: 200px; display: none;">
     <br><br>
 
@@ -56,16 +58,23 @@
 
         document.getElementById("uploadDepthMap").addEventListener("change", (event) => {
             const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    depthMap.src = e.target.result;
-                    depthMap.style.display = "block";
-                };
-                reader.readAsDataURL(file);
-            }
-        });
+            const label = document.getElementById("depthMapLabel");
 
+            if (!file) {
+                label.textContent = "";
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                depthMap.onload = () => {
+                    label.textContent = `( ${depthMap.naturalWidth} x ${depthMap.naturalHeight} )`;
+                };
+                depthMap.src = e.target.result;
+                depthMap.style.display = "block";
+            };
+            reader.readAsDataURL(file);
+        });
         document.getElementById("randomTexture").addEventListener("click", () => {
             useRandomTexture = true;
             sampleTexture.style.display = "none";
@@ -91,8 +100,11 @@
         });
 
         document.getElementById("generateStereogram").addEventListener("click", () => {
-            const width = parseInt(document.getElementById("canvasWidth").value);
-            const height = parseInt(document.getElementById("canvasHeight").value);
+            const ws = document.getElementById("canvasWidth").value.trim();
+            const hs = document.getElementById("canvasHeight").value.trim();
+            const width = parseInt(ws);
+            const height = parseInt(hs);
+            console.log(`render with dimensions ${width}x${height} (parsed '${ws}' '${hs}')`)
             canvas.width = width;
             canvas.height = height;
             const texture = useRandomTexture ? null : sampleTexture;
