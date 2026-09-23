@@ -2342,7 +2342,7 @@ function setupShaderEditor() {
         if (editorOpen) closeEditor();
         else editorSEX.openShaderEditor();
     });
-    document.getElementById('edit-dsl-btn').addEventListener('click', () => {
+    document.getElementById('edit-dsl-btn')?.addEventListener('click', () => {
         if (editorOpen) closeEditor();
         else editorSEX.openDslEditor();
     });
