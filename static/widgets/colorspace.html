@@ -322,7 +322,7 @@
     }
 
     function clamp01(x) { return clamp(x, 0, 1); }
-    function mix(x,y,a) { return x * (1 - a) + y * a; }
+    function mix(x, y, a) { return x * (1 - a) + y * a; }
 
     let textColorF = (v) => {
       let lin = srgb2linear3(v);
@@ -330,8 +330,8 @@
       // lab[1] *= -1;
       // lab[2] *= -1;
       let lch = linear2oklch(lin);
-      lch[0] = mix(0.25,0.75, 1-lch[0] );
-      lch[2] += Math.PI * 1/3;
+      lch[0] = mix(0.25, 0.75, 1 - lch[0]);
+      lch[2] += Math.PI * 1 / 3;
       return linear2srgb3(oklch2linear(lch));
 
       // let hsv = linear2hsv(lin);
@@ -353,8 +353,8 @@
       // lch[2] -= Math.PI * 1/3;
       // return linear2srgb3(oklch2linear(lch));
       let oldLab = lab[1];
-      lab[1] = Math.sin(lab[2]*3.14/0.37)*0.37;
-      lab[2] = Math.sin(oldLab*3.14/0.37)*0.37;
+      lab[1] = Math.sin(lab[2] * 3.14 / 0.37) * 0.37;
+      lab[2] = Math.sin(oldLab * 3.14 / 0.37) * 0.37;
       console.log("old,new = ", oldLab, lab[1]);
       return oklab2linear(lab);
     };
@@ -366,7 +366,7 @@
       // lab[2] *= -1;
       let lch = linear2oklch(lin);
       lch[0] *= 0.95;
-      lch[2] += Math.PI * 1/4;
+      lch[2] += Math.PI * 1 / 4;
       return linear2srgb3(oklch2linear(lch));
     }
 
@@ -413,11 +413,19 @@
       const borderCol3Clamped = borderCol3.map(x => Math.round(clamp01(x) * 255));
       const hex = srgbClamped.map(v => v.toString(16).padStart(2, '0')).join('');
       const body = $('body');
-      body.style.background = `rgb(${srgbClamped.join(',')})`;
+
+      let darkened = oklab;
+      darkened[0] *= 0.75;
+      darkened = oklab2linear(darkened);
+      darkened = linear2srgb3(darkened);
+      darkened = darkened.map(x => Math.round(clamp01(x) * 255));
+      body.style.background = `rgb(${darkened.join(',')})`;
+      // body.style.background = `rgb(${srgbClamped.join(',')})`;
       cssHex.textContent = `#${hex.toUpperCase()}`;
       srgbOut.textContent = `${srgbClamped.join(',')}`;
       body.style.color = `rgb(${borderCol2Clamped.join(',')})`;
       document.getElementById('swatch').style.borderColor = `rgb(${borderColClamped.join(',')})`;
+      document.getElementById('swatch').style.background = `rgb(${srgbClamped.join(',')})`;
 
       Object.values(document.getElementsByTagName('fieldset')).forEach(e => {
         e.style.borderColor = `rgb(${borderColClamped.join(',')})`;
